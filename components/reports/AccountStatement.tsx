@@ -1,7 +1,7 @@
 import React, { useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import ReportToolbar from './ReportToolbar';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 
 interface ReportProps {
     partyType: 'customer' | 'supplier';
@@ -52,9 +52,9 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
         allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         let runningBalance = ob;
-        const transactionsWithBalance = allTransactions.map(t => {
+        const transactionsWithBalance = allTransactions.map((t, index) => {
             runningBalance += (t.debit - t.credit);
-            return { ...t, balance: runningBalance };
+            return { ...t, id: index, balance: runningBalance };
         });
 
         return { party, openingBalance: ob, transactions: transactionsWithBalance, closingBalance: runningBalance };
@@ -94,7 +94,7 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
                     <span className="font-bold font-mono">{openingBalance.toLocaleString()} جنيه</span>
                 </div>
 
-                <Table columns={columns} data={transactions} />
+                <DataTable columns={columns} data={transactions} searchableColumns={['description']} />
                 
                 <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded-md mt-4 flex justify-between items-center">
                     <span className="font-semibold">الرصيد الختامي في {endDate}:</span>

@@ -51,6 +51,7 @@ export interface Sale {
   items: LineItem[];
   total: number;
   status: 'مدفوعة' | 'مستحقة' | 'جزئية';
+  journalEntryId?: string;
   isArchived?: boolean;
 }
 
@@ -61,6 +62,7 @@ export interface Purchase {
   items: LineItem[];
   total: number;
   status: 'مدفوعة' | 'مستحقة';
+  journalEntryId?: string;
   isArchived?: boolean;
 }
 
@@ -71,6 +73,7 @@ export interface SaleReturn {
   originalSaleId?: string;
   items: LineItem[];
   total: number;
+  journalEntryId?: string;
   isArchived?: boolean;
 }
 
@@ -81,6 +84,28 @@ export interface PurchaseReturn {
   originalPurchaseId?: string;
   items: LineItem[];
   total: number;
+  journalEntryId?: string;
+  isArchived?: boolean;
+}
+
+export interface InventoryAdjustmentLineItem {
+  itemId: string;
+  itemName: string;
+  quantity: number; // always in base unit
+  cost: number; // purchase price per base unit
+  total: number;
+}
+
+export interface InventoryAdjustment {
+  id: string;
+  date: string;
+  type: 'إضافة' | 'صرف';
+  contraAccountId: string;
+  contraAccountName: string;
+  description: string;
+  items: InventoryAdjustmentLineItem[];
+  totalValue: number;
+  journalEntryId: string;
   isArchived?: boolean;
 }
 
@@ -96,6 +121,7 @@ export interface TreasuryTransaction {
   accountName?: string;
   treasuryAccountId: string;
   treasuryAccountName: string;
+  journalEntryId?: string;
 }
 
 export interface Customer {
@@ -103,6 +129,7 @@ export interface Customer {
   name: string;
   contact: string;
   phone: string;
+  address: string;
   balance: number;
   isArchived?: boolean;
 }
@@ -112,6 +139,7 @@ export interface Supplier {
   name: string;
   contact: string;
   phone: string;
+  address: string;
   balance: number;
   isArchived?: boolean;
 }

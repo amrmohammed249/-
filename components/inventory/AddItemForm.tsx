@@ -153,7 +153,7 @@ const AddItemForm: React.FC<AddItemFormProps> = ({ onClose, onSuccess }) => {
                 </div>
                  <div>
                     <label htmlFor="stock" className="block text-sm font-medium text-gray-700 dark:text-gray-300">رصيد أول المدة</label>
-                    <input type="number" id="stock" value={stock} onChange={e => setStock(e.target.value)} className="input-style w-full mt-1" required min="0"/>
+                    <input type="number" id="stock" value={stock} onChange={e => setStock(e.target.value)} className="input-style w-full mt-1" required min="0" step="any"/>
                 </div>
             </div>
         </div>

@@ -6,6 +6,7 @@ interface Supplier {
   name: string;
   contact: string;
   phone: string;
+  address: string;
   balance: number;
 }
 
@@ -35,12 +36,16 @@ const EditSupplierForm: React.FC<{ supplier: Supplier; onClose: () => void }> = 
           <input type="text" id="name" value={formData.name} onChange={handleChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" required />
         </div>
         <div>
-          <label htmlFor="contact" className="block text-sm font-medium text-gray-700 dark:text-gray-300">البريد الإلكتروني</label>
-          <input type="email" id="contact" value={formData.contact} onChange={handleChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-        </div>
-        <div>
           <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300">رقم الهاتف</label>
           <input type="tel" id="phone" value={formData.phone} onChange={handleChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+        </div>
+        <div>
+          <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-gray-300">العنوان</label>
+          <input type="text" id="address" value={formData.address} onChange={handleChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+        </div>
+        <div>
+          <label htmlFor="contact" className="block text-sm font-medium text-gray-700 dark:text-gray-300">البريد الإلكتروني</label>
+          <input type="email" id="contact" value={formData.contact} onChange={handleChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
         </div>
       </div>
       <div className="mt-6 flex justify-end space-x-2 space-x-reverse">

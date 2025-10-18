@@ -1,4 +1,5 @@
 
+
 import React, { useState, useContext } from 'react';
 import { NavLink } from 'react-router-dom';
 import { HomeIcon } from '../icons/HomeIcon';
@@ -18,6 +19,7 @@ import { CircleStackIcon } from '../icons/CircleStackIcon';
 import { OfficeBuildingIcon } from '../icons/OfficeBuildingIcon';
 import { ArrowUturnLeftIcon } from '../icons/ArrowUturnLeftIcon';
 import { XIcon } from '../icons/XIcon';
+import { ClipboardDocumentCheckIcon } from '../icons/ClipboardDocumentCheckIcon';
 
 interface NavItemProps {
   to: string;
@@ -86,7 +88,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   const navItems = [
     { to: '/', label: 'الرئيسية', icon: <HomeIcon />, show: true },
-    { to: '/inventory', label: 'المخزون', icon: <BoxIcon />, show: true },
     { to: '/fixed-assets', label: 'الأصول الثابتة', icon: <OfficeBuildingIcon />, show: true },
     { to: '/treasury', label: 'الخزينة', icon: <BanknotesIcon />, show: true },
     { to: '/customers', label: 'العملاء', icon: <UsersIcon />, show: true },
@@ -125,6 +126,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     ]
   };
 
+  const inventoryDropdown = {
+    label: "المخزون",
+    icon: <BoxIcon />,
+    items: [
+      { to: '/inventory', label: 'قائمة الأصناف', icon: <DocumentTextIcon /> },
+      { to: '/inventory/adjustments', label: 'تسويات المخزون', icon: <ClipboardDocumentCheckIcon /> },
+    ]
+  };
+
   return (
      <>
       {/* Overlay */}
@@ -146,6 +156,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <DropdownNav {...accountsDropdown} />
           <DropdownNav {...salesDropdown} />
           <DropdownNav {...purchasesDropdown} />
+          <DropdownNav {...inventoryDropdown} />
           
           {navItems.filter(i => i.show).slice(1).map((item) => <NavItem key={item.to} {...item} />)}
 

@@ -1,0 +1,200 @@
+import React, { useState, useContext, useMemo, useEffect } from 'react';
+import { DataContext } from '../../context/DataContext';
+import { InventoryItem, AccountNode, InventoryAdjustment, InventoryAdjustmentLineItem } from '../../types';
+import { PlusIcon, TrashIcon } from '../icons';
+
+interface FormProps {
+    onClose: () => void;
+    onSuccess: (newAdjustment: InventoryAdjustment) => void;
+}
+
+const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess }) => {
+    const { inventory, chartOfAccounts, addInventoryAdjustment, showToast } = useContext(DataContext);
+    
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [type, setType] = useState<'إضافة' | 'صرف'>('صرف');
+    const [contraAccountId, setContraAccountId] = useState('');
+    const [description, setDescription] = useState('');
+    const [items, setItems] = useState<Partial<InventoryAdjustmentLineItem>[]>([]);
+    const [newItemId, setNewItemId] = useState('');
+    const [totalValue, setTotalValue] = useState(0);
+
+    const contraAccountOptions = useMemo(() => {
+        const flatten = (nodes: AccountNode[]): AccountNode[] => {
+            return nodes.reduce<AccountNode[]>((acc, node) => {
+                if (node.children && node.children.length > 0) {
+                    return [...acc, ...flatten(node.children)];
+                }
+                acc.push(node);
+                return acc;
+            }, []);
+        };
+
+        const controlAccountCodes = ['1103', '1104', '2101', '1101']; // Customers, Inventory, Suppliers, Treasury
+        const forbiddenIds = flatten(chartOfAccounts)
+            .filter(acc => controlAccountCodes.some(code => acc.code.startsWith(code)))
+            .map(acc => acc.id);
+        
+        let relevantNodes: AccountNode[] = [];
+        if (type === 'صرف') { // Expenses
+            const expenseRoot = chartOfAccounts.find(n => n.code === '4000')?.children?.find(n => n.code === '4200');
+            if (expenseRoot) relevantNodes = flatten([expenseRoot]);
+        } else { // Addition (Equity, Other Revenue, etc.)
+            const equityRoot = chartOfAccounts.find(n => n.code === '3000');
+            const otherRevenueRoot = chartOfAccounts.find(n => n.code === '4000')?.children?.find(n => n.code === '4300');
+            if(equityRoot) relevantNodes.push(...flatten([equityRoot]));
+            if(otherRevenueRoot) relevantNodes.push(...flatten([otherRevenueRoot]));
+        }
+
+        return relevantNodes.filter(acc => !forbiddenIds.includes(acc.id)).sort((a,b) => a.code.localeCompare(b.code));
+    }, [chartOfAccounts, type]);
+    
+    useEffect(() => setContraAccountId(''), [type]); // Reset contra account when type changes
+
+    useEffect(() => {
+        const total = items.reduce((sum, item) => sum + (item.total || 0), 0);
+        setTotalValue(total);
+    }, [items]);
+    
+    const handleAddItem = () => {
+        if (!newItemId) return;
+        if (items.some(i => i.itemId === newItemId)) {
+            showToast('الصنف مضاف بالفعل.', 'warning');
+            return;
+        }
+        const inventoryItem = inventory.find(i => i.id === newItemId);
+        if (!inventoryItem) return;
+
+        setItems([...items, {
+            itemId: inventoryItem.id,
+            itemName: inventoryItem.name,
+            quantity: 1,
+            cost: inventoryItem.purchasePrice,
+            total: inventoryItem.purchasePrice,
+        }]);
+        setNewItemId('');
+    };
+    
+    const handleItemChange = (index: number, quantity: string) => {
+        const newItems = [...items];
+        const item = newItems[index];
+        const numQuantity = parseFloat(quantity) || 0;
+        
+        if (type === 'صرف') {
+            const inventoryItem = inventory.find(i => i.id === item.itemId);
+            if (inventoryItem && numQuantity > inventoryItem.stock) {
+                showToast(`الكمية تتجاوز المخزون المتاح (${inventoryItem.stock})`, 'warning');
+            }
+        }
+        
+        item.quantity = numQuantity;
+        item.total = numQuantity * (item.cost || 0);
+        setItems(newItems);
+    };
+    
+    const handleRemoveItem = (index: number) => {
+        setItems(items.filter((_, i) => i !== index));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!contraAccountId || items.length === 0) {
+            showToast('يرجى اختيار حساب مقابل وإضافة صنف واحد على الأقل.', 'error');
+            return;
+        }
+
+        const finalItems = items.map(item => ({
+            itemId: item.itemId!,
+            itemName: item.itemName!,
+            quantity: item.quantity!,
+            cost: item.cost!,
+            total: item.total!,
+        }));
+        
+        const contraAccount = contraAccountOptions.find(acc => acc.id === contraAccountId);
+        if (!contraAccount) {
+             showToast('الحساب المقابل غير صالح.', 'error');
+             return;
+        }
+
+        const newAdjustment = addInventoryAdjustment({
+            date,
+            type,
+            contraAccountId,
+            contraAccountName: contraAccount.name,
+            description,
+            items: finalItems,
+            totalValue
+        });
+        
+        onSuccess(newAdjustment);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label htmlFor="date" className="input-label">التاريخ</label>
+                    <input type="date" id="date" value={date} onChange={e => setDate(e.target.value)} className="input-style w-full mt-1" required/>
+                </div>
+                 <div>
+                    <label htmlFor="type" className="input-label">نوع التسوية</label>
+                    <select id="type" value={type} onChange={e => setType(e.target.value as any)} className="input-style w-full mt-1" required>
+                        <option value="صرف">صرف (تخفيض كمية)</option>
+                        <option value="إضافة">إضافة (زيادة كمية)</option>
+                    </select>
+                </div>
+                <div>
+                    <label htmlFor="contraAccountId" className="input-label">الحساب المقابل</label>
+                    <select id="contraAccountId" value={contraAccountId} onChange={e => setContraAccountId(e.target.value)} className="input-style w-full mt-1" required>
+                        <option value="">-- اختر حساب --</option>
+                        {contraAccountOptions.map(acc => <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>)}
+                    </select>
+                </div>
+                <div className="lg:col-span-3">
+                    <label htmlFor="description" className="input-label">البيان/الوصف</label>
+                    <input type="text" id="description" value={description} onChange={e => setDescription(e.target.value)} className="input-style w-full mt-1" placeholder="مثال: جرد سنوي، بضاعة تالفة..." required/>
+                </div>
+            </div>
+
+            <div className="border-t pt-4">
+                {items.map((item, index) => (
+                    <div key={index} className="grid grid-cols-12 gap-2 items-center mb-2">
+                        <span className="col-span-5 font-medium">{item.itemName}</span>
+                        <div className="col-span-2">
+                             <input type="number" value={item.quantity} onChange={e => handleItemChange(index, e.target.value)} className="input-style w-full" placeholder="الكمية" min="0.01" step="any"/>
+                        </div>
+                        <span className="col-span-2 text-center">{item.cost?.toLocaleString()} (للوحدة)</span>
+                        <span className="col-span-2 text-center font-semibold">{item.total?.toLocaleString()}</span>
+                        <button type="button" onClick={() => handleRemoveItem(index)} className="col-span-1 text-red-500 hover:text-red-700">
+                            <TrashIcon className="w-5 h-5"/>
+                        </button>
+                    </div>
+                ))}
+                <div className="flex items-center space-x-2 space-x-reverse mt-4 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
+                    <select value={newItemId} onChange={e => setNewItemId(e.target.value)} className="input-style w-full">
+                        <option value="">-- اختر صنف للإضافة --</option>
+                        {inventory.map(i => <option key={i.id} value={i.id}>{i.name} (المتاح: {i.stock})</option>)}
+                    </select>
+                    <button type="button" onClick={handleAddItem} className="btn-primary-small flex-shrink-0">
+                        <PlusIcon className="w-4 h-4 mr-1"/> إضافة
+                    </button>
+                </div>
+            </div>
+
+            <div className="border-t pt-4 flex justify-end">
+                <div className="text-left w-full max-w-sm">
+                    <p className="text-sm text-gray-500">القيمة الإجمالية للتسوية</p>
+                    <p className="text-2xl font-bold font-mono">{totalValue.toLocaleString()} جنيه</p>
+                </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+                <button type="button" onClick={onClose} className="btn-secondary">إلغاء</button>
+                <button type="submit" className="btn-primary">حفظ التسوية</button>
+            </div>
+        </form>
+    );
+};
+
+export default AddInventoryAdjustmentForm;

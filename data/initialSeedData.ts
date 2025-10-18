@@ -1,9 +1,9 @@
-import type { AccountNode, Sale, ActivityLogEntry, Purchase, FixedAsset, User, Customer, Supplier, InventoryItem, JournalEntry, TreasuryTransaction, CompanyInfo, FinancialYear, PrintSettings, Notification, SaleReturn, PurchaseReturn, UnitDefinition } from '../types';
+import type { AccountNode, Sale, ActivityLogEntry, Purchase, FixedAsset, User, Customer, Supplier, InventoryItem, JournalEntry, TreasuryTransaction, CompanyInfo, FinancialYear, PrintSettings, Notification, SaleReturn, PurchaseReturn, UnitDefinition, InventoryAdjustment } from '../types';
 
 export const companyInfo: CompanyInfo = {
-  name: "الشركة الرئيسية",
-  address: "123 الشارع الرئيسي, المدينة, الدولة",
-  phone: "0123456789",
+  name: "اسم الشركة",
+  address: "العنوان",
+  phone: "الهاتف",
 };
 
 export const unitDefinitionsData: UnitDefinition[] = [
@@ -17,13 +17,13 @@ export const unitDefinitionsData: UnitDefinition[] = [
 
 export const chartOfAccountsData: AccountNode[] = [
   {
-    id: '1', name: 'الأصول', code: '1000',
+    id: '1', name: 'الأصول', code: '1000', balance: 0,
     children: [
       {
-        id: '1-1', name: 'الأصول المتداولة', code: '1100',
+        id: '1-1', name: 'الأصول المتداولة', code: '1100', balance: 0,
         children: [
           { 
-            id: '1-1-1', name: 'الخزينة', code: '1101', 
+            id: '1-1-1', name: 'الخزينة', code: '1101', balance: 0, 
             children: [
               { id: '1-1-1-1', name: 'الخزينة الرئيسية', code: '110101', balance: 0 }
             ]
@@ -34,7 +34,7 @@ export const chartOfAccountsData: AccountNode[] = [
         ],
       },
       {
-        id: '1-2', name: 'الأصول الثابتة', code: '1200',
+        id: '1-2', name: 'الأصول الثابتة', code: '1200', balance: 0,
         children: [
           { id: '1-2-1', name: 'المباني', code: '1201', balance: 0 },
           { id: '1-2-2', name: 'السيارات', code: '1202', balance: 0 },
@@ -43,28 +43,35 @@ export const chartOfAccountsData: AccountNode[] = [
     ],
   },
   {
-    id: '2', name: 'الالتزامات', code: '2000',
+    id: '2', name: 'الالتزامات', code: '2000', balance: 0,
     children: [
         { id: '2-1', name: 'الموردين', code: '2101', balance: 0 },
         { id: '2-2', name: 'القروض البنكية', code: '2102', balance: 0 },
     ]
   },
   {
-    id: '3', name: 'حقوق الملكية', code: '3000',
+    id: '3', name: 'حقوق الملكية', code: '3000', balance: 0,
     children: [
         { id: '3-1', name: 'رأس المال', code: '3101', balance: 0 },
         { id: '3-2', name: 'الأرباح المحتجزة', code: '3102', balance: 0 },
     ]
   },
    {
-    id: '4', name: 'الإيرادات والمصروفات', code: '4000',
+    id: '4', name: 'الإيرادات والمصروفات', code: '4000', balance: 0,
     children: [
         { id: '4-1', name: 'مبيعات محلية', code: '4101', balance: 0 },
         { 
-            id: '4-2', name: 'مصروفات تشغيل', code: '4200',
+            id: '4-2', name: 'مصروفات تشغيل', code: '4200', balance: 0,
             children: [
                 {id: '4-2-1', name: 'رواتب', code: '4201', balance: 0},
                 {id: '4-2-2', name: 'كهرباء', code: '4202', balance: 0},
+                {id: '4-2-3', name: 'مصروف بضاعة تالفة', code: '4203', balance: 0},
+                {id: '4-2-4', name: 'تكلفة البضاعة المباعة', code: '4204', balance: 0},
+            ]
+        },
+        { id: '4-3', name: 'إيرادات أخرى', code: '4300', balance: 0, 
+            children: [
+                {id: '4-3-1', name: 'أرباح فروقات جرد', code: '4301', balance: 0}
             ]
         },
     ]
@@ -82,7 +89,8 @@ export const sequencesData = {
     journal: 1,
     treasury: 1,
     fixedAsset: 1,
-    account: 1, // General purpose for accounts if needed
+    inventoryAdjustment: 1,
+    account: 1,
     unit: 7,
     packingUnit: 1,
 };
@@ -91,6 +99,7 @@ export const sequencesData = {
 export const journalData: JournalEntry[] = [];
 
 export const inventoryData: InventoryItem[] = [];
+export const inventoryAdjustmentsData: InventoryAdjustment[] = [];
 
 export const salesData: Sale[] = [];
 
@@ -104,8 +113,6 @@ export const suppliersData: Supplier[] = [];
 
 export const usersData: User[] = [
   { id: 'U01', name: 'مدير النظام', username: 'admin', password: 'admin', role: 'مدير النظام' },
-  { id: 'U02', name: 'محاسب', username: 'accountant', password: 'password', role: 'محاسب' },
-  { id: 'U03', name: 'مدخل بيانات', username: 'user', password: 'password', role: 'مدخل بيانات' },
 ];
 
 export const fixedAssetsData: FixedAsset[] = [];

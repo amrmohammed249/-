@@ -34,6 +34,9 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
 
+  const [currentBalance, setCurrentBalance] = useState<number | null>(null);
+  const [newBalance, setNewBalance] = useState<number | null>(null);
+
   // Effect to set the default treasury once data is loaded
   useEffect(() => {
     if (!treasuryId) {
@@ -49,6 +52,53 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
   useEffect(() => {
     setPartyId('');
   }, [partyType]);
+
+  // Effect to get the current balance when party is selected
+  useEffect(() => {
+    if ((partyType === 'customer' || partyType === 'supplier') && partyId) {
+      let party;
+      if (partyType === 'customer') {
+        party = customers.find((c: Customer) => c.id === partyId);
+      } else {
+        party = suppliers.find((s: Supplier) => s.id === partyId);
+      }
+      
+      if (party) {
+        setCurrentBalance(party.balance);
+      } else {
+        setCurrentBalance(null);
+      }
+    } else {
+      setCurrentBalance(null);
+    }
+    setNewBalance(null); // Also reset newBalance when party changes
+  }, [partyId, partyType, customers, suppliers]);
+
+  // Effect to calculate the new balance when amount or party changes
+  useEffect(() => {
+    const numAmount = parseFloat(amount) || 0;
+    if (currentBalance !== null) {
+      let calculatedNewBalance = currentBalance;
+      if (numAmount > 0) {
+          if (partyType === 'customer') {
+            if (defaultType === 'سند قبض') { // Receipt from customer
+              calculatedNewBalance = currentBalance - numAmount;
+            } else { // Payment to customer (refund)
+              calculatedNewBalance = currentBalance + numAmount;
+            }
+          } else if (partyType === 'supplier') {
+            if (defaultType === 'سند صرف') { // Payment to supplier
+              calculatedNewBalance = currentBalance - numAmount;
+            } else { // Receipt from supplier (refund)
+              calculatedNewBalance = currentBalance + numAmount;
+            }
+          }
+      }
+      setNewBalance(calculatedNewBalance);
+    } else {
+      setNewBalance(null);
+    }
+  }, [amount, currentBalance, partyType, defaultType]);
   
   const accountsList = useMemo(() => {
     const flatten = (nodes: AccountNode[]): AccountNode[] => {
@@ -88,7 +138,7 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
       case 'supplier':
         return suppliers;
       case 'account':
-        return accountsList.sort((a,b) => a.code.localeCompare(b.code));
+        return [...accountsList].sort((a,b) => a.code.localeCompare(b.code));
       default:
         return [];
     }
@@ -149,6 +199,22 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
             {partyOptions.map((p: any) => <option key={p.id} value={p.id}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
           </select>
         </div>
+
+        {currentBalance !== null && (
+            <div className="md:col-span-2 -mt-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border dark:border-gray-600 grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <span className="text-gray-500 dark:text-gray-400">الرصيد الحالي:</span>
+                    <p className="font-semibold font-mono text-lg">{currentBalance.toLocaleString()} جنيه</p>
+                </div>
+                <div>
+                    <span className="text-gray-500 dark:text-gray-400">الرصيد المتبقي:</span>
+                    <p className={`font-semibold font-mono text-lg ${newBalance !== null ? 'text-blue-600 dark:text-blue-400' : ''}`}>
+                        {newBalance !== null ? newBalance.toLocaleString() + ' جنيه' : '-'}
+                    </p>
+                </div>
+            </div>
+        )}
+
          <div>
           <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">المبلغ</label>
           <input type="number" id="amount" value={amount} onChange={e => setAmount(e.target.value)} className="input-style w-full mt-1" required step="any" min="0.01" />

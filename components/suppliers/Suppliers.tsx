@@ -1,8 +1,7 @@
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import PageHeader from '../shared/PageHeader';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddSupplierForm from './AddSupplierForm';
 import EditSupplierForm from './EditSupplierForm';
@@ -43,8 +42,9 @@ const Suppliers: React.FC = () => {
   const columns = useMemo(() => [
     { header: 'كود المورد', accessor: 'id' },
     { header: 'اسم المورد', accessor: 'name' },
-    { header: 'جهة الاتصال', accessor: 'contact' },
     { header: 'رقم الهاتف', accessor: 'phone' },
+    { header: 'العنوان', accessor: 'address' },
+    { header: 'جهة الاتصال', accessor: 'contact' },
     { header: 'الرصيد', accessor: 'balance', render: (row: any) => `${row.balance.toLocaleString()} جنيه مصري` },
   ], []);
 
@@ -56,12 +56,13 @@ const Suppliers: React.FC = () => {
         onButtonClick={() => setAddModalOpen(true)}
         buttonIcon={<PlusIcon />}
       />
-      <Table 
+      <DataTable 
         columns={columns} 
         data={suppliers}
         actions={['edit', 'archive']}
         onEdit={handleEdit}
         onArchive={handleArchive}
+        searchableColumns={['id', 'name', 'phone', 'address', 'contact']}
       />
 
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة مورد جديد">

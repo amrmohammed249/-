@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { PrinterIcon } from '../icons/PrinterIcon';
 import { TableCellsIcon } from '../icons/TableCellsIcon';
@@ -43,6 +44,7 @@ const ReportToolbar: React.FC<ReportToolbarProps> = ({ reportName, data, columns
         const rows = data.map(row => {
             return columns.map(col => {
                 let value: any = col.render ? col.render(row) : row[col.accessor];
+                // FIX: Check if the value is a valid React element before trying to access its props.
                 if (typeof value === 'object' && value !== null && React.isValidElement(value)) {
                     // FIX: Cast value.props to a type that includes children to resolve TS error.
                     value = ((value.props as { children?: React.ReactNode }).children || '').toString();

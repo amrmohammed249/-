@@ -8,11 +8,13 @@ interface ReportProps {
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
 
+// Sums balances of all leaf nodes under a given set of nodes.
 const sumBalances = (nodes: AccountNode[]): number => {
     return nodes.reduce((sum, node) => {
         if (node.children && node.children.length > 0) {
             return sum + sumBalances(node.children);
         }
+        // For revenues (credits), balance is negative. For expenses (debits), balance is positive.
         return sum + (node.balance || 0);
     }, 0);
 };
@@ -35,13 +37,17 @@ const ProfitAndLoss: React.FC<ReportProps> = ({ startDate, endDate, onDataReady 
     const { chartOfAccounts } = useContext(DataContext);
 
     const { revenues, expenses, totalRevenue, totalExpenses, netProfit } = useMemo(() => {
-        const revenueNode = chartOfAccounts.find((n: any) => n.code === '4000')?.children?.find((n: any) => n.code === '4100');
-        const expenseNode = chartOfAccounts.find((n: any) => n.code === '4000')?.children?.find((n: any) => n.code === '4200');
+        const revAndExpNode = chartOfAccounts.find((n: any) => n.code === '4000');
+        
+        // Revenues are children of 'Revenues and Expenses' (4000) that are NOT 'Operating Expenses' (4200)
+        const revenues = revAndExpNode?.children?.filter((n: AccountNode) => n.code !== '4200') || [];
 
-        const revenues = revenueNode?.children || [];
+        const expenseNode = revAndExpNode?.children?.find((n: any) => n.code === '4200');
         const expenses = expenseNode?.children || [];
 
+        // Revenue balances are negative (credits), so we take the absolute value for display.
         const totalRevenue = Math.abs(sumBalances(revenues));
+        // Expense balances are positive (debits).
         const totalExpenses = Math.abs(sumBalances(expenses));
         const netProfit = totalRevenue - totalExpenses;
 

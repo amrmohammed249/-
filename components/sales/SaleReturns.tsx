@@ -1,8 +1,7 @@
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import PageHeader from '../shared/PageHeader';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddSaleReturnForm from './AddSaleReturnForm';
 import ConfirmationModal from '../shared/ConfirmationModal';
@@ -62,12 +61,13 @@ const SaleReturns: React.FC = () => {
         onButtonClick={() => setAddModalOpen(true)}
         buttonIcon={<PlusIcon />}
       />
-      <Table 
+      <DataTable 
         columns={columns} 
         data={saleReturns}
         actions={['view', 'archive']}
         onView={handleView}
         onArchive={handleArchive}
+        searchableColumns={['id', 'customer', 'date', 'originalSaleId']}
       />
 
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة مرتجع مبيعات جديد" size="4xl">

@@ -1,8 +1,7 @@
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import PageHeader from '../shared/PageHeader';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddJournalEntryForm from './AddJournalEntryForm';
 import EditJournalEntryForm from './EditJournalEntryForm';
@@ -50,8 +49,8 @@ const JournalEntries: React.FC = () => {
     { header: 'رقم القيد', accessor: 'id' },
     { header: 'التاريخ', accessor: 'date' },
     { header: 'الوصف', accessor: 'description' },
-    { header: 'مدين', accessor: 'debit', render: (row: any) => `${row.debit.toLocaleString()} جنيه مصري` },
-    { header: 'دائن', accessor: 'credit', render: (row: any) => `${row.credit.toLocaleString()} جنيه مصري` },
+    { header: 'مدين', accessor: 'debit', render: (row: any) => `${row.debit.toLocaleString()} جنيه` },
+    { header: 'دائن', accessor: 'credit', render: (row: any) => `${row.credit.toLocaleString()} جنيه` },
     { header: 'الحالة', accessor: 'status', render: (row: any) => (
         <span className={`px-2 py-1 text-xs font-medium rounded-full ${row.status === 'مرحل' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'}`}>{row.status}</span>
     )},
@@ -69,13 +68,14 @@ const JournalEntries: React.FC = () => {
         onButtonClick={() => setAddModalOpen(true)}
         buttonIcon={<PlusIcon />}
       />
-      <Table 
+      <DataTable 
         columns={columns} 
         data={journal}
         actions={['view', 'edit', 'archive']}
         onView={handleView}
         onEdit={handleEdit}
         onArchive={handleArchive}
+        searchableColumns={['id', 'date', 'description', 'status']}
       />
 
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة قيد يومية جديد" size="4xl">

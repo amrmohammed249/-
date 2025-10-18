@@ -42,6 +42,42 @@ const TreasuryVoucherView: React.FC<ViewProps> = ({ isOpen, onClose, transaction
             return 'غير محدد';
     }
   }, [transaction, customers, suppliers, chartOfAccounts]);
+  
+  const { previousBalance, currentBalance } = useMemo(() => {
+    if (!transaction.partyId || (transaction.partyType !== 'customer' && transaction.partyType !== 'supplier')) {
+        return { previousBalance: null, currentBalance: null };
+    }
+    
+    const amount = Math.abs(transaction.amount);
+    let party = null;
+    let pBalance = null;
+    let cBalance = null;
+
+    if (transaction.partyType === 'customer') {
+        party = customers.find(c => c.id === transaction.partyId);
+        if (party) {
+            cBalance = party.balance;
+            if (transaction.type === 'سند صرف') { // refund to customer
+                pBalance = cBalance - amount;
+            } else { // receipt from customer
+                pBalance = cBalance + amount;
+            }
+        }
+    } else if (transaction.partyType === 'supplier') {
+        party = suppliers.find(s => s.id === transaction.partyId);
+        if (party) {
+            cBalance = party.balance;
+            if (transaction.type === 'سند صرف') { // payment to supplier
+                pBalance = cBalance + amount;
+            } else { // refund from supplier
+                pBalance = cBalance - amount;
+            }
+        }
+    }
+    
+    return { previousBalance: pBalance, currentBalance: cBalance };
+
+}, [transaction, customers, suppliers]);
 
 
   const handlePrint = () => window.print();
@@ -109,6 +145,27 @@ const TreasuryVoucherView: React.FC<ViewProps> = ({ isOpen, onClose, transaction
                 <span className="flex-grow border-b-2 border-dotted pb-1 font-bold">{transaction.description}</span>
             </div>
         </main>
+
+        {previousBalance !== null && currentBalance !== null && (
+            <section className="flex justify-end mt-6">
+                <div className="w-full max-w-sm space-y-2 text-sm border p-4 rounded-lg dark:border-gray-700">
+                    <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">الرصيد السابق:</span>
+                        <span className="font-mono font-semibold">{previousBalance.toLocaleString()} جنيه مصري</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">قيمة السند:</span>
+                        <span className={`font-mono font-semibold ${isReceipt ? 'text-green-600' : 'text-red-600'}`}>
+                            {Math.abs(transaction.amount).toLocaleString()} جنيه مصري
+                        </span>
+                    </div>
+                    <div className="flex justify-between font-bold text-base pt-2 border-t dark:border-gray-600 mt-2">
+                        <span>الرصيد المتبقي:</span>
+                        <span className="font-mono">{currentBalance.toLocaleString()} جنيه مصري</span>
+                    </div>
+                </div>
+            </section>
+        )}
         
         <section className="grid grid-cols-3 gap-8 mt-24 text-center">
             <div>

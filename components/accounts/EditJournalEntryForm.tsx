@@ -56,7 +56,6 @@ const EditJournalEntryForm: React.FC<{ entry: JournalEntry; onClose: () => void 
   };
 
   const addLine = () => {
-    // FIX: Added missing 'accountName' property to align with the state's type structure.
     setLines(prev => [...prev, { id: nextId, accountId: '', accountName: '', debit: '', credit: '' }]);
     setNextId(prev => prev + 1);
   };

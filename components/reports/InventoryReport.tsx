@@ -1,6 +1,6 @@
-import React, { useContext, useMemo, useEffect } from 'react';
+import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 
 interface ReportProps {
     asOfDate: string;
@@ -24,21 +24,22 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady 
         return data;
     }, [inventory, itemId]);
 
-    const columns = [
+    const columns = useMemo(() => [
         { header: 'كود الصنف', accessor: 'id' },
         { header: 'اسم الصنف', accessor: 'name' },
         { header: 'الكمية المتاحة', accessor: 'stock' },
         { header: 'سعر التكلفة', accessor: 'purchasePrice', render: (row: any) => `${row.purchasePrice.toLocaleString()} جنيه` },
         { header: 'سعر البيع', accessor: 'salePrice', render: (row: any) => `${row.salePrice.toLocaleString()} جنيه` },
         { header: 'قيمة المخزون', accessor: 'totalValue', render: (row: any) => `${row.totalValue.toLocaleString()} جنيه` },
-    ];
+    ], []);
 
-    const totalInventoryValue = inventoryReportData.reduce((sum, item) => sum + item.totalValue, 0);
-
-    const footerData = {
-        salePrice: 'إجمالي قيمة المخزون',
-        totalValue: `${totalInventoryValue.toLocaleString()} جنيه`,
-    };
+    const calculateFooter = useCallback((data: any[]) => {
+        const totalInventoryValue = data.reduce((sum, item) => sum + item.totalValue, 0);
+        return {
+            salePrice: 'إجمالي قيمة المخزون',
+            totalValue: `${totalInventoryValue.toLocaleString()} جنيه`,
+        };
+    }, []);
     
     const reportName = `Inventory-Report-${asOfDate}`;
     
@@ -58,7 +59,12 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady 
                         </p>
                     </div>
                 </div>
-                <Table columns={columns} data={inventoryReportData} footerData={footerData} />
+                <DataTable 
+                    columns={columns} 
+                    data={inventoryReportData} 
+                    calculateFooter={calculateFooter}
+                    searchableColumns={['id', 'name']}
+                />
             </div>
         </div>
     );

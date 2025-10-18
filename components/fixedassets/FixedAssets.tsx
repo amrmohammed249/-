@@ -1,8 +1,7 @@
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import PageHeader from '../shared/PageHeader';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddFixedAssetForm from './AddFixedAssetForm';
 import EditFixedAssetForm from './EditFixedAssetForm';
@@ -59,12 +58,13 @@ const FixedAssets: React.FC = () => {
         onButtonClick={() => setAddModalOpen(true)}
         buttonIcon={<PlusIcon />}
       />
-      <Table 
+      <DataTable 
         columns={columns} 
         data={fixedAssets}
         actions={['edit', 'archive']}
         onEdit={handleEdit}
         onArchive={handleArchive}
+        searchableColumns={['id', 'name', 'acquisitionDate']}
       />
 
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة أصل ثابت جديد">

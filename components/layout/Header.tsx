@@ -25,7 +25,7 @@ const SaveStatusIndicator: React.FC = () => {
 
     const statusConfig = {
         saving: { text: 'جاري الحفظ...', icon: <ClockIcon className="w-5 h-5 animate-spin" />, color: 'text-gray-500 dark:text-gray-400' },
-        saved: { text: 'تم الحفظ', icon: <CheckCircleIcon className="w-5 h-5" />, color: 'text-gray-400 dark:text-gray-500' },
+        saved: { text: 'تم الحفظ', icon: <CheckCircleIcon className="w-5 h-5" />, color: 'text-green-500 dark:text-green-400' },
         error: { text: 'خطأ في الحفظ', icon: <ExclamationTriangleIcon className="w-5 h-5" />, color: 'text-red-500 dark:text-red-400' },
     };
 

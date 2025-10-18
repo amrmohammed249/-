@@ -1,6 +1,6 @@
 import React, { useContext, useMemo, useState } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import AccessDenied from '../shared/AccessDenied';
 
 const ActivityLog: React.FC = () => {
@@ -47,7 +47,7 @@ const ActivityLog: React.FC = () => {
         <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-1">سجل نشاطات النظام</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">مراقبة الإجراءات التي يقوم بها المستخدمون.</p>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b dark:border-gray-700">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4">
            <div>
               <label htmlFor="userFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">فلترة حسب المستخدم</label>
               <select 
@@ -85,12 +85,7 @@ const ActivityLog: React.FC = () => {
         </div>
       </div>
 
-      <Table columns={columns} data={filteredLog} />
-      {filteredLog.length === 0 && (
-          <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-              <p className="text-gray-500 dark:text-gray-400">لا توجد سجلات تطابق معايير البحث الحالية.</p>
-          </div>
-      )}
+      <DataTable columns={columns} data={filteredLog} searchableColumns={['username', 'action', 'details']} />
     </div>
   );
 };

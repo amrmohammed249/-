@@ -1,6 +1,6 @@
-import React, { useContext, useMemo, useEffect } from 'react';
+import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 
 interface ReportProps {
     startDate: string;
@@ -27,20 +27,21 @@ const PurchasesReport: React.FC<ReportProps> = ({ startDate, endDate, supplierId
         });
     }, [purchases, startDate, endDate, supplierId, suppliers]);
 
-    const columns = [
+    const columns = useMemo(() => [
         { header: 'رقم الفاتورة', accessor: 'id' },
         { header: 'المورد', accessor: 'supplier' },
         { header: 'التاريخ', accessor: 'date' },
         { header: 'الإجمالي', accessor: 'total', render: (row: any) => `${row.total.toLocaleString()} جنيه` },
         { header: 'الحالة', accessor: 'status' },
-    ];
+    ], []);
     
-    const totalPurchases = filteredPurchases.reduce((sum, item) => sum + item.total, 0);
-
-    const footerData = {
-        date: `الإجمالي: (${filteredPurchases.length}) فاتورة`,
-        total: `${totalPurchases.toLocaleString()} جنيه`,
-    };
+    const calculateFooter = useCallback((data: any[]) => {
+        const totalPurchases = data.reduce((sum, item) => sum + item.total, 0);
+        return {
+            date: `الإجمالي: (${data.length}) فاتورة`,
+            total: `${totalPurchases.toLocaleString()} جنيه`,
+        };
+    }, []);
     
     const selectedSupplier = supplierId ? suppliers.find((s: any) => s.id === supplierId) : null;
     const reportName = `Purchases-Report-${startDate}-to-${endDate}${selectedSupplier ? `-${selectedSupplier.name}`: ''}`;
@@ -62,7 +63,12 @@ const PurchasesReport: React.FC<ReportProps> = ({ startDate, endDate, supplierId
                         </p>
                     </div>
                 </div>
-                <Table columns={columns} data={filteredPurchases} footerData={footerData} />
+                <DataTable 
+                    columns={columns} 
+                    data={filteredPurchases} 
+                    calculateFooter={calculateFooter}
+                    searchableColumns={['id', 'supplier', 'date', 'status']}
+                />
             </div>
         </div>
     );

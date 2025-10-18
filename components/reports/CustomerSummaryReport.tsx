@@ -1,6 +1,6 @@
 import React, { useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import { TreasuryTransaction } from '../../types';
 
 interface ReportProps {
@@ -42,12 +42,12 @@ const CustomerSummaryReport: React.FC<ReportProps> = ({ startDate, endDate, onDa
 
     }, [customers, sales, treasury, startDate, endDate]);
 
-    const columns = [
+    const columns = useMemo(() => [
         { header: 'العميل', accessor: 'name' },
         { header: 'إجمالي المبيعات', accessor: 'totalSales', render: (row: any) => `${row.totalSales.toLocaleString()} جنيه` },
         { header: 'إجمالي المدفوعات', accessor: 'totalPayments', render: (row: any) => `${row.totalPayments.toLocaleString()} جنيه` },
         { header: 'الرصيد النهائي', accessor: 'finalBalance', render: (row: any) => `${row.finalBalance.toLocaleString()} جنيه` },
-    ];
+    ], []);
     
     const reportName = `Customer-Summary-${startDate}-to-${endDate}`;
 
@@ -67,7 +67,7 @@ const CustomerSummaryReport: React.FC<ReportProps> = ({ startDate, endDate, onDa
                         </p>
                     </div>
                 </div>
-                <Table columns={columns} data={customerSummaryData} />
+                <DataTable columns={columns} data={customerSummaryData} searchableColumns={['name']} />
             </div>
         </div>
     );

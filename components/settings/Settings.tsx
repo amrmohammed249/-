@@ -1,6 +1,6 @@
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddUserForm from './AddUserForm';
 import EditUserForm from './EditUserForm';
@@ -10,6 +10,7 @@ import { PencilSquareIcon, EyeIcon, UploadIcon, TrashIcon } from '../icons';
 import InvoiceCustomizer from './InvoiceCustomizer';
 import InvoiceView from '../sales/InvoiceView';
 import { Sale, PrintSettings } from '../../types';
+import BackupAndRestore from './BackupAndRestore';
 
 
 const Settings: React.FC = () => {
@@ -116,8 +117,10 @@ const Settings: React.FC = () => {
                     <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">إدارة المستخدمين</h2>
                     <button type="button" onClick={() => setAddUserModalOpen(true)} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">إضافة مستخدم</button>
                 </div>
-                <Table columns={userColumns} data={users} actions={['edit', 'archive']} onEdit={handleEditUser} onArchive={handleArchiveUser} />
+                <DataTable columns={userColumns} data={users} actions={['edit', 'archive']} onEdit={handleEditUser} onArchive={handleArchiveUser} searchableColumns={['name', 'username', 'role']} />
             </div>
+
+            <BackupAndRestore />
             
             <form onSubmit={handleSaveAllSettings}>
                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">

@@ -5,6 +5,7 @@ import type { Account, TreasuryTransaction, JournalEntry } from '../../types';
 import AddTreasuryForm from './AddTreasuryForm';
 import GeneralTransactionForm from './GeneralTransactionForm';
 import TransferFundsForm from './TransferFundsForm';
+import TreasuryVoucherView from './TreasuryVoucherView';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(amount);
@@ -31,6 +32,7 @@ const Treasury: React.FC = () => {
     const [selectedTreasuryId, setSelectedTreasuryId] = useState<string | null>(treasuries[0]?.id || null);
     const [isAddTreasuryModalOpen, setAddTreasuryModalOpen] = useState(false);
     const [modalType, setModalType] = useState<'deposit' | 'withdrawal' | 'transfer' | null>(null);
+    const [transactionToView, setTransactionToView] = useState<TreasuryTransaction | null>(null);
     
     const treasuryBalances: { [key: string]: number } = useMemo(() => {
         const balances: { [key: string]: number } = {};
@@ -115,6 +117,14 @@ const Treasury: React.FC = () => {
                     />
                 </Modal>
             )}
+
+            {transactionToView && (
+                <TreasuryVoucherView 
+                    isOpen={!!transactionToView}
+                    onClose={() => setTransactionToView(null)}
+                    transaction={transactionToView}
+                />
+            )}
             
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">إدارة الخزينة</h2>
@@ -174,7 +184,7 @@ const Treasury: React.FC = () => {
                                   </thead>
                                   <tbody>
                                     {selectedTreasuryTransactions.map((tx) => (
-                                        <tr key={tx.id}>
+                                        <tr key={tx.id} onClick={() => setTransactionToView(tx)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                             <td className="px-6 py-4 text-sm text-gray-500">{tx.date}</td>
                                             <td className="px-6 py-4 text-sm text-gray-900">{tx.description}</td>
                                             <td className="px-6 py-4 text-sm text-gray-600 font-medium">{getContraAccountName(tx)}</td>

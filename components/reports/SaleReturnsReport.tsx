@@ -1,6 +1,6 @@
-import React, { useContext, useMemo, useEffect } from 'react';
+import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 
 interface ReportProps {
     startDate: string;
@@ -27,27 +27,28 @@ const SaleReturnsReport: React.FC<ReportProps> = ({ startDate, endDate, customer
         });
     }, [saleReturns, startDate, endDate, customerId, customers]);
 
-    const columns = [
+    const columns = useMemo(() => [
         { header: 'رقم المرتجع', accessor: 'id' },
         { header: 'العميل', accessor: 'customer' },
         { header: 'التاريخ', accessor: 'date' },
         { header: 'الفاتورة الأصلية', accessor: 'originalSaleId' },
         { header: 'الإجمالي', accessor: 'total', render: (row: any) => `${row.total.toLocaleString()} جنيه` },
-    ];
+    ], []);
     
-    const totalReturns = filteredData.reduce((sum, item) => sum + item.total, 0);
-
-    const footerData = {
-        originalSaleId: `الإجمالي: (${filteredData.length}) مرتجع`,
-        total: `${totalReturns.toLocaleString()} جنيه`,
-    };
+    const calculateFooter = useCallback((data: any[]) => {
+        const totalReturns = data.reduce((sum, item) => sum + item.total, 0);
+        return {
+            originalSaleId: `الإجمالي: (${data.length}) مرتجع`,
+            total: `${totalReturns.toLocaleString()} جنيه`,
+        };
+    }, []);
     
     const selectedCustomer = customerId ? customers.find((c: any) => c.id === customerId) : null;
     const reportName = `Sale-Returns-Report-${startDate}-to-${endDate}`;
     
     useEffect(() => {
         onDataReady({ data: filteredData, columns, name: reportName });
-    }, [filteredData, onDataReady]);
+    }, [filteredData, onDataReady, columns, reportName]);
 
 
     return (
@@ -62,7 +63,12 @@ const SaleReturnsReport: React.FC<ReportProps> = ({ startDate, endDate, customer
                         </p>
                     </div>
                 </div>
-                <Table columns={columns} data={filteredData} footerData={footerData} />
+                <DataTable 
+                    columns={columns} 
+                    data={filteredData} 
+                    calculateFooter={calculateFooter}
+                    searchableColumns={['id', 'customer', 'date', 'originalSaleId']}
+                />
             </div>
         </div>
     );

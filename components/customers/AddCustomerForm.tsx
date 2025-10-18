@@ -11,6 +11,7 @@ const AddCustomerForm: React.FC<AddCustomerFormProps> = ({ onClose, onSuccess })
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
   const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
   const { addCustomer } = useContext(DataContext);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -19,6 +20,7 @@ const AddCustomerForm: React.FC<AddCustomerFormProps> = ({ onClose, onSuccess })
         name,
         contact,
         phone,
+        address,
         balance: 0,
     });
     if (onSuccess) {
@@ -35,12 +37,16 @@ const AddCustomerForm: React.FC<AddCustomerFormProps> = ({ onClose, onSuccess })
           <input type="text" id="customerName" value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" required />
         </div>
         <div>
-          <label htmlFor="customerContact" className="block text-sm font-medium text-gray-700 dark:text-gray-300">البريد الإلكتروني</label>
-          <input type="email" id="customerContact" value={contact} onChange={e => setContact(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-        </div>
-        <div>
           <label htmlFor="customerPhone" className="block text-sm font-medium text-gray-700 dark:text-gray-300">رقم الهاتف</label>
           <input type="tel" id="customerPhone" value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+        </div>
+        <div>
+          <label htmlFor="customerAddress" className="block text-sm font-medium text-gray-700 dark:text-gray-300">العنوان</label>
+          <input type="text" id="customerAddress" value={address} onChange={e => setAddress(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+        </div>
+        <div>
+          <label htmlFor="customerContact" className="block text-sm font-medium text-gray-700 dark:text-gray-300">البريد الإلكتروني</label>
+          <input type="email" id="customerContact" value={contact} onChange={e => setContact(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
         </div>
       </div>
       <div className="mt-6 flex justify-end space-x-2 space-x-reverse">

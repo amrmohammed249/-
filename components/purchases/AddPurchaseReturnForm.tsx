@@ -52,7 +52,7 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
       item.quantity = 1; // Reset quantity on unit change
       
     } else if (field === 'quantity') {
-      const newQuantity = parseInt(value, 10) || 0;
+      const newQuantity = parseFloat(value) || 0;
       
       let quantityInBaseUnit = newQuantity;
       let factor = 1;
@@ -207,7 +207,7 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
                 <select value={line.unitId} onChange={e => handleItemChange(index, 'unitId', e.target.value)} className="col-span-2 input-style">
                   {unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
                 </select>
-                <input type="number" value={line.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} className="col-span-2 input-style" placeholder="الكمية" min="1" />
+                <input type="number" value={line.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} className="col-span-2 input-style" placeholder="الكمية" min="0.01" step="any" />
                 <input type="number" value={line.price} onChange={e => handleItemChange(index, 'price', e.target.value)} className="col-span-2 input-style" placeholder="السعر" step="any" min="0"/>
                 <input type="text" value={line.total.toLocaleString()} readOnly className="col-span-1 input-style bg-gray-100 dark:bg-gray-800" placeholder="الإجمالي" />
                 <button type="button" onClick={() => removeLineItem(index)} className="col-span-1 text-red-500 hover:text-red-700">

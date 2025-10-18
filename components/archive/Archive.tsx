@@ -1,6 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import AccessDenied from '../shared/AccessDenied';
 import { Sale } from '../../types';
 
@@ -77,15 +77,15 @@ const Archive: React.FC = () => {
         { header: 'القيمة الدفترية', accessor: 'bookValue', render: (row: any) => `${row.bookValue.toLocaleString()} جنيه مصري` },
     ];
 
-    const tabs: { key: ArchiveTab, label: string, data: any[], columns: any[], onUnarchive: (id: string) => void }[] = [
-        { key: 'customers', label: 'العملاء', data: archivedCustomers, columns: customerColumns, onUnarchive: unarchiveCustomer },
-        { key: 'suppliers', label: 'الموردين', data: archivedSuppliers, columns: supplierColumns, onUnarchive: unarchiveSupplier },
-        { key: 'sales', label: 'المبيعات', data: archivedSales, columns: salesColumns, onUnarchive: unarchiveSale },
-        { key: 'purchases', label: 'المشتريات', data: archivedPurchases, columns: purchasesColumns, onUnarchive: unarchivePurchase },
-        { key: 'inventory', label: 'المخزون', data: archivedInventory, columns: inventoryColumns, onUnarchive: unarchiveItem },
-        { key: 'fixedAssets', label: 'الأصول الثابتة', data: archivedFixedAssets, columns: fixedAssetColumns, onUnarchive: unarchiveFixedAsset },
-        { key: 'journal', label: 'القيود اليومية', data: archivedJournal, columns: journalColumns, onUnarchive: unarchiveJournalEntry },
-        { key: 'users', label: 'المستخدمين', data: archivedUsers, columns: userColumns, onUnarchive: unarchiveUser },
+    const tabs: { key: ArchiveTab, label: string, data: any[], columns: any[], onUnarchive: (id: string) => void, searchable: string[] }[] = [
+        { key: 'customers', label: 'العملاء', data: archivedCustomers, columns: customerColumns, onUnarchive: unarchiveCustomer, searchable: ['id', 'name', 'contact'] },
+        { key: 'suppliers', label: 'الموردين', data: archivedSuppliers, columns: supplierColumns, onUnarchive: unarchiveSupplier, searchable: ['id', 'name', 'contact'] },
+        { key: 'sales', label: 'المبيعات', data: archivedSales, columns: salesColumns, onUnarchive: unarchiveSale, searchable: ['id', 'customer', 'date'] },
+        { key: 'purchases', label: 'المشتريات', data: archivedPurchases, columns: purchasesColumns, onUnarchive: unarchivePurchase, searchable: ['id', 'supplier', 'date'] },
+        { key: 'inventory', label: 'المخزون', data: archivedInventory, columns: inventoryColumns, onUnarchive: unarchiveItem, searchable: ['id', 'name'] },
+        { key: 'fixedAssets', label: 'الأصول الثابتة', data: archivedFixedAssets, columns: fixedAssetColumns, onUnarchive: unarchiveFixedAsset, searchable: ['id', 'name'] },
+        { key: 'journal', label: 'القيود اليومية', data: archivedJournal, columns: journalColumns, onUnarchive: unarchiveJournalEntry, searchable: ['id', 'date', 'description'] },
+        { key: 'users', label: 'المستخدمين', data: archivedUsers, columns: userColumns, onUnarchive: unarchiveUser, searchable: ['name', 'username', 'role'] },
     ];
 
     const currentTab = tabs.find(t => t.key === activeTab);
@@ -117,19 +117,13 @@ const Archive: React.FC = () => {
 
             <div className="mt-8">
                 {currentTab && (
-                    <>
-                        <Table 
-                            columns={currentTab.columns} 
-                            data={currentTab.data}
-                            actions={['unarchive']}
-                            onUnarchive={(row) => currentTab.onUnarchive(row.id)}
-                        />
-                        {currentTab.data.length === 0 && (
-                             <div className="text-center py-10">
-                                <p className="text-gray-500 dark:text-gray-400">لا توجد سجلات مؤرشفة في هذا القسم.</p>
-                            </div>
-                        )}
-                    </>
+                    <DataTable 
+                        columns={currentTab.columns} 
+                        data={currentTab.data}
+                        actions={['unarchive']}
+                        onUnarchive={(row) => currentTab.onUnarchive(row.id)}
+                        searchableColumns={currentTab.searchable}
+                    />
                 )}
             </div>
         </div>

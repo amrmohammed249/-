@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useState, useEffect, useCallback, useMemo, useReducer } from 'react';
 import { get, set } from './idb-keyval';
 import * as seedData from '../data/initialSeedData';
 import type {
@@ -8,6 +8,7 @@ import type {
     Customer,
     FinancialYear,
     FixedAsset,
+    InventoryAdjustment,
     InventoryItem,
     JournalEntry,
     JournalLine,
@@ -36,21 +37,6 @@ const debounce = (func: (...args: any[]) => void, delay: number) => {
     };
 };
 
-const updateNodeBalanceInTree = (nodes: AccountNode[], accountId: string, balance: number): boolean => {
-    for (const node of nodes) {
-        if (node.id === accountId) {
-            node.balance = balance;
-            return true;
-        }
-        if (node.children) {
-            if (updateNodeBalanceInTree(node.children, accountId, balance)) {
-                return true;
-            }
-        }
-    }
-    return false;
-};
-
 const findAccountByCode = (nodes: AccountNode[], code: string): AccountNode | null => {
     for (const node of nodes) {
         if (node.code === code) return node;
@@ -62,29 +48,23 @@ const findAccountByCode = (nodes: AccountNode[], code: string): AccountNode | nu
     return null;
 };
 
-
-export const DataContext = createContext<any>(null);
-
 // Helper function to update an account's balance and propagate the change up to its parents
 const updateBalancesRecursively = (nodes: AccountNode[], accountId: string, amount: number): { updated: boolean; change: number } => {
     let totalChange = 0;
     let nodeUpdatedInChildren = false;
 
     for (const node of nodes) {
-        // Base case: Found the target node
         if (node.id === accountId) {
             node.balance = (node.balance || 0) + amount;
             return { updated: true, change: amount };
         }
 
-        // Recursive step: Search in children
         if (node.children) {
             const result = updateBalancesRecursively(node.children, accountId, amount);
             if (result.updated) {
-                // If a child was updated, update this parent node's balance
                 node.balance = (node.balance || 0) + result.change;
-                nodeUpdatedInChildren = true; // Mark that an update happened in this branch
-                totalChange += result.change; // Propagate the change amount up
+                nodeUpdatedInChildren = true;
+                totalChange += result.change;
             }
         }
     }
@@ -93,50 +73,295 @@ const updateBalancesRecursively = (nodes: AccountNode[], accountId: string, amou
 };
 
 
+const initialState = {
+    companyInfo: seedData.companyInfo,
+    printSettings: seedData.printSettingsData,
+    financialYear: seedData.financialYearData,
+    chartOfAccounts: seedData.chartOfAccountsData,
+    sequences: seedData.sequencesData,
+    unitDefinitions: seedData.unitDefinitionsData,
+    journal: seedData.journalData,
+    inventory: seedData.inventoryData,
+    inventoryAdjustments: seedData.inventoryAdjustmentsData,
+    sales: seedData.salesData,
+    purchases: seedData.purchasesData,
+    saleReturns: seedData.saleReturnsData,
+    purchaseReturns: seedData.purchaseReturnsData,
+    treasury: seedData.treasuryData,
+    customers: seedData.customersData,
+    suppliers: seedData.suppliersData,
+    users: seedData.usersData,
+    fixedAssets: seedData.fixedAssetsData,
+    activityLog: seedData.activityLogData,
+    notifications: seedData.notificationsData,
+};
+
+type AppState = typeof initialState;
+type Action = { type: string; payload?: any };
+
+function dataReducer(state: AppState, action: Action): AppState {
+    switch (action.type) {
+        case 'SET_STATE':
+            return action.payload;
+        
+        case 'ADD_LOG_AND_NOTIFICATION':
+            return {
+                ...state,
+                activityLog: action.payload.log ? [action.payload.log, ...state.activityLog] : state.activityLog,
+                notifications: action.payload.notification ? [action.payload.notification, ...state.notifications].slice(0, 50) : state.notifications,
+            };
+
+        case 'UPDATE_COMPANY_INFO':
+            return { ...state, companyInfo: action.payload };
+        case 'UPDATE_PRINT_SETTINGS':
+            return { ...state, printSettings: action.payload };
+        case 'UPDATE_FINANCIAL_YEAR':
+            return { ...state, financialYear: action.payload };
+
+        case 'MARK_NOTIFICATION_READ':
+            return { ...state, notifications: state.notifications.map(n => n.id === action.payload ? { ...n, read: true } : n) };
+        case 'MARK_ALL_NOTIFICATIONS_READ':
+            return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) };
+        
+        case 'ADD_ACCOUNT':
+            const addNodeToTree = (nodes: AccountNode[]): AccountNode[] => {
+                return nodes.map(node => {
+                    if (node.id === action.payload.parentId) {
+                        return { ...node, children: [...(node.children || []), action.payload.newAccount] };
+                    }
+                    if (node.children) {
+                        return { ...node, children: addNodeToTree(node.children) };
+                    }
+                    return node;
+                });
+            };
+            const newChartOfAccounts = action.payload.parentId
+                ? addNodeToTree(state.chartOfAccounts)
+                : [...state.chartOfAccounts, action.payload.newAccount];
+
+            return {
+                ...state,
+                chartOfAccounts: newChartOfAccounts,
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        
+        case 'UPDATE_OPENING_BALANCES':
+            return {
+                ...state,
+                customers: action.payload.customers,
+                suppliers: action.payload.suppliers,
+                chartOfAccounts: action.payload.chartOfAccounts,
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        
+        case 'RESET_TRANSACTIONAL_DATA':
+             return {
+                ...state,
+                ...action.payload,
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+
+        case 'ADD_UNIT_DEFINITION':
+            return {
+                ...state,
+                unitDefinitions: [...state.unitDefinitions, action.payload.newUnit],
+                sequences: { ...state.sequences, unit: state.sequences.unit + 1 },
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        
+        case 'ADD_JOURNAL_ENTRY': {
+            const { newEntry, chartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                journal: [newEntry, ...state.journal],
+                sequences: { ...state.sequences, journal: state.sequences.journal + 1 },
+                chartOfAccounts,
+                activityLog: [log, ...state.activityLog]
+            };
+        }
+        
+        case 'ARCHIVE_JOURNAL_ENTRY':
+        case 'UNARCHIVE_JOURNAL_ENTRY': {
+            const { updatedJournal, chartOfAccounts, log } = action.payload;
+            return { ...state, journal: updatedJournal, chartOfAccounts, activityLog: [log, ...state.activityLog] };
+        }
+        
+        case 'ADD_SALE': {
+            const { newSale, updatedInventory, updatedCustomers, journalEntry, updatedChartOfAccounts, log, notification } = action.payload;
+            return {
+                ...state,
+                chartOfAccounts: updatedChartOfAccounts,
+                journal: [journalEntry, ...state.journal],
+                sales: [newSale, ...state.sales],
+                inventory: updatedInventory,
+                customers: updatedCustomers,
+                sequences: { 
+                    ...state.sequences, 
+                    sale: state.sequences.sale + 1,
+                    journal: state.sequences.journal + 1,
+                },
+                activityLog: [log, ...state.activityLog],
+                notifications: [notification, ...state.notifications].slice(0, 50),
+            };
+        }
+
+        case 'ARCHIVE_SALE': {
+            const { updatedSales, updatedInventory, updatedCustomers, log, updatedJournal, chartOfAccounts } = action.payload;
+            return {
+                ...state,
+                sales: updatedSales,
+                inventory: updatedInventory,
+                customers: updatedCustomers,
+                journal: updatedJournal,
+                chartOfAccounts,
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+        
+        case 'ADD_PURCHASE': {
+            const { newPurchase, updatedInventory, updatedSuppliers, journalEntry, updatedChartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                chartOfAccounts: updatedChartOfAccounts,
+                journal: [journalEntry, ...state.journal],
+                purchases: [newPurchase, ...state.purchases],
+                inventory: updatedInventory,
+                suppliers: updatedSuppliers,
+                sequences: { 
+                    ...state.sequences, 
+                    purchase: state.sequences.purchase + 1,
+                    journal: state.sequences.journal + 1,
+                },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ARCHIVE_PURCHASE': {
+            const { updatedPurchases, updatedInventory, updatedSuppliers, log, updatedJournal, chartOfAccounts } = action.payload;
+            return {
+                ...state,
+                purchases: updatedPurchases,
+                inventory: updatedInventory,
+                suppliers: updatedSuppliers,
+                journal: updatedJournal,
+                chartOfAccounts,
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+        
+        case 'ADD_TREASURY_TRANSACTION': {
+            const { newTransaction, updatedCustomers, updatedSuppliers, journalEntry, updatedChartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                chartOfAccounts: updatedChartOfAccounts,
+                journal: [journalEntry, ...state.journal],
+                treasury: [newTransaction, ...state.treasury],
+                customers: updatedCustomers || state.customers,
+                suppliers: updatedSuppliers || state.suppliers,
+                sequences: { 
+                    ...state.sequences, 
+                    treasury: state.sequences.treasury + 1,
+                    journal: state.sequences.journal + 1,
+                },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ADD_INVENTORY_ADJUSTMENT': {
+            const { newAdjustment, updatedInventory, journalEntry, updatedChartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                chartOfAccounts: updatedChartOfAccounts,
+                journal: [journalEntry, ...state.journal],
+                inventoryAdjustments: [newAdjustment, ...state.inventoryAdjustments],
+                inventory: updatedInventory,
+                sequences: { 
+                    ...state.sequences, 
+                    inventoryAdjustment: state.sequences.inventoryAdjustment + 1,
+                    journal: state.sequences.journal + 1,
+                },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ARCHIVE_INVENTORY_ADJUSTMENT': {
+            const { updatedAdjustments, updatedInventory, log, updatedJournal, chartOfAccounts } = action.payload;
+            return {
+                ...state,
+                inventoryAdjustments: updatedAdjustments,
+                inventory: updatedInventory,
+                journal: updatedJournal,
+                chartOfAccounts,
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+        
+        case 'ADD_USER':
+        case 'UPDATE_USER':
+        case 'ARCHIVE_USER':
+        case 'UNARCHIVE_USER': {
+            return { ...state, users: action.payload.users, activityLog: [action.payload.log, ...state.activityLog] };
+        }
+        case 'ADD_CUSTOMER':
+        case 'UPDATE_CUSTOMER':
+        case 'ARCHIVE_CUSTOMER':
+        case 'UNARCHIVE_CUSTOMER': {
+            return { ...state, customers: action.payload.customers, sequences: { ...state.sequences, customer: action.payload.newSequence || state.sequences.customer }, activityLog: [action.payload.log, ...state.activityLog] };
+        }
+        case 'ADD_SUPPLIER':
+        case 'ARCHIVE_SUPPLIER':
+        case 'UNARCHIVE_SUPPLIER': {
+            return { ...state, suppliers: action.payload.suppliers, sequences: { ...state.sequences, supplier: action.payload.newSequence || state.sequences.supplier }, activityLog: [action.payload.log, ...state.activityLog] };
+        }
+        case 'ADD_ITEM':
+        case 'UPDATE_ITEM':
+        case 'ARCHIVE_ITEM':
+        case 'UNARCHIVE_ITEM': {
+            return { ...state, inventory: action.payload.inventory, sequences: action.payload.newSequences || state.sequences, activityLog: [action.payload.log, ...state.activityLog] };
+        }
+        
+        default:
+            return state;
+    }
+}
+
+
+export const DataContext = createContext<any>(null);
+
+const resetAccountBalances = (nodes: AccountNode[]): AccountNode[] => {
+    return nodes.map(node => {
+        const newNode = { ...node, balance: 0 };
+        if (node.children) {
+            newNode.children = resetAccountBalances(node.children);
+        }
+        return newNode;
+    });
+};
+
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // App state
-    const [isDataLoaded, setIsDataLoaded] = useState(false);
+    const [isDataLoaded, useStateIsDataLoaded] = useState(false);
     const [hasData, setHasData] = useState(false);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('saved');
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
     const [dataManager, setDataManager] = useState({ activeDatasetKey: '', datasets: [] as { key: string, name: string }[] });
-
-    // Data state
-    const [companyInfo, setCompanyInfo] = useState<CompanyInfo>(seedData.companyInfo);
-    const [printSettings, setPrintSettings] = useState<PrintSettings>(seedData.printSettingsData);
-    const [financialYear, setFinancialYear] = useState<FinancialYear>(seedData.financialYearData);
-    const [chartOfAccounts, setChartOfAccounts] = useState<AccountNode[]>(seedData.chartOfAccountsData);
-    const [sequences, setSequences] = useState<typeof seedData.sequencesData>(seedData.sequencesData);
-    const [unitDefinitions, setUnitDefinitions] = useState<UnitDefinition[]>(seedData.unitDefinitionsData);
-    const [journal, setJournal] = useState<JournalEntry[]>(seedData.journalData);
-    const [inventory, setInventory] = useState<InventoryItem[]>(seedData.inventoryData);
-    const [sales, setSales] = useState<Sale[]>(seedData.salesData);
-    const [purchases, setPurchases] = useState<Purchase[]>(seedData.purchasesData);
-    const [saleReturns, setSaleReturns] = useState<SaleReturn[]>(seedData.saleReturnsData);
-    const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(seedData.purchaseReturnsData);
-    const [treasury, setTreasury] = useState<TreasuryTransaction[]>(seedData.treasuryData);
-    const [customers, setCustomers] = useState<Customer[]>(seedData.customersData);
-    const [suppliers, setSuppliers] = useState<Supplier[]>(seedData.suppliersData);
-    const [users, setUsers] = useState<User[]>(seedData.usersData);
-    const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>(seedData.fixedAssetsData);
-    const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>(seedData.activityLogData);
-    const [notifications, setNotifications] = useState<Notification[]>(seedData.notificationsData);
-
-    const showToast = (message: string, type = 'success') => {
+    
+    const [data, dispatch] = useReducer(dataReducer, initialState);
+    
+    const showToast = useCallback((message: string, type = 'success') => {
         setToast({ show: true, message, type });
         setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
-    };
+    }, []);
     
     // --- Data Persistence ---
 
-    const saveAllData = useCallback(async (key: string, data: any) => {
+    const saveAllData = useCallback(async (key: string, dataToSave: any) => {
         if (!key) return;
         try {
-            setSaveStatus('saving');
-            await set(key, data);
+            await set(key, dataToSave);
             setSaveStatus('saved');
-            setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (e) {
             console.error("Error saving data:", e);
             setSaveStatus('error');
@@ -145,41 +370,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [showToast]);
 
     const debouncedSave = useMemo(() => debounce(saveAllData, 1500), [saveAllData]);
-
+    
     const loadDataset = useCallback(async (key: string) => {
-        const data = await get<any>(key);
-        if (data) {
-            setCompanyInfo(data.companyInfo || seedData.companyInfo);
-            
-            const loadedPrintSettings = data.printSettings || seedData.printSettingsData;
-            // Gracefully handle old data that might have a 'layout' property
-            if (loadedPrintSettings.layout) {
-                delete loadedPrintSettings.layout;
-            }
-            setPrintSettings({ ...seedData.printSettingsData, ...loadedPrintSettings });
-
-            setFinancialYear(data.financialYear || seedData.financialYearData);
-            setChartOfAccounts(data.chartOfAccounts || []);
-            setSequences(data.sequences || seedData.sequencesData);
-            setUnitDefinitions(data.unitDefinitions || seedData.unitDefinitionsData);
-            setJournal(data.journal || []);
-            const migratedInventory = (data.inventory || []).map((item: any) => ({
-                ...item,
-                units: item.units || [],
-            }));
-            setInventory(migratedInventory);
-            setSales(data.sales || []);
-            setPurchases(data.purchases || []);
-            setSaleReturns(data.saleReturns || []);
-            setPurchaseReturns(data.purchaseReturns || []);
-            setTreasury(data.treasury || []);
-            setCustomers(data.customers || []);
-            setSuppliers(data.suppliers || []);
-            setUsers(data.users || seedData.usersData);
-            setFixedAssets(data.fixedAssets || []);
-            setActivityLog(data.activityLog || []);
-            setNotifications(data.notifications || []);
+        const loadedData = await get<any>(key);
+        let finalState = { ...initialState };
+        if (loadedData) {
+            finalState.companyInfo = loadedData.companyInfo || seedData.companyInfo;
+            const loadedPrintSettings = loadedData.printSettings || seedData.printSettingsData;
+            finalState.printSettings = { ...seedData.printSettingsData, ...loadedPrintSettings };
+            finalState.financialYear = loadedData.financialYear || seedData.financialYearData;
+            finalState.chartOfAccounts = loadedData.chartOfAccounts || [];
+            finalState.sequences = loadedData.sequences || seedData.sequencesData;
+            finalState.unitDefinitions = loadedData.unitDefinitions || seedData.unitDefinitionsData;
+            finalState.journal = loadedData.journal || [];
+            finalState.inventory = (loadedData.inventory || []).map((item: any) => ({ ...item, units: item.units || [] }));
+            finalState.inventoryAdjustments = loadedData.inventoryAdjustments || [];
+            finalState.sales = loadedData.sales || [];
+            finalState.purchases = loadedData.purchases || [];
+            finalState.saleReturns = loadedData.saleReturns || [];
+            finalState.purchaseReturns = loadedData.purchaseReturns || [];
+            finalState.treasury = loadedData.treasury || [];
+            finalState.customers = loadedData.customers || [];
+            finalState.suppliers = loadedData.suppliers || [];
+            finalState.users = loadedData.users || seedData.usersData;
+            finalState.fixedAssets = loadedData.fixedAssets || [];
+            finalState.activityLog = loadedData.activityLog || [];
+            finalState.notifications = loadedData.notifications || [];
         }
+        dispatch({ type: 'SET_STATE', payload: finalState });
     }, []);
     
     // Initial Load
@@ -193,7 +411,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     await loadDataset(storedDataManager.activeDatasetKey);
                 }
             }
-            setIsDataLoaded(true);
+            useStateIsDataLoaded(true);
         };
         initialize();
     }, [loadDataset]);
@@ -201,23 +419,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Autosave on data change
     useEffect(() => {
         if (isDataLoaded && hasData && dataManager.activeDatasetKey) {
-            const allData = {
-                companyInfo, printSettings, financialYear, chartOfAccounts, sequences, journal, inventory,
-                sales, purchases, saleReturns, purchaseReturns, treasury,
-                customers, suppliers, users, fixedAssets, activityLog, notifications, unitDefinitions
-            };
-            debouncedSave(dataManager.activeDatasetKey, allData);
+            setSaveStatus('saving');
+            debouncedSave(dataManager.activeDatasetKey, data);
         }
-    }, [
-        companyInfo, printSettings, financialYear, chartOfAccounts, sequences, journal, inventory, sales,
-        purchases, saleReturns, purchaseReturns, treasury, customers, suppliers,
-        users, fixedAssets, activityLog, notifications, unitDefinitions, isDataLoaded, hasData, dataManager.activeDatasetKey, debouncedSave
-    ]);
+    }, [data, isDataLoaded, hasData, dataManager.activeDatasetKey, debouncedSave]);
 
+    const createActivityLog = useCallback((action: string, details: string): ActivityLogEntry | null => {
+        if (!currentUser) return null;
+        return {
+            id: `LOG-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser.id,
+            username: currentUser.name,
+            action,
+            details,
+        };
+    }, [currentUser]);
+
+    const createNotification = useCallback((message: string, type: 'info' | 'warning' | 'success', link?: string): Notification => {
+        return {
+            id: `NOTIF-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            message, type, link, read: false,
+        };
+    }, []);
 
     // --- Auth ---
     const login = (username: string, password: string): boolean => {
-        const user = users.find(u => u.username === username && u.password === password && !u.isArchived);
+        const user = data.users.find(u => u.username === username && u.password === password && !u.isArchived);
         if (user) {
             setCurrentUser(user);
             return true;
@@ -226,65 +455,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     const logout = () => setCurrentUser(null);
     
-    // --- Utils ---
-    const addActivityLog = useCallback((action: string, details: string) => {
-        if (!currentUser) return;
-        const newLog: ActivityLogEntry = {
-            id: `LOG-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            userId: currentUser.id,
-            username: currentUser.name,
-            action,
-            details,
-        };
-        setActivityLog(prev => [newLog, ...prev]);
-    }, [currentUser]);
-
     // --- Notifications ---
-    const addNotification = useCallback((message: string, type: 'info' | 'warning' | 'success', link?: string) => {
-        const newNotification: Notification = {
-            id: `NOTIF-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            message,
-            type,
-            link,
-            read: false,
-        };
-        setNotifications(prev => [newNotification, ...prev].slice(0, 50)); // Keep last 50
-    }, []);
-
-    const markNotificationAsRead = (id: string) => {
-        setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    };
-
-    const markAllNotificationsAsRead = () => {
-        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    };
-
+    const markNotificationAsRead = (id: string) => dispatch({ type: 'MARK_NOTIFICATION_READ', payload: id });
+    const markAllNotificationsAsRead = () => dispatch({ type: 'MARK_ALL_NOTIFICATIONS_READ' });
 
     // --- Data Management ---
     const createNewDataset = useCallback(async (name: string) => {
         const key = `dataset-${Date.now()}`;
         const newDataset = {
+            ...initialState,
             companyInfo: { ...seedData.companyInfo, name },
-            printSettings: seedData.printSettingsData,
-            financialYear: seedData.financialYearData,
-            chartOfAccounts: seedData.chartOfAccountsData,
-            sequences: seedData.sequencesData,
-            unitDefinitions: seedData.unitDefinitionsData,
-            journal: seedData.journalData,
-            inventory: seedData.inventoryData,
-            sales: seedData.salesData,
-            purchases: seedData.purchasesData,
-            saleReturns: seedData.saleReturnsData,
-            purchaseReturns: seedData.purchaseReturnsData,
-            treasury: seedData.treasuryData,
-            customers: seedData.customersData,
-            suppliers: seedData.suppliersData,
-            users: seedData.usersData,
-            fixedAssets: seedData.fixedAssetsData,
-            activityLog: seedData.activityLogData,
-            notifications: seedData.notificationsData,
         };
         await set(key, newDataset);
         const newManager = {
@@ -293,614 +473,796 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         await set('dataManager', newManager);
         
-        // Load the new data directly into state instead of reloading the page
-        await loadDataset(key);
-
+        dispatch({ type: 'SET_STATE', payload: newDataset });
         setDataManager(newManager);
         setHasData(true);
-    }, [dataManager.datasets, loadDataset]);
+    }, [dataManager.datasets]);
 
-    const updateCustomer = (updatedCustomer: Customer) => {
-        setCustomers(prev => prev.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
-        addActivityLog('تعديل عميل', `تم تعديل بيانات العميل ${updatedCustomer.name}`);
-    };
-
-    const addAccount = (data: { name: string; code: string; parentId: string | null; }): AccountNode => {
-        const newAccount: AccountNode = {
-            id: `ACC-${Date.now()}`, // Using timestamp for accounts is fine as they are not user-facing documents
-            name: data.name,
-            code: data.code,
-            balance: 0
-        };
-
-        if (data.parentId) {
-            const addNodeToTree = (nodes: AccountNode[]): AccountNode[] => {
-                return nodes.map(node => {
-                    if (node.id === data.parentId) {
-                        return { ...node, children: [...(node.children || []), newAccount] };
-                    }
-                    if (node.children) {
-                        return { ...node, children: addNodeToTree(node.children) };
-                    }
-                    return node;
-                });
-            };
-            setChartOfAccounts(prev => addNodeToTree(prev));
-        } else {
-            setChartOfAccounts(prev => [...prev, newAccount]);
+    const findAccountById = useCallback((nodes: AccountNode[], id: string): AccountNode | null => {
+        for (const node of nodes) {
+            if (node.id === id) return node;
+            if (node.children) {
+                const found = findAccountById(node.children, id);
+                if (found) return found;
+            }
         }
-        
-        addActivityLog('إضافة حساب', `تمت إضافة الحساب ${data.name} (${data.code})`);
+        return null;
+    }, []);
+
+    const addAccount = useCallback((accountData: { name: string; code: string; parentId: string | null; }): AccountNode => {
+        const newAccount: AccountNode = { id: `ACC-${Date.now()}`, ...accountData, balance: 0 };
+        dispatch({ type: 'ADD_ACCOUNT', payload: {
+            ...accountData,
+            newAccount,
+            log: createActivityLog('إضافة حساب', `تمت إضافة الحساب ${accountData.name} (${accountData.code})`)
+        }});
         return newAccount;
-    };
+    }, [createActivityLog]);
     
     const updateAllOpeningBalances = useCallback(({ accountUpdates, customerUpdates, supplierUpdates }: {
         accountUpdates: { accountId: string, balance: number }[],
         customerUpdates: { customerId: string, balance: number }[],
         supplierUpdates: { supplierId: string, balance: number }[],
     }) => {
-        // 1. Update customers
-        setCustomers(prev => {
-            const newCustomers = JSON.parse(JSON.stringify(prev));
-            customerUpdates.forEach(update => {
-                const customer = newCustomers.find((c: Customer) => c.id === update.customerId);
-                if (customer) customer.balance = update.balance;
-            });
-            return newCustomers;
+        const newCustomers = data.customers.map((c: Customer) => {
+            const update = customerUpdates.find(u => u.customerId === c.id);
+            return update ? { ...c, balance: update.balance } : c;
         });
     
-        // 2. Update suppliers
-        setSuppliers(prev => {
-            const newSuppliers = JSON.parse(JSON.stringify(prev));
-            supplierUpdates.forEach(update => {
-                const supplier = newSuppliers.find((s: Supplier) => s.id === update.supplierId);
-                if (supplier) supplier.balance = update.balance;
-            });
-            return newSuppliers;
+        const newSuppliers = data.suppliers.map((s: Supplier) => {
+            const update = supplierUpdates.find(u => u.supplierId === s.id);
+            return update ? { ...s, balance: update.balance } : s;
         });
-    
-        // 3. Update Chart of Accounts
-        setChartOfAccounts(prev => {
-            const newChart = JSON.parse(JSON.stringify(prev));
-    
-            // Apply direct account updates from the modal
-            accountUpdates.forEach(update => {
-                updateNodeBalanceInTree(newChart, update.accountId, update.balance);
-            });
-    
-            // Calculate and update control accounts
-            const totalCustomerBalance = customerUpdates.reduce((sum, u) => sum + u.balance, 0);
-            const totalSupplierBalance = supplierUpdates.reduce((sum, u) => sum + u.balance, 0);
-            
-            const customerAccountNode = findAccountByCode(newChart, '1103');
-            const supplierAccountNode = findAccountByCode(newChart, '2101');
-    
-            if (customerAccountNode) {
-                updateNodeBalanceInTree(newChart, customerAccountNode.id, totalCustomerBalance);
+
+        const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+
+        accountUpdates.forEach(update => {
+            const account = findAccountById(newChart, update.accountId);
+            if (account) {
+                const oldBalance = account.balance || 0;
+                const difference = update.balance - oldBalance;
+                if (difference !== 0) {
+                    updateBalancesRecursively(newChart, update.accountId, difference);
+                }
             }
-            if (supplierAccountNode) {
-                // Supplier balance is a liability (credit), so it should be negative in our system
-                updateNodeBalanceInTree(newChart, supplierAccountNode.id, -totalSupplierBalance);
-            }
-            
-            return newChart;
         });
         
+        const customerAccountNode = findAccountByCode(newChart, '1103');
+        if (customerAccountNode) {
+            const newTotalCustomerBalance = customerUpdates.reduce((sum, u) => sum + u.balance, 0);
+            const oldTotalCustomerBalance = customerAccountNode.balance || 0;
+            const difference = newTotalCustomerBalance - oldTotalCustomerBalance;
+            if(difference !== 0) {
+                 updateBalancesRecursively(newChart, customerAccountNode.id, difference);
+            }
+        }
+        
+        const supplierAccountNode = findAccountByCode(newChart, '2101');
+        if (supplierAccountNode) {
+            const newTotalSupplierBalance = supplierUpdates.reduce((sum, u) => sum + u.balance, 0);
+            // Supplier balances are credits, so they are negative in the chart.
+            const oldTotalSupplierBalance = supplierAccountNode.balance || 0;
+            const difference = (-newTotalSupplierBalance) - oldTotalSupplierBalance;
+             if(difference !== 0) {
+                updateBalancesRecursively(newChart, supplierAccountNode.id, difference);
+            }
+        }
+
+        dispatch({ type: 'UPDATE_OPENING_BALANCES', payload: {
+            customers: newCustomers,
+            suppliers: newSuppliers,
+            chartOfAccounts: newChart,
+            log: createActivityLog('تحديث الأرصدة الافتتاحية', `تم تحديث الأرصدة الافتتاحية للنظام.`)
+        }});
         showToast('تم تحديث الأرصدة الافتتاحية بنجاح.');
-        addActivityLog('تحديث الأرصدة الافتتاحية', `تم تحديث الأرصدة الافتتاحية للنظام.`);
-    }, [showToast, addActivityLog]);
+    }, [data.customers, data.suppliers, data.chartOfAccounts, createActivityLog, showToast, findAccountById]);
 
-    const addUnitDefinition = (name: string): UnitDefinition => {
-        const newIdNumber = sequences.unit;
-        const newUnit: UnitDefinition = {
-            id: `unit-${newIdNumber}`,
-            name: name,
-        };
-        let unitExists = false;
-        setUnitDefinitions(prev => {
-            if (prev.some(u => u.name === name)) {
-                showToast('هذه الوحدة موجودة بالفعل.', 'error');
-                unitExists = true;
-                return prev;
-            }
-            return [...prev, newUnit];
-        });
-        
-        if(!unitExists) {
-            setSequences(prev => ({...prev, unit: prev.unit + 1}));
-            addActivityLog('إضافة وحدة قياس', `تمت إضافة الوحدة ${name}`);
+    const addUnitDefinition = useCallback((name: string): UnitDefinition => {
+        if (data.unitDefinitions.some(u => u.name === name)) {
+            showToast('هذه الوحدة موجودة بالفعل.', 'error');
+            return data.unitDefinitions.find(u => u.name === name)!;
         }
+        
+        const newUnit: UnitDefinition = { id: `unit-${data.sequences.unit}`, name };
+        dispatch({ type: 'ADD_UNIT_DEFINITION', payload: {
+            newUnit,
+            log: createActivityLog('إضافة وحدة قياس', `تمت إضافة الوحدة ${name}`)
+        }});
         return newUnit;
-    };
-
-
-    // --- CRUD with Sequential Numbering ---
-    const addUser = (user: Omit<User, 'id'>) => {
-        const newUser = { ...user, id: `U${users.length + 1}` };
-        setUsers(prev => [...prev, newUser]);
-        addActivityLog('إضافة مستخدم', `تمت إضافة المستخدم ${user.name}`);
-        addNotification(`تمت إضافة المستخدم الجديد: ${user.name}`, 'info', '/settings');
-        return newUser;
-    };
-
-    const updateUser = (updatedUser: Partial<User> & { id: string }) => {
-        setUsers(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
-        addActivityLog('تعديل مستخدم', `تم تعديل بيانات المستخدم ${updatedUser.name}`);
-    };
-
-    const archiveUser = (id: string) => {
-        if (currentUser?.id === id) return { success: false, message: 'لا يمكن أرشفة المستخدم الحالي.' };
-        setUsers(prev => prev.map(u => u.id === id ? { ...u, isArchived: true } : u));
-        addActivityLog('أرشفة مستخدم', `تمت أرشفة المستخدم صاحب المعرف ${id}`);
-        return { success: true };
-    };
+    }, [data.unitDefinitions, data.sequences.unit, createActivityLog, showToast]);
     
-    const addCustomer = (customer: Omit<Customer, 'id'>): Customer => {
-        const newIdNumber = sequences.customer;
-        const newCustomer = { ...customer, id: `CUS-${String(newIdNumber).padStart(3, '0')}` };
-        setCustomers(prev => [...prev, newCustomer]);
-        setSequences(prev => ({...prev, customer: prev.customer + 1}));
-        addActivityLog('إضافة عميل', `تمت إضافة العميل ${customer.name}`);
-        addNotification(`تمت إضافة عميل جديد: ${customer.name}`, 'info', '/customers');
-        return newCustomer;
-    };
+    const addJournalEntry = useCallback((entry: Omit<JournalEntry, 'id'>): JournalEntry => {
+        const newIdNumber = data.sequences.journal;
+        const newEntry = { ...entry, id: `JV-${String(newIdNumber).padStart(3, '0')}` };
 
-
-    const archiveCustomer = (id: string) => {
-        const customer = customers.find(c => c.id === id);
-        if (customer?.balance !== 0) return { success: false, message: 'لا يمكن أرشفة عميل رصيده لا يساوي صفر.' };
-        setCustomers(prev => prev.map(c => c.id === id ? { ...c, isArchived: true } : c));
-        addActivityLog('أرشفة عميل', `تمت أرشفة العميل ${customer?.name}`);
-        return { success: true };
-    };
-
-    const addSale = (sale: Omit<Sale, 'id'>) => {
-        const LOW_STOCK_THRESHOLD = 10;
-        const newIdNumber = sequences.sale;
-        const newSale = { ...sale, id: `INV-${String(newIdNumber).padStart(3, '0')}` };
-        setSales(prev => [newSale, ...prev]);
-        setSequences(prev => ({ ...prev, sale: prev.sale + 1 }));
-
-        setInventory(prevInventory => {
-            const newInventory = JSON.parse(JSON.stringify(prevInventory));
-            sale.items.forEach(line => {
-                const itemIndex = newInventory.findIndex((i: InventoryItem) => i.id === line.itemId);
-                if (itemIndex !== -1) {
-                    const inventoryItem = newInventory[itemIndex];
-                    let quantityInBaseUnit = line.quantity;
-                    if (line.unitId !== 'base') {
-                        const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === line.unitId);
-                        if (packingUnit) {
-                            quantityInBaseUnit = line.quantity * packingUnit.factor;
-                        }
-                    }
-
-                    const oldStock = inventoryItem.stock;
-                    inventoryItem.stock -= quantityInBaseUnit;
-                    const newStock = inventoryItem.stock;
-                    if(oldStock > LOW_STOCK_THRESHOLD && newStock <= LOW_STOCK_THRESHOLD) {
-                        addNotification(`انخفاض مخزون الصنف "${line.itemName}" (${newStock} متبقي)`, 'warning', '/inventory');
-                    }
-                }
-            });
-            return newInventory;
+        const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        newEntry.lines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(newChart, line.accountId, amount);
         });
 
-        const customer = customers.find(c => c.name === sale.customer);
-        if(customer) {
-            updateCustomer({...customer, balance: customer.balance + sale.total});
-        }
-
-        addActivityLog('إضافة فاتورة مبيعات', `فاتورة رقم ${newSale.id} للعميل ${sale.customer}`);
-        addNotification(`فاتورة مبيعات جديدة #${newSale.id}`, 'success', '/sales');
-        return newSale;
-    }
+        dispatch({ type: 'ADD_JOURNAL_ENTRY', payload: {
+            newEntry,
+            chartOfAccounts: newChart,
+            log: createActivityLog('إضافة قيد يومية', `تمت إضافة القيد رقم ${newEntry.id}`)
+        }});
+        return newEntry;
+    }, [data.sequences.journal, data.chartOfAccounts, createActivityLog]);
     
-    const addPurchase = (purchase: Omit<Purchase, 'id'>) => {
-        const newIdNumber = sequences.purchase;
-        const newPurchase = { ...purchase, id: `BILL-${String(newIdNumber).padStart(3, '0')}` };
-        setPurchases(prev => [newPurchase, ...prev]);
-        setSequences(prev => ({ ...prev, purchase: prev.purchase + 1 }));
+    const archiveJournalEntry = useCallback((id: string, isArchiving: boolean = true) => {
+        const entry = data.journal.find(j => j.id === id);
+        if (!entry) return;
+        if (entry.isArchived === isArchiving) return;
+    
+        const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        const factor = isArchiving ? -1 : 1;
+        entry.lines.forEach(line => {
+            const amountToApply = (line.debit - line.credit) * factor;
+            updateBalancesRecursively(newChart, line.accountId, amountToApply);
+        });
         
-        setInventory(prevInventory => {
-            const newInventory = JSON.parse(JSON.stringify(prevInventory));
-            purchase.items.forEach(line => {
-                const itemIndex = newInventory.findIndex((i: InventoryItem) => i.id === line.itemId);
-                if (itemIndex !== -1) {
-                    const inventoryItem = newInventory[itemIndex];
-                    let quantityInBaseUnit = line.quantity;
-                     if (line.unitId !== 'base') {
-                        const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === line.unitId);
-                        if (packingUnit) {
-                            quantityInBaseUnit = line.quantity * packingUnit.factor;
-                        }
-                    }
-                    inventoryItem.stock += quantityInBaseUnit;
+        const updatedJournal = data.journal.map(j => j.id === id ? {...j, isArchived: isArchiving} : j);
+        const actionType = isArchiving ? 'ARCHIVE_JOURNAL_ENTRY' : 'UNARCHIVE_JOURNAL_ENTRY';
+        const logAction = isArchiving ? 'أرشفة قيد يومية' : 'استعادة قيد يومية';
+
+        dispatch({ type: actionType, payload: {
+            updatedJournal,
+            chartOfAccounts: newChart,
+            log: createActivityLog(logAction, `تمت ${isArchiving ? 'أرشفة' : 'استعادة'} القيد رقم ${id}`)
+        }});
+    }, [data.journal, data.chartOfAccounts, createActivityLog]);
+
+    const addSale = useCallback((sale: Omit<Sale, 'id' | 'journalEntryId'>) => {
+        const LOW_STOCK_THRESHOLD = 10;
+        const newSaleId = `INV-${String(data.sequences.sale).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        let costOfGoodsSold = 0;
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        let notification: Notification | null = null;
+        sale.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-            });
-            return newInventory;
-        });
-
-        const supplier = suppliers.find(s => s.name === purchase.supplier);
-        if(supplier) {
-            updateSupplier({...supplier, balance: supplier.balance + purchase.total});
-        }
-
-        addActivityLog('إضافة فاتورة مشتريات', `فاتورة رقم ${newPurchase.id} للمورد ${purchase.supplier}`);
-        addNotification(`فاتورة مشتريات جديدة #${newPurchase.id}`, 'success', '/purchases');
-        return newPurchase;
-    }
-
-    const addTreasuryTransaction = (tr: Omit<TreasuryTransaction, 'id' | 'balance'>) => {
-        const newIdNumber = sequences.treasury;
-        const newId = `TRN-${String(newIdNumber).padStart(3, '0')}`;
-        setSequences(prev => ({ ...prev, treasury: prev.treasury + 1 }));
-
-        const amountForTreasury = tr.type === 'سند صرف' ? -Math.abs(tr.amount) : Math.abs(tr.amount);
-
-        setChartOfAccounts(prevChart => {
-            const newChart = JSON.parse(JSON.stringify(prevChart));
-            updateBalancesRecursively(newChart, tr.treasuryAccountId, amountForTreasury);
-            if (tr.partyType === 'account' && tr.partyId) {
-                const amountForParty = -amountForTreasury;
-                updateBalancesRecursively(newChart, tr.partyId, amountForParty);
-            } else if (tr.partyType === 'customer' && tr.partyId) {
-                const customerAccountNode = findAccountByCode(newChart, '1103');
-                if(customerAccountNode) {
-                    // Receipt (قبض): Cr. A/R -> decrease balance (-)
-                    // Payment/Refund (صرف): Dr. A/R -> increase balance (+)
-                    const amountForCustomerGL = tr.type === 'سند صرف' ? Math.abs(tr.amount) : -Math.abs(tr.amount);
-                    updateBalancesRecursively(newChart, customerAccountNode.id, amountForCustomerGL);
-                }
-            } else if (tr.partyType === 'supplier' && tr.partyId) {
-                const supplierAccountNode = findAccountByCode(newChart, '2101');
-                if(supplierAccountNode) {
-                     const amountForParty = tr.type === 'سند صرف' ? -Math.abs(tr.amount) : Math.abs(tr.amount);
-                    updateBalancesRecursively(newChart, supplierAccountNode.id, amountForParty);
+                const oldStock = item.stock;
+                item.stock -= quantityInBaseUnit;
+                costOfGoodsSold += quantityInBaseUnit * item.purchasePrice;
+                if(oldStock > LOW_STOCK_THRESHOLD && item.stock <= LOW_STOCK_THRESHOLD) {
+                   notification = createNotification(`انخفاض مخزون الصنف "${line.itemName}" (${item.stock} متبقي)`, 'warning', '/inventory');
                 }
             }
-            return newChart;
         });
 
-        if (tr.partyType === 'customer' && tr.partyId) {
-            // Both receipts from and refunds to a customer decrease their balance (what they owe us).
-            const change = -Math.abs(tr.amount); 
-            setCustomers(prev => prev.map(c => c.id === tr.partyId ? { ...c, balance: c.balance + change } : c));
-        }
-        if (tr.partyType === 'supplier' && tr.partyId) {
-            const change = tr.type === 'سند صرف' ? -Math.abs(tr.amount) : Math.abs(tr.amount);
-            setSuppliers(prev => prev.map(s => s.id === tr.partyId ? { ...s, balance: s.balance + change } : s));
-        }
-        
-        const treasuryName = tr.treasuryAccountName;
-        
-        const newTransaction: TreasuryTransaction = { 
-            ...tr, 
-            id: newId, 
-            balance: 0, 
-            amount: amountForTreasury,
-            treasuryAccountName: treasuryName
-        };
-        setTreasury(prev => [newTransaction, ...prev]);
-        addActivityLog('إضافة حركة خزينة', `${tr.type} بمبلغ ${tr.amount} في ${treasuryName}`);
-        return newTransaction;
-    }
-    
-    // Derived data for treasuriesList to be used in transfer function
-    const treasuriesList = useMemo(() => {
-        const treasuryRoot = findAccountByCode(chartOfAccounts, '1101');
-        const children = treasuryRoot?.children || [];
-        const mainTreasuryTotal = {
-             name: 'الخزينة (الإجمالي)',
-             id: 'main-total',
-             balance: treasuryRoot?.balance || 0,
-             isTotal: true,
-        };
-        return [mainTreasuryTotal, ...children];
-    }, [chartOfAccounts]);
+        const updatedCustomers = data.customers.map(c => c.name === sale.customer ? {...c, balance: c.balance + sale.total} : c);
 
-    const transferTreasuryFunds = (fromTreasuryId: string, toTreasuryId: string, amount: number, notes?: string) => {
+        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103')!;
+        const salesAccount = findAccountByCode(data.chartOfAccounts, '4101')!;
+        const cogsAccount = findAccountByCode(data.chartOfAccounts, '4204')!;
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104')!;
+        
+        const journalEntryLines: JournalLine[] = [
+            { accountId: customerAccount.id, accountName: customerAccount.name, debit: sale.total, credit: 0 },
+            { accountId: salesAccount.id, accountName: salesAccount.name, debit: 0, credit: sale.total },
+            { accountId: cogsAccount.id, accountName: cogsAccount.name, debit: costOfGoodsSold, credit: 0 },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: costOfGoodsSold },
+        ];
+    
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalEntryLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: sale.date, description: `فاتورة مبيعات رقم ${newSaleId}`,
+            debit: sale.total + costOfGoodsSold, credit: sale.total + costOfGoodsSold, status: 'مرحل',
+            lines: journalEntryLines
+        };
+    
+        const newSale: Sale = { ...sale, id: newSaleId, journalEntryId: newJournalEntryId };
+        
+        dispatch({ type: 'ADD_SALE', payload: {
+            newSale, 
+            updatedInventory, 
+            updatedCustomers,
+            journalEntry: newJournalEntry,
+            updatedChartOfAccounts,
+            log: createActivityLog('إضافة فاتورة مبيعات', `فاتورة رقم ${newSale.id} للعميل ${sale.customer}`),
+            notification: notification || createNotification(`فاتورة مبيعات جديدة #${newSale.id}`, 'success', '/sales'),
+        }});
+    
+        return newSale;
+    }, [data.sequences.sale, data.sequences.journal, data.inventory, data.customers, data.chartOfAccounts, createActivityLog, createNotification]);
+    
+    const archiveSale = useCallback((id: string) => {
+        const sale = data.sales.find(s => s.id === id);
+        if (!sale || sale.isArchived) return { success: false, message: 'الفاتورة غير موجودة أو مؤرشفة بالفعل.' };
+
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        sale.items.forEach(line => {
+            const item = updatedInventory.find(i => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find(u => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+        const updatedCustomers = data.customers.map(c => c.name === sale.customer ? {...c, balance: c.balance - sale.total} : c);
+        const updatedSales = data.sales.map(s => s.id === id ? {...s, isArchived: true} : s);
+        
+        // Logic for reversing journal entry
+        const entryToReverse = data.journal.find(j => j.id === sale.journalEntryId);
+        let updatedJournal = data.journal;
+        let reversedChartOfAccounts = data.chartOfAccounts;
+        if (entryToReverse) {
+            const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+            entryToReverse.lines.forEach(line => {
+                const amountToReverse = line.credit - line.debit;
+                updateBalancesRecursively(newChart, line.accountId, amountToReverse);
+            });
+            reversedChartOfAccounts = newChart;
+            updatedJournal = data.journal.map(j => j.id === sale.journalEntryId ? {...j, isArchived: true} : j);
+        }
+
+        dispatch({ type: 'ARCHIVE_SALE', payload: {
+            updatedSales, updatedInventory, updatedCustomers,
+            updatedJournal, chartOfAccounts: reversedChartOfAccounts,
+            log: createActivityLog('أرشفة فاتورة مبيعات', `تمت أرشفة الفاتورة رقم ${id}`),
+        }});
+        return { success: true };
+    }, [data.sales, data.inventory, data.customers, data.journal, data.chartOfAccounts, createActivityLog]);
+
+    const addPurchase = useCallback((purchase: Omit<Purchase, 'id' | 'journalEntryId'>) => {
+        const newPurchaseId = `BILL-${String(data.sequences.purchase).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        purchase.items.forEach(line => {
+            const item = updatedInventory.find(i => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find(u => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+        const updatedSuppliers = data.suppliers.map(s => s.name === purchase.supplier ? {...s, balance: s.balance + purchase.total} : s);
+
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104')!;
+        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101')!;
+
+        const journalEntryLines: JournalLine[] = [
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: purchase.total, credit: 0 },
+            { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: 0, credit: purchase.total },
+        ];
+    
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalEntryLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: purchase.date, description: `فاتورة مشتريات رقم ${newPurchaseId}`,
+            debit: purchase.total, credit: purchase.total, status: 'مرحل',
+            lines: journalEntryLines,
+        };
+    
+        const newPurchase: Purchase = { ...purchase, id: newPurchaseId, journalEntryId: newJournalEntryId };
+        
+        dispatch({ type: 'ADD_PURCHASE', payload: {
+            newPurchase, 
+            updatedInventory, 
+            updatedSuppliers,
+            journalEntry: newJournalEntry,
+            updatedChartOfAccounts,
+            log: createActivityLog('إضافة فاتورة مشتريات', `فاتورة رقم ${newPurchase.id} للمورد ${purchase.supplier}`)
+        }});
+    
+        return newPurchase;
+    }, [data.sequences.purchase, data.sequences.journal, data.inventory, data.suppliers, data.chartOfAccounts, createActivityLog]);
+    
+    const archivePurchase = useCallback((id: string) => {
+        const purchase = data.purchases.find(p => p.id === id);
+        if (!purchase || purchase.isArchived) return { success: false, message: 'الفاتورة غير موجودة أو مؤرشفة بالفعل.' };
+
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        purchase.items.forEach(line => {
+            const item = updatedInventory.find(i => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find(u => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+        const updatedSuppliers = data.suppliers.map(s => s.name === purchase.supplier ? {...s, balance: s.balance - purchase.total} : s);
+        const updatedPurchases = data.purchases.map(p => p.id === id ? {...p, isArchived: true} : p);
+        
+        const entryToReverse = data.journal.find(j => j.id === purchase.journalEntryId);
+        let updatedJournal = data.journal;
+        let reversedChartOfAccounts = data.chartOfAccounts;
+        if (entryToReverse) {
+            const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+            entryToReverse.lines.forEach(line => {
+                updateBalancesRecursively(newChart, line.accountId, line.credit - line.debit);
+            });
+            reversedChartOfAccounts = newChart;
+            updatedJournal = data.journal.map(j => j.id === purchase.journalEntryId ? {...j, isArchived: true} : j);
+        }
+        dispatch({ type: 'ARCHIVE_PURCHASE', payload: {
+            updatedPurchases, updatedInventory, updatedSuppliers,
+            updatedJournal, chartOfAccounts: reversedChartOfAccounts,
+            log: createActivityLog('أرشفة فاتورة مشتريات', `تمت أرشفة الفاتورة رقم ${id}`),
+        }});
+        return { success: true };
+    }, [data.purchases, data.inventory, data.suppliers, data.journal, data.chartOfAccounts, createActivityLog]);
+
+    const addTreasuryTransaction = useCallback((tr: Omit<TreasuryTransaction, 'id' | 'balance' | 'journalEntryId'>) => {
+        const newId = `TRN-${String(data.sequences.treasury).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103')!;
+        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101')!;
+
+        let contraAccountId: string, contraAccountName: string;
+        let updatedCustomers: Customer[] | undefined;
+        let updatedSuppliers: Supplier[] | undefined;
+
+        if (tr.partyType === 'customer') {
+            contraAccountId = customerAccount.id;
+            contraAccountName = customerAccount.name;
+            updatedCustomers = data.customers.map(c => c.id === tr.partyId ? {...c, balance: c.balance + (tr.type === 'سند صرف' ? Math.abs(tr.amount) : -Math.abs(tr.amount))} : c);
+        } else if (tr.partyType === 'supplier') {
+            contraAccountId = supplierAccount.id;
+            contraAccountName = supplierAccount.name;
+            updatedSuppliers = data.suppliers.map(s => s.id === tr.partyId ? {...s, balance: s.balance + (tr.type === 'سند صرف' ? -Math.abs(tr.amount) : Math.abs(tr.amount))} : s);
+        } else {
+             const account = findAccountById(data.chartOfAccounts, tr.partyId!)!;
+             contraAccountId = account.id;
+             contraAccountName = account.name;
+        }
+        
+        const journalEntryLines: JournalLine[] = tr.type === 'سند قبض' ? [
+            { accountId: tr.treasuryAccountId, accountName: tr.treasuryAccountName, debit: Math.abs(tr.amount), credit: 0 },
+            { accountId: contraAccountId, accountName: contraAccountName, debit: 0, credit: Math.abs(tr.amount) },
+        ] : [
+            { accountId: contraAccountId, accountName: contraAccountName, debit: Math.abs(tr.amount), credit: 0 },
+            { accountId: tr.treasuryAccountId, accountName: tr.treasuryAccountName, debit: 0, credit: Math.abs(tr.amount) },
+        ];
+    
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalEntryLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: tr.date, description: tr.description, status: 'مرحل',
+            debit: Math.abs(tr.amount), credit: Math.abs(tr.amount),
+            lines: journalEntryLines,
+        };
+        
+        const amountForTreasury = tr.type === 'سند صرف' ? -Math.abs(tr.amount) : Math.abs(tr.amount);
+        const newTransaction: TreasuryTransaction = { ...tr, id: newId, balance: 0, amount: amountForTreasury, journalEntryId: newJournalEntryId };
+        
+        dispatch({ type: 'ADD_TREASURY_TRANSACTION', payload: {
+            newTransaction, 
+            updatedCustomers, 
+            updatedSuppliers,
+            journalEntry: newJournalEntry,
+            updatedChartOfAccounts,
+            log: createActivityLog('إضافة حركة خزينة', `${tr.type} بمبلغ ${tr.amount} في ${tr.treasuryAccountName}`),
+        }});
+        return newTransaction;
+    }, [data.sequences.treasury, data.sequences.journal, data.chartOfAccounts, data.customers, data.suppliers, createActivityLog, findAccountById]);
+    
+    const treasuriesList = useMemo(() => {
+        const treasuryRoot = findAccountByCode(data.chartOfAccounts, '1101');
+        if (!treasuryRoot) return [];
+        return [
+            { name: 'الخزينة (الإجمالي)', id: treasuryRoot.id, balance: treasuryRoot.balance || 0, isTotal: true },
+            ...(treasuryRoot.children || [])
+        ];
+    }, [data.chartOfAccounts]);
+
+    const transferTreasuryFunds = useCallback((fromTreasuryId: string, toTreasuryId: string, amount: number, notes?: string) => {
         const fromTreasury = treasuriesList.find((t: any) => t.id === fromTreasuryId);
         const toTreasury = treasuriesList.find((t: any) => t.id === toTreasuryId);
+        if (!fromTreasury || !toTreasury) { showToast('لم يتم العثور على الخزائن المحددة.', 'error'); return; }
 
-        if (!fromTreasury || !toTreasury) {
-            showToast('لم يتم العثور على الخزائن المحددة.', 'error');
-            return;
-        }
-
-        const descriptionForOutgoing = `تحويل إلى ${toTreasury.name}${notes ? ` - ${notes}` : ''}`;
-        const descriptionForIncoming = `تحويل من ${fromTreasury.name}${notes ? ` - ${notes}` : ''}`;
-
-        // Create outgoing transaction (saraf)
-        addTreasuryTransaction({
-            date: new Date().toISOString().slice(0, 10),
-            type: 'سند صرف',
-            treasuryAccountId: fromTreasuryId,
-            treasuryAccountName: fromTreasury.name,
-            description: descriptionForOutgoing,
-            amount: amount, // addTreasuryTransaction will handle making it negative
-            partyType: 'account',
-            partyId: toTreasuryId,
+        const description = `تحويل من ${fromTreasury.name} إلى ${toTreasury.name}${notes ? ` - ${notes}` : ''}`;
+        addTreasuryTransaction({ 
+            date: new Date().toISOString().slice(0, 10), 
+            type: 'سند صرف', treasuryAccountId: fromTreasuryId, treasuryAccountName: fromTreasury.name, 
+            description, amount, partyType: 'account', partyId: toTreasuryId 
         });
+    }, [addTreasuryTransaction, treasuriesList, showToast]);
 
-        // Create incoming transaction (qabd)
-        addTreasuryTransaction({
-            date: new Date().toISOString().slice(0, 10),
-            type: 'سند قبض',
-            treasuryAccountId: toTreasuryId,
-            treasuryAccountName: toTreasury.name,
-            description: descriptionForIncoming,
-            amount: amount,
-            partyType: 'account',
-            partyId: fromTreasuryId,
+    const addInventoryAdjustment = useCallback((adjustment: Omit<InventoryAdjustment, 'id' | 'journalEntryId'>): InventoryAdjustment => {
+        const newId = `ADJ-${String(data.sequences.inventoryAdjustment).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104')!;
+        
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        adjustment.items.forEach(line => {
+            const item = updatedInventory.find(i => i.id === line.itemId);
+            if (item) item.stock += (adjustment.type === 'إضافة' ? line.quantity : -line.quantity);
         });
-
-        addActivityLog('تحويل بين الخزائن', `تم تحويل ${amount} من ${fromTreasury.name} إلى ${toTreasury.name}`);
-    };
-
-    const addItem = (item: Omit<InventoryItem, 'id'>): InventoryItem => {
-        const newIdNumber = sequences.item;
-        const newPackingUnits = (item.units || []).map((p, index) => ({
-             ...p,
-             id: `PU-${sequences.packingUnit + index}`
-        }));
-
-        const newItem = { 
-            ...item, 
-            id: `ITM-${String(newIdNumber).padStart(3, '0')}`,
-            units: newPackingUnits
+    
+        const journalLines: JournalLine[] = adjustment.type === 'صرف'
+            ? [
+                { accountId: adjustment.contraAccountId, accountName: adjustment.contraAccountName, debit: adjustment.totalValue, credit: 0 },
+                { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: adjustment.totalValue }
+              ]
+            : [
+                { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: adjustment.totalValue, credit: 0 },
+                { accountId: adjustment.contraAccountId, accountName: adjustment.contraAccountName, debit: 0, credit: adjustment.totalValue }
+              ];
+        
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: adjustment.date, 
+            description: `تسوية مخزون رقم ${newId}: ${adjustment.description}`,
+            debit: adjustment.totalValue, 
+            credit: adjustment.totalValue, 
+            status: 'مرحل', 
+            lines: journalLines,
         };
+        
+        const newAdjustment: InventoryAdjustment = { ...adjustment, id: newId, journalEntryId: newJournalEntryId };
+        
+        dispatch({ type: 'ADD_INVENTORY_ADJUSTMENT', payload: {
+            newAdjustment, 
+            updatedInventory,
+            journalEntry: newJournalEntry,
+            updatedChartOfAccounts,
+            log: createActivityLog('إضافة تسوية مخزون', `تمت إضافة التسوية رقم ${newId}`)
+        }});
+        showToast('تمت إضافة تسوية المخزون بنجاح.');
+        return newAdjustment;
+    }, [data.sequences.inventoryAdjustment, data.sequences.journal, data.inventory, data.chartOfAccounts, createActivityLog, showToast]);
 
-        setInventory(prev => [newItem, ...prev]);
-        setSequences(prev => ({
-            ...prev, 
-            item: prev.item + 1,
-            packingUnit: prev.packingUnit + newPackingUnits.length
-        }));
-        addActivityLog('إضافة صنف', `تمت إضافة الصنف ${item.name}`);
-        addNotification(`تمت إضافة الصنف "${item.name}" إلى المخزون.`, 'success', '/inventory');
-        return newItem;
-    };
-
-     const addSaleReturn = (sr: Omit<SaleReturn, 'id'>) => {
-        const newIdNumber = sequences.saleReturn;
-        const newReturn = { ...sr, id: `SR-${String(newIdNumber).padStart(3, '0')}` };
-        setSaleReturns(prev => [newReturn, ...prev]);
-        setSequences(prev => ({...prev, saleReturn: prev.saleReturn + 1}));
-
-        setInventory(prevInventory => {
-            const newInventory = JSON.parse(JSON.stringify(prevInventory));
-            sr.items.forEach(line => {
-                const itemIndex = newInventory.findIndex((i: InventoryItem) => i.id === line.itemId);
-                if (itemIndex !== -1) {
-                    const inventoryItem = newInventory[itemIndex];
-                    let quantityInBaseUnit = line.quantity;
-                     if (line.unitId !== 'base') {
-                        const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === line.unitId);
-                        if (packingUnit) {
-                            quantityInBaseUnit = line.quantity * packingUnit.factor;
-                        }
-                    }
-                    inventoryItem.stock += quantityInBaseUnit;
-                }
-            });
-            return newInventory;
+    const archiveInventoryAdjustment = useCallback((id: string) => {
+        const adj = data.inventoryAdjustments.find(a => a.id === id);
+        if (!adj || adj.isArchived) return { success: false, message: 'التسوية غير موجودة أو مؤرشفة.' };
+    
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        adj.items.forEach(line => {
+            const item = updatedInventory.find(i => i.id === line.itemId);
+            if (item) item.stock -= (adj.type === 'إضافة' ? line.quantity : -line.quantity);
         });
+        const updatedAdjustments = data.inventoryAdjustments.map(a => a.id === id ? {...a, isArchived: true} : a);
 
-        const customer = customers.find(c => c.name === sr.customer);
-        if(customer) {
-            updateCustomer({...customer, balance: customer.balance - sr.total});
+        const entryToReverse = data.journal.find(j => j.id === adj.journalEntryId);
+        let updatedJournal = data.journal;
+        let reversedChartOfAccounts = data.chartOfAccounts;
+        if(entryToReverse){
+            const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+            entryToReverse.lines.forEach(line => { updateBalancesRecursively(newChart, line.accountId, line.credit - line.debit); });
+            reversedChartOfAccounts = newChart;
+            updatedJournal = data.journal.map(j => j.id === adj.journalEntryId ? {...j, isArchived: true} : j);
         }
 
-        addActivityLog('إضافة مرتجع مبيعات', `مرتجع رقم ${newReturn.id} من العميل ${sr.customer}`);
-        addNotification(`مرتجع مبيعات جديد #${newReturn.id}`, 'success', '/sales-returns');
-        return newReturn;
-    };
+        dispatch({ type: 'ARCHIVE_INVENTORY_ADJUSTMENT', payload: {
+            updatedAdjustments, updatedInventory,
+            updatedJournal, chartOfAccounts: reversedChartOfAccounts,
+            log: createActivityLog('أرشفة تسوية مخزون', `تمت أرشفة التسوية رقم ${id}`)
+        }});
+        return { success: true };
+    }, [data.inventoryAdjustments, data.inventory, data.journal, data.chartOfAccounts, createActivityLog]);
 
-    const addPurchaseReturn = (pr: Omit<PurchaseReturn, 'id'>) => {
-        const newIdNumber = sequences.purchaseReturn;
-        const newReturn = { ...pr, id: `PR-${String(newIdNumber).padStart(3, '0')}` };
-        setPurchaseReturns(prev => [newReturn, ...prev]);
-        setSequences(prev => ({...prev, purchaseReturn: prev.purchaseReturn + 1}));
+    const genericCRUD = useCallback((domain: string, action: 'add' | 'update' | 'archive' | 'unarchive', payload: any) => {
+        const domainPlural = `${domain}s`;
+        const stateDomain = (data as any)[domainPlural];
+        let newDomainState;
+        let logAction = '';
+        let logDetails = '';
 
-        setInventory(prevInventory => {
-            const newInventory = JSON.parse(JSON.stringify(prevInventory));
-            pr.items.forEach(line => {
-                const itemIndex = newInventory.findIndex((i: InventoryItem) => i.id === line.itemId);
-                if (itemIndex !== -1) {
-                    const inventoryItem = newInventory[itemIndex];
-                    let quantityInBaseUnit = line.quantity;
-                    if (line.unitId !== 'base') {
-                        const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === line.unitId);
-                        if (packingUnit) {
-                            quantityInBaseUnit = line.quantity * packingUnit.factor;
-                        }
-                    }
-                    inventoryItem.stock -= quantityInBaseUnit;
-                }
-            });
-            return newInventory;
-        });
+        let newSequence;
 
-        const supplier = suppliers.find(s => s.name === pr.supplier);
-        if(supplier) {
-            updateSupplier({...supplier, balance: supplier.balance - pr.total});
+        switch(action) {
+            case 'add':
+                const newIdNumber = (data.sequences as any)[domain]++;
+                const newItem = { ...payload, id: `${domain.toUpperCase().substring(0,3)}-${String(newIdNumber).padStart(3, '0')}` };
+                newDomainState = [...stateDomain, newItem];
+                logAction = `إضافة ${domain}`;
+                logDetails = `تمت إضافة ${payload.name}`;
+                newSequence = newIdNumber + 1;
+                break;
+            case 'update':
+                newDomainState = stateDomain.map((i: any) => i.id === payload.id ? { ...i, ...payload } : i);
+                logAction = `تعديل ${domain}`;
+                logDetails = `تم تعديل ${payload.name}`;
+                break;
+            case 'archive':
+                newDomainState = stateDomain.map((i: any) => i.id === payload.id ? { ...i, isArchived: true } : i);
+                logAction = `أرشفة ${domain}`;
+                logDetails = `تمت أرشفة ${payload.name}`;
+                break;
+            case 'unarchive':
+                newDomainState = stateDomain.map((i: any) => i.id === payload.id ? { ...i, isArchived: false } : i);
+                logAction = `استعادة ${domain}`;
+                logDetails = `تمت استعادة ${payload.name}`;
+                break;
         }
 
-        addActivityLog('إضافة مرتجع مشتريات', `مرتجع رقم ${newReturn.id} للمورد ${pr.supplier}`);
-        addNotification(`مرتجع مشتريات جديد #${newReturn.id}`, 'success', '/purchases-returns');
-        return newReturn;
-    };
-
-    const addJournalEntry = (entry: Omit<JournalEntry, 'id'>) => {
-        const newIdNumber = sequences.journal;
-        const newEntry = { ...entry, id: `JV-${String(newIdNumber).padStart(3, '0')}` };
-        setJournal(prev => [newEntry, ...prev]);
-        setSequences(prev => ({ ...prev, journal: prev.journal + 1 }));
-
-        setChartOfAccounts(prevChart => {
-            const newChart = JSON.parse(JSON.stringify(prevChart));
-            newEntry.lines.forEach(line => {
-                const amount = line.debit - line.credit;
-                updateBalancesRecursively(newChart, line.accountId, amount);
-            });
-            return newChart;
+        dispatch({
+            type: `${action.toUpperCase()}_${domain.toUpperCase()}`,
+            payload: {
+                [domainPlural]: newDomainState,
+                log: createActivityLog(logAction, logDetails),
+                newSequence,
+            }
         });
+        return newDomainState[newDomainState.length - 1];
 
-        addActivityLog('إضافة قيد يومية', `تمت إضافة القيد رقم ${newEntry.id}`);
-        return newEntry;
+    }, [data.sequences, createActivityLog]);
+    
+    // --- CRUD with Sequential Numbering ---
+    const addUser = (user: Omit<User, 'id'>) => {
+        const newUser = { ...user, id: `U${data.users.length + 1}` };
+        dispatch({ type: 'ADD_USER', payload: { users: [...data.users, newUser], log: createActivityLog('إضافة مستخدم', `تمت إضافة المستخدم ${user.name}`) } });
+    };
+    const updateUser = (updatedUser: Partial<User> & { id: string }) => {
+        dispatch({ type: 'UPDATE_USER', payload: { users: data.users.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u), log: createActivityLog('تعديل مستخدم', `تم تعديل بيانات المستخدم ${updatedUser.name}`) } });
+    };
+    const archiveUser = (id: string) => {
+        if (currentUser?.id === id) return { success: false, message: 'لا يمكن أرشفة المستخدم الحالي.' };
+        dispatch({ type: 'ARCHIVE_USER', payload: { users: data.users.map(u => u.id === id ? { ...u, isArchived: true } : u), log: createActivityLog('أرشفة مستخدم', `تمت أرشفة المستخدم صاحب المعرف ${id}`) } });
+        return { success: true };
+    };
+    const unarchiveUser = (id:string) => dispatch({ type: 'UNARCHIVE_USER', payload: { users: data.users.map(u => u.id === id ? { ...u, isArchived: false } : u), log: createActivityLog('إلغاء أرشفة مستخدم', `تم إلغاء أرشفة المستخدم صاحب المعرف ${id}`) } });
+    
+    const addCustomer = (customer: Omit<Customer, 'id'>): Customer => {
+        const newIdNumber = data.sequences.customer;
+        const newCustomer = { ...customer, id: `CUS-${String(newIdNumber).padStart(3, '0')}` };
+        dispatch({ type: 'ADD_CUSTOMER', payload: { customers: [...data.customers, newCustomer], newSequence: newIdNumber + 1, log: createActivityLog('إضافة عميل', `تمت إضافة العميل ${customer.name}`) } });
+        return newCustomer;
+    };
+    const updateCustomer = (updatedCustomer: Customer) => {
+        dispatch({ type: 'UPDATE_CUSTOMER', payload: { customers: data.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c), log: createActivityLog('تعديل عميل', `تم تعديل بيانات العميل ${updatedCustomer.name}`) } });
+    };
+    const archiveCustomer = (id: string) => {
+        const customer = data.customers.find(c => c.id === id);
+        if (!customer) return { success: false, message: 'العميل غير موجود.' };
+        if (customer.balance !== 0) return { success: false, message: 'لا يمكن أرشفة عميل رصيده لا يساوي صفر.' };
+        dispatch({ type: 'ARCHIVE_CUSTOMER', payload: { customers: data.customers.map(c => c.id === id ? {...c, isArchived: true} : c), log: createActivityLog('أرشفة عميل', `تمت أرشفة العميل ${customer.name}`) } });
+        return { success: true };
+    };
+    const unarchiveCustomer = (id: string) => {
+        dispatch({ type: 'UNARCHIVE_CUSTOMER', payload: { customers: data.customers.map(c => c.id === id ? {...c, isArchived: false} : c), log: createActivityLog('استعادة عميل', `تمت استعادة العميل صاحب المعرف ${id}`) } });
     };
 
     const addSupplier = (supplier: Omit<Supplier, 'id'>): Supplier => {
-        const newIdNumber = sequences.supplier;
+        const newIdNumber = data.sequences.supplier;
         const newSupplier = { ...supplier, id: `SUP-${String(newIdNumber).padStart(3, '0')}` };
-        setSuppliers(prev => [...prev, newSupplier]);
-        setSequences(prev => ({...prev, supplier: prev.supplier + 1}));
-        addActivityLog('إضافة مورد', `تمت إضافة المورد ${supplier.name}`);
-        addNotification(`تمت إضافة مورد جديد: ${supplier.name}`, 'info', '/suppliers');
+        dispatch({ type: 'ADD_SUPPLIER', payload: { suppliers: [...data.suppliers, newSupplier], newSequence: newIdNumber + 1, log: createActivityLog('إضافة مورد', `تمت إضافة المورد ${supplier.name}`) } });
         return newSupplier;
     };
-
-    // --- Derived Data ---
-    const totalCashBalance = useMemo(() => {
-        const treasuryRoot = findAccountByCode(chartOfAccounts, '1101');
-        return treasuryRoot?.balance || 0;
-    }, [chartOfAccounts]);
-    const totalReceivables = useMemo(() => customers.reduce((sum, c) => sum + (c.balance > 0 ? c.balance : 0), 0), [customers]);
-    const totalPayables = useMemo(() => suppliers.reduce((sum, s) => sum + (s.balance > 0 ? s.balance : 0), 0), [suppliers]);
-    const inventoryValue = useMemo(() => inventory.reduce((sum, i) => sum + (i.stock * i.purchasePrice), 0), [inventory]);
-    const recentTransactions: RecentTransaction[] = useMemo(() => {
-        const latestSales = sales.filter(s => !s.isArchived).slice(0, 3).map(s => ({ type: 'sale' as const, id: s.id, date: s.date, partyName: s.customer, total: s.total, status: s.status }));
-        const latestPurchases = purchases.filter(p => !p.isArchived).slice(0, 3).map(p => ({ type: 'purchase' as const, id: p.id, date: p.date, partyName: p.supplier, total: p.total, status: p.status }));
-        return [...latestSales, ...latestPurchases].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
-    }, [sales, purchases]);
-    
-    const topCustomers = useMemo(() => [...customers].sort((a,b) => b.balance - a.balance).slice(0, 5), [customers]);
-    
-    // Memoize all filtered data to prevent unnecessary re-renders
-    const activeCustomers = useMemo(() => customers.filter(c => !c.isArchived), [customers]);
-    const archivedCustomers = useMemo(() => customers.filter(c => c.isArchived), [customers]);
-    const activeSuppliers = useMemo(() => suppliers.filter(s => !s.isArchived), [suppliers]);
-    const archivedSuppliers = useMemo(() => suppliers.filter(s => s.isArchived), [suppliers]);
-    const activeInventory = useMemo(() => inventory.filter(i => !i.isArchived), [inventory]);
-    const archivedInventory = useMemo(() => inventory.filter(i => i.isArchived), [inventory]);
-    const activeSales = useMemo(() => sales.filter(s => !s.isArchived), [sales]);
-    const archivedSales = useMemo(() => sales.filter(s => s.isArchived), [sales]);
-    const activePurchases = useMemo(() => purchases.filter(p => !p.isArchived), [purchases]);
-    const archivedPurchases = useMemo(() => purchases.filter(p => p.isArchived), [purchases]);
-    const activeSaleReturns = useMemo(() => saleReturns.filter(sr => !sr.isArchived), [saleReturns]);
-    const archivedSaleReturns = useMemo(() => saleReturns.filter(sr => sr.isArchived), [saleReturns]);
-    const activePurchaseReturns = useMemo(() => purchaseReturns.filter(pr => !pr.isArchived), [purchaseReturns]);
-    const archivedPurchaseReturns = useMemo(() => purchaseReturns.filter(pr => pr.isArchived), [purchaseReturns]);
-    const activeUsers = useMemo(() => users.filter(u => !u.isArchived), [users]);
-    const archivedUsers = useMemo(() => users.filter(u => u.isArchived), [users]);
-    const activeFixedAssets = useMemo(() => fixedAssets.filter(fa => !fa.isArchived), [fixedAssets]);
-    const archivedFixedAssets = useMemo(() => fixedAssets.filter(fa => fa.isArchived), [fixedAssets]);
-    const activeJournal = useMemo(() => journal.filter(j => !j.isArchived), [journal]);
-    const archivedJournal = useMemo(() => journal.filter(j => j.isArchived), [journal]);
-
-
-    const unarchiveCustomer = (id: string) => {
-        setCustomers(prev => prev.map(c => c.id === id ? { ...c, isArchived: false } : c));
-        addActivityLog('استعادة عميل', `تمت استعادة العميل صاحب المعرف ${id}`);
-    };
-
-    // Placeholder for other unarchive functions
-    const unarchiveSupplier = (id: string) => {};
-    const unarchiveSale = (id: string) => {};
-    const unarchivePurchase = (id: string) => {};
-    const unarchiveItem = (id: string) => {};
-    const unarchiveJournalEntry = (id: string) => {};
-    const unarchiveUser = (id: string) => {};
-    const unarchiveFixedAsset = (id: string) => {};
-    const archiveSale = (id: string) => ({ success: true });
-    const archivePurchase = (id: string) => ({ success: true });
-    const archiveItem = (id: string) => ({ success: true });
-    const archiveJournalEntry = (id: string) => {
-        const entry = journal.find(j => j.id === id);
-        if (!entry) {
-            return { success: false, message: "القيد غير موجود" };
-        }
-        setJournal(prev => prev.map(j => j.id === id ? { ...j, isArchived: true } : j));
-        addActivityLog('أرشفة قيد يومية', `تمت أرشفة القيد رقم ${id}`);
+    const updateSupplier = useCallback((supplier: Supplier) => {}, []);
+    const archiveSupplier = (id: string) => {
+        const supplier = data.suppliers.find(c => c.id === id);
+        if (!supplier) return { success: false, message: 'المورد غير موجود.' };
+        if (supplier.balance !== 0) return { success: false, message: 'لا يمكن أرشفة مورد رصيده لا يساوي صفر.' };
+        dispatch({ type: 'ARCHIVE_SUPPLIER', payload: { suppliers: data.suppliers.map(s => s.id === id ? {...s, isArchived: true} : s), log: createActivityLog('أرشفة مورد', `تمت أرشفة المورد ${supplier.name}`) } });
         return { success: true };
     };
-    const archiveFixedAsset = (id: string) => ({ success: true });
+    const unarchiveSupplier = (id:string) => {
+        dispatch({ type: 'UNARCHIVE_SUPPLIER', payload: { suppliers: data.suppliers.map(s => s.id === id ? {...s, isArchived: false} : s), log: createActivityLog('إلغاء أرشفة مورد', `تم إلغاء أرشفة المورد صاحب المعرف ${id}`) } });
+    };
+
+    const addItem = (item: Omit<InventoryItem, 'id'>): InventoryItem => {
+        const newIdNumber = data.sequences.item;
+        const newPackingUnitStart = data.sequences.packingUnit;
+        const newPackingUnits = (item.units || []).map((p, index) => ({ ...p, id: `PU-${newPackingUnitStart + index}` }));
+        const newItem = { ...item, id: `ITM-${String(newIdNumber).padStart(3, '0')}`, units: newPackingUnits };
+        
+        dispatch({ type: 'ADD_ITEM', payload: {
+            inventory: [newItem, ...data.inventory],
+            newSequences: { ...data.sequences, item: newIdNumber + 1, packingUnit: newPackingUnitStart + newPackingUnits.length },
+            log: createActivityLog('إضافة صنف', `تمت إضافة الصنف ${item.name}`),
+        }});
+        return newItem;
+    };
+    const updateItem = (updatedItem: InventoryItem) => {
+        dispatch({ type: 'UPDATE_ITEM', payload: {
+            inventory: data.inventory.map(i => i.id === updatedItem.id ? updatedItem : i),
+            log: createActivityLog('تعديل صنف', `تم تعديل بيانات الصنف ${updatedItem.name}`),
+        }});
+        showToast(`تم تحديث الصنف "${updatedItem.name}" بنجاح.`);
+    };
+    const archiveItem = (id: string) => {
+        const item = data.inventory.find(i => i.id === id);
+        if (!item) return { success: false, message: "الصنف غير موجود." };
+        if (item.stock !== 0) return { success: false, message: "لا يمكن أرشفة صنف رصيده لا يساوي صفر." };
+        dispatch({ type: 'ARCHIVE_ITEM', payload: { inventory: data.inventory.map(i => i.id === id ? {...i, isArchived: true} : i), log: createActivityLog('أرشفة صنف', `تمت أرشفة الصنف ${item.name}`) } });
+        return { success: true };
+    };
+    const unarchiveItem = (id: string) => {
+        dispatch({ type: 'UNARCHIVE_ITEM', payload: { inventory: data.inventory.map(i => i.id === id ? {...i, isArchived: false} : i), log: createActivityLog('إلغاء أرشفة صنف', `تم إلغاء أرشفة الصنف صاحب المعرف ${id}`) } });
+    };
+    
+    // --- Derived Data ---
+    const totalCashBalance = useMemo(() => {
+        const treasuryRoot = findAccountByCode(data.chartOfAccounts, '1101');
+        if (!treasuryRoot) {
+            return 0;
+        }
+        return (treasuryRoot.children || []).reduce((sum, child) => sum + (child.balance || 0), 0);
+    }, [data.chartOfAccounts]);
+    const totalReceivables = useMemo(() => data.customers.reduce((sum, c) => sum + (c.balance > 0 ? c.balance : 0), 0), [data.customers]);
+    const totalPayables = useMemo(() => data.suppliers.reduce((sum, s) => sum + (s.balance > 0 ? s.balance : 0), 0), [data.suppliers]);
+    const inventoryValue = useMemo(() => data.inventory.reduce((sum, i) => sum + (i.stock * i.purchasePrice), 0), [data.inventory]);
+    const recentTransactions: RecentTransaction[] = useMemo(() => {
+        const latestSales = data.sales.filter(s => !s.isArchived).slice(0, 3).map(s => ({ type: 'sale' as const, id: s.id, date: s.date, partyName: s.customer, total: s.total, status: s.status }));
+        const latestPurchases = data.purchases.filter(p => !p.isArchived).slice(0, 3).map(p => ({ type: 'purchase' as const, id: p.id, date: p.date, partyName: p.supplier, total: p.total, status: p.status }));
+        return [...latestSales, ...latestPurchases].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+    }, [data.sales, data.purchases]);
+    const topCustomers = useMemo(() => [...data.customers].sort((a,b) => b.balance - a.balance).slice(0, 5), [data.customers]);
+    
+    // Memoize all filtered data to prevent unnecessary re-renders
+    const activeData = useMemo(() => ({
+        customers: data.customers.filter(c => !c.isArchived),
+        suppliers: data.suppliers.filter(s => !s.isArchived),
+        inventory: data.inventory.filter(i => !i.isArchived),
+        inventoryAdjustments: data.inventoryAdjustments.filter(i => !i.isArchived),
+        sales: data.sales.filter(s => !s.isArchived),
+        purchases: data.purchases.filter(p => !p.isArchived),
+        saleReturns: data.saleReturns.filter(sr => !sr.isArchived),
+        purchaseReturns: data.purchaseReturns.filter(pr => !pr.isArchived),
+        users: data.users.filter(u => !u.isArchived),
+        fixedAssets: data.fixedAssets.filter(fa => !fa.isArchived),
+        journal: data.journal.filter(j => !j.isArchived),
+    }), [data]);
+    
+    const archivedData = useMemo(() => ({
+        customers: data.customers.filter(c => c.isArchived),
+        suppliers: data.suppliers.filter(s => s.isArchived),
+        inventory: data.inventory.filter(i => i.isArchived),
+        inventoryAdjustments: data.inventoryAdjustments.filter(i => i.isArchived),
+        sales: data.sales.filter(s => s.isArchived),
+        purchases: data.purchases.filter(p => p.isArchived),
+        saleReturns: data.saleReturns.filter(sr => sr.isArchived),
+        purchaseReturns: data.purchaseReturns.filter(pr => pr.isArchived),
+        users: data.users.filter(u => u.isArchived),
+        fixedAssets: data.fixedAssets.filter(fa => fa.isArchived),
+        journal: data.journal.filter(j => j.isArchived),
+    }), [data]);
+
+    const updateCompanyInfo = (info: any) => dispatch({ type: 'UPDATE_COMPANY_INFO', payload: info });
+    const updatePrintSettings = (settings: PrintSettings) => dispatch({ type: 'UPDATE_PRINT_SETTINGS', payload: settings });
+    const updateFinancialYear = (fy: any) => dispatch({ type: 'UPDATE_FINANCIAL_YEAR', payload: fy });
+    
+    const resetTransactionalData = useCallback(() => {
+        const resetState = {
+            journal: [],
+            inventory: data.inventory.map((item: InventoryItem) => ({ ...item, stock: 0 })),
+            inventoryAdjustments: [],
+            sales: [],
+            purchases: [],
+            saleReturns: [],
+            purchaseReturns: [],
+            treasury: [],
+            customers: data.customers.map((c: Customer) => ({ ...c, balance: 0 })),
+            suppliers: data.suppliers.map((s: Supplier) => ({ ...s, balance: 0 })),
+            fixedAssets: data.fixedAssets.map((fa: FixedAsset) => ({ ...fa, accumulatedDepreciation: 0, bookValue: fa.cost })),
+            activityLog: [],
+            notifications: [],
+            chartOfAccounts: resetAccountBalances(data.chartOfAccounts),
+            sequences: seedData.sequencesData,
+        };
+
+        dispatch({
+            type: 'RESET_TRANSACTIONAL_DATA',
+            payload: {
+                ...resetState,
+                log: createActivityLog('إعادة ضبط البيانات', 'تم حذف جميع البيانات الحركية في النظام.')
+            }
+        });
+
+        showToast('تمت إعادة ضبط جميع البيانات بنجاح.');
+    }, [data.inventory, data.customers, data.suppliers, data.fixedAssets, data.chartOfAccounts, createActivityLog, showToast]);
+
+
+    // Placeholder for other functions
     const updateAccount = (data: any) => {};
     const archiveAccount = (id: string) => ({ success: true });
     const updateJournalEntry = (entry: any) => {};
-    const updateItem = (updatedItem: InventoryItem) => {
-        setInventory(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
-        addActivityLog('تعديل صنف', `تم تعديل بيانات الصنف ${updatedItem.name}`);
-        showToast(`تم تحديث الصنف "${updatedItem.name}" بنجاح.`);
-    };
-
     const updateSale = (sale: any) => {};
     const updatePurchase = (purchase: any) => {};
-    const updateSupplier = (supplier: any) => {};
-    const archiveSupplier = (id: string) => ({ success: true });
     const addFixedAsset = (asset: any) => {};
     const updateFixedAsset = (asset: any) => {};
-    const archiveSaleReturn = (id: string) => ({ success: true });
-    const archivePurchaseReturn = (id: string) => ({ success: true });
-    const updateCompanyInfo = (info: any) => setCompanyInfo(info);
-    const updatePrintSettings = (settings: PrintSettings) => setPrintSettings(settings);
-    const updateFinancialYear = (fy: any) => setFinancialYear(fy);
+    const archiveFixedAsset = (id: string) => ({ success: true });
+    const unarchiveFixedAsset = (id: string) => {};
+    const addSaleReturn = useCallback((sr: Omit<SaleReturn, 'id'>) => ({...sr, id:'1'}), []);
+    const archiveSaleReturn = useCallback((id: string) => ({ success: true }), []);
+    const addPurchaseReturn = useCallback((pr: Omit<PurchaseReturn, 'id'>) => ({...pr, id:'1'}), []);
+    const archivePurchaseReturn = useCallback((id: string) => ({ success: true }), []);
+    const unarchiveInventoryAdjustment = useCallback((id:string) => ({ success: true }), []);
+    
     const switchDataset = (key: string) => {
         setDataManager(prev => ({...prev, activeDatasetKey: key}));
         window.location.reload();
     };
     const renameDataset = async (key: string, name: string) => {
-        const newManager = {
-            ...dataManager,
-            datasets: dataManager.datasets.map(ds => ds.key === key ? {...ds, name} : ds)
-        };
+        const newManager = { ...dataManager, datasets: dataManager.datasets.map(ds => ds.key === key ? {...ds, name} : ds) };
         await set('dataManager', newManager);
         setDataManager(newManager);
     };
-    const importNewDataset = (name:string, content: string) => {};
+    
+    const importData = useCallback(async (importedData: any) => {
+        try {
+            if (!dataManager.activeDatasetKey) {
+                showToast('لا يوجد قاعدة بيانات نشطة للاستيراد إليها.', 'error');
+                return;
+            }
+            await set(dataManager.activeDatasetKey, importedData);
+            showToast('تم استيراد البيانات بنجاح! سيتم إعادة تحميل التطبيق الآن.');
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } catch (error) {
+            console.error("Failed to import data:", error);
+            showToast('فشل استيراد البيانات.', 'error');
+        }
+    }, [dataManager.activeDatasetKey, showToast]);
 
     const contextValue = {
         isDataLoaded, hasData, currentUser, saveStatus, toast, showToast,
-        dataManager, createNewDataset, switchDataset, renameDataset, importNewDataset,
+        dataManager, createNewDataset, switchDataset, renameDataset, importData,
+        data,
+        resetTransactionalData,
         login, logout,
-        companyInfo, updateCompanyInfo,
-        printSettings, updatePrintSettings,
-        financialYear, updateFinancialYear,
-        chartOfAccounts, addAccount, updateAccount, archiveAccount, updateAllOpeningBalances,
-        unitDefinitions, addUnitDefinition,
-        journal: activeJournal,
-        archivedJournal,
-        addJournalEntry, updateJournalEntry, archiveJournalEntry, unarchiveJournalEntry,
-        inventory: activeInventory,
-        archivedInventory,
+        companyInfo: data.companyInfo, updateCompanyInfo,
+        printSettings: data.printSettings, updatePrintSettings,
+        financialYear: data.financialYear, updateFinancialYear,
+        chartOfAccounts: data.chartOfAccounts, addAccount, updateAccount, archiveAccount, updateAllOpeningBalances,
+        unitDefinitions: data.unitDefinitions, addUnitDefinition,
+        journal: activeData.journal, archivedJournal: archivedData.journal,
+        addJournalEntry, updateJournalEntry, archiveJournalEntry: (id: string) => archiveJournalEntry(id, true), unarchiveJournalEntry: (id: string) => archiveJournalEntry(id, false),
+        inventory: activeData.inventory, archivedInventory: archivedData.inventory,
         addItem, updateItem, archiveItem, unarchiveItem,
-        sales: activeSales,
-        archivedSales,
-        addSale, updateSale, archiveSale, unarchiveSale,
-        purchases: activePurchases,
-        archivedPurchases,
-        addPurchase, updatePurchase, archivePurchase, unarchivePurchase,
-        saleReturns: activeSaleReturns,
-        archivedSaleReturns,
-        addSaleReturn, archiveSaleReturn, unarchiveSaleReturn: (id: string) => {},
-        purchaseReturns: activePurchaseReturns,
-        archivedPurchaseReturns,
-        addPurchaseReturn, archivePurchaseReturn, unarchivePurchaseReturn: (id: string) => {},
-        treasury, addTreasuryTransaction, treasuriesList, transferTreasuryFunds,
-        customers: activeCustomers, archivedCustomers, addCustomer, updateCustomer, archiveCustomer, unarchiveCustomer,
-        suppliers: activeSuppliers,
-        archivedSuppliers,
+        inventoryAdjustments: activeData.inventoryAdjustments, addInventoryAdjustment, archiveInventoryAdjustment, unarchiveInventoryAdjustment,
+        sales: activeData.sales, archivedSales: archivedData.sales,
+        addSale, updateSale, archiveSale, unarchiveSale: () => {},
+        purchases: activeData.purchases, archivedPurchases: archivedData.purchases,
+        addPurchase, updatePurchase, archivePurchase, unarchivePurchase: () => {},
+        saleReturns: activeData.saleReturns, archivedSaleReturns: archivedData.saleReturns,
+        addSaleReturn, archiveSaleReturn, unarchiveSaleReturn: () => {},
+        purchaseReturns: activeData.purchaseReturns, archivedPurchaseReturns: archivedData.purchaseReturns,
+        addPurchaseReturn, archivePurchaseReturn, unarchivePurchaseReturn: () => {},
+        treasury: data.treasury, addTreasuryTransaction, treasuriesList, transferTreasuryFunds,
+        customers: activeData.customers, archivedCustomers: archivedData.customers, addCustomer, updateCustomer, archiveCustomer, unarchiveCustomer,
+        suppliers: activeData.suppliers, archivedSuppliers: archivedData.suppliers,
         addSupplier, updateSupplier, archiveSupplier, unarchiveSupplier,
-        users: activeUsers,
-        archivedUsers,
+        users: activeData.users, archivedUsers: archivedData.users,
         addUser, updateUser, archiveUser, unarchiveUser,
-        fixedAssets: activeFixedAssets,
-        archivedFixedAssets,
+        fixedAssets: activeData.fixedAssets, archivedFixedAssets: archivedData.fixedAssets,
         addFixedAsset, updateFixedAsset, archiveFixedAsset, unarchiveFixedAsset,
-        activityLog,
-        notifications, addNotification, markNotificationAsRead, markAllNotificationsAsRead,
-        sequences,
+        activityLog: data.activityLog,
+        notifications: data.notifications, markNotificationAsRead, markAllNotificationsAsRead,
+        sequences: data.sequences,
         // Derived data
         totalReceivables, totalPayables, inventoryValue, recentTransactions, topCustomers, totalCashBalance,
     };

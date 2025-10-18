@@ -1,9 +1,7 @@
-
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import PageHeader from '../shared/PageHeader';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddItemForm from './AddItemForm';
 import EditItemForm from './EditItemForm';
@@ -68,8 +66,8 @@ const Inventory: React.FC = () => {
     },
     { header: 'الوحدة الأساسية', accessor: 'baseUnit' },
     { header: 'الفئة', accessor: 'category' },
-    { header: 'سعر الشراء', accessor: 'purchasePrice', render: (row: any) => `${row.purchasePrice.toLocaleString()} جنيه مصري` },
-    { header: 'سعر البيع', accessor: 'salePrice', render: (row: any) => `${row.salePrice.toLocaleString()} جنيه مصري` },
+    { header: 'سعر الشراء', accessor: 'purchasePrice', render: (row: any) => `${row.purchasePrice.toLocaleString()} جنيه` },
+    { header: 'سعر البيع', accessor: 'salePrice', render: (row: any) => `${row.salePrice.toLocaleString()} جنيه` },
     { header: 'الكمية المتاحة', accessor: 'stock', render: (row: any) => {
         const isLow = row.stock <= LOW_STOCK_THRESHOLD;
         return (
@@ -88,7 +86,7 @@ const Inventory: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader 
-        title="إدارة المخزون" 
+        title="قائمة الأصناف" 
         buttonText="إضافة صنف جديد"
         onButtonClick={() => setAddModalOpen(true)}
         buttonIcon={<PlusIcon />}
@@ -119,13 +117,14 @@ const Inventory: React.FC = () => {
         </div>
       )}
 
-      <Table 
+      <DataTable 
         columns={columns} 
         data={inventory}
         actions={['edit', 'archive']}
         onEdit={handleEdit}
         onArchive={handleArchive}
         rowClassName={getRowClassName}
+        searchableColumns={['id', 'name', 'baseUnit', 'category']}
       />
 
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة صنف جديد للمخزون" size="4xl">

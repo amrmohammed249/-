@@ -1,5 +1,3 @@
-
-
 import React, { useState, useContext, useMemo, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import Card from '../shared/Card';
@@ -19,11 +17,12 @@ import { ArrowTrendingDownIcon } from '../icons/ArrowTrendingDownIcon';
 import { DataContext } from '../../context/DataContext';
 import InvoiceView from '../sales/InvoiceView';
 import ViewDetailsModal from '../shared/ViewDetailsModal';
-import { Sale, Purchase, RecentTransaction } from '../../types';
+import { Sale, Purchase, RecentTransaction, TreasuryTransaction } from '../../types';
 import { BoxIcon } from '../icons/BoxIcon';
 import { IdentificationIcon } from '../icons/IdentificationIcon';
 import AccountStatementLauncherModal from './AccountStatementLauncherModal';
 import PurchaseInvoiceView from '../purchases/PurchaseInvoiceView';
+import TreasuryVoucherView from '../treasury/TreasuryVoucherView';
 
 const QuickActionButton = ({ label, icon, onClick, className }: any) => (
     <button onClick={onClick} className={`flex items-center space-x-2 space-x-reverse px-4 py-2 text-sm font-medium rounded-lg transition-colors ${className}`}>
@@ -46,7 +45,7 @@ const Dashboard: React.FC = () => {
   
   const [saleToShow, setSaleToShow] = useState<Sale | null>(null);
   const [purchaseToShow, setPurchaseToShow] = useState<Purchase | null>(null);
-  const [treasuryTransactionToShow, setTreasuryTransactionToShow] = useState<any | null>(null);
+  const [treasuryTransactionToShow, setTreasuryTransactionToShow] = useState<TreasuryTransaction | null>(null);
 
   const [statementModalConfig, setStatementModalConfig] = useState<{ isOpen: boolean; partyType: 'customer' | 'supplier' | null }>({
     isOpen: false,
@@ -116,7 +115,7 @@ const Dashboard: React.FC = () => {
     setPurchaseToShow(newPurchase);
   }, []);
   
-  const handleTreasuryTransactionAdded = useCallback((newTransaction: any) => {
+  const handleTreasuryTransactionAdded = useCallback((newTransaction: TreasuryTransaction) => {
     setReceiptModalOpen(false);
     setPaymentModalOpen(false);
     setTreasuryTransactionToShow(newTransaction);
@@ -291,7 +290,7 @@ const Dashboard: React.FC = () => {
 
       {saleToShow && <InvoiceView isOpen={!!saleToShow} onClose={() => setSaleToShow(null)} sale={saleToShow} />}
       {purchaseToShow && <PurchaseInvoiceView isOpen={!!purchaseToShow} onClose={() => setPurchaseToShow(null)} purchase={purchaseToShow} />}
-      {treasuryTransactionToShow && <ViewDetailsModal isOpen={!!treasuryTransactionToShow} onClose={() => setTreasuryTransactionToShow(null)} title={`تفاصيل الحركة رقم ${treasuryTransactionToShow.id}`} data={treasuryTransactionToShow} />}
+      {treasuryTransactionToShow && <TreasuryVoucherView isOpen={!!treasuryTransactionToShow} onClose={() => setTreasuryTransactionToShow(null)} transaction={treasuryTransactionToShow} />}
 
     </div>
   );

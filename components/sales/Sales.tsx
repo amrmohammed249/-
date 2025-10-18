@@ -1,8 +1,7 @@
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import PageHeader from '../shared/PageHeader';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddSaleForm from './AddSaleForm';
 import EditSaleForm from './EditSaleForm';
@@ -58,6 +57,7 @@ const Sales: React.FC = () => {
     { header: 'العميل', accessor: 'customer' },
     { header: 'التاريخ', accessor: 'date' },
     { header: 'الإجمالي', accessor: 'total', render: (row: Sale) => `${row.total.toLocaleString()} جنيه مصري` },
+    { header: 'الحالة', accessor: 'status' },
   ], []);
 
   return (
@@ -68,13 +68,14 @@ const Sales: React.FC = () => {
         onButtonClick={() => setAddModalOpen(true)}
         buttonIcon={<PlusIcon />}
       />
-      <Table 
+      <DataTable 
         columns={columns} 
         data={sales}
         actions={['view', 'edit', 'archive']}
         onView={handleView}
         onEdit={handleEdit}
         onArchive={handleArchive}
+        searchableColumns={['id', 'customer', 'date', 'status']}
       />
 
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة فاتورة مبيعات جديدة" size="4xl">

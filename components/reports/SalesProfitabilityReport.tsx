@@ -1,6 +1,6 @@
-import React, { useContext, useMemo, useEffect } from 'react';
+import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
-import Table from '../shared/Table';
+import DataTable from '../shared/DataTable';
 
 interface ReportProps {
     startDate: string;
@@ -30,7 +30,15 @@ const SalesProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, c
             const cogs = sale.items.reduce((sum: number, lineItem: any) => {
                 const inventoryItem = inventory.find((i: any) => i.id === lineItem.itemId);
                 const cost = inventoryItem ? inventoryItem.purchasePrice : 0;
-                return sum + (lineItem.quantity * cost);
+
+                let quantityInBaseUnits = lineItem.quantity;
+                if (inventoryItem && lineItem.unitId !== 'base') {
+                    const packingUnit = inventoryItem.units.find((u: any) => u.id === lineItem.unitId);
+                    if (packingUnit && packingUnit.factor > 0) {
+                        quantityInBaseUnits = lineItem.quantity * packingUnit.factor;
+                    }
+                }
+                return sum + (quantityInBaseUnits * cost);
             }, 0);
 
             const profit = sale.total - cogs;
@@ -48,21 +56,22 @@ const SalesProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, c
         });
     }, [sales, inventory, startDate, endDate, customerId, customers]);
 
-    const columns = [
+    const columns = useMemo(() => [
         { header: 'رقم الفاتورة', accessor: 'id' },
         { header: 'العميل', accessor: 'customer' },
         { header: 'إجمالي البيع', accessor: 'totalSale', render: (row: any) => `${row.totalSale.toLocaleString()} جنيه` },
         { header: 'تكلفة البضاعة', accessor: 'cogs', render: (row: any) => `${row.cogs.toLocaleString()} جنيه` },
         { header: 'الربح', accessor: 'profit', render: (row: any) => `${row.profit.toLocaleString()} جنيه` },
         { header: 'هامش الربح', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(2)}%` },
-    ];
+    ], []);
     
-    const totalProfit = profitabilityData.reduce((sum, item) => sum + item.profit, 0);
-
-    const footerData = {
-        cogs: `إجمالي الربح`,
-        profit: `${totalProfit.toLocaleString()} جنيه`,
-    };
+    const calculateFooter = useCallback((data: any[]) => {
+        const totalProfit = data.reduce((sum, item) => sum + item.profit, 0);
+        return {
+            cogs: `إجمالي الربح`,
+            profit: `${totalProfit.toLocaleString()} جنيه`,
+        };
+    }, []);
 
     const selectedCustomer = customerId ? customers.find((c: any) => c.id === customerId) : null;
     const reportName = `Sales-Profitability-${startDate}-to-${endDate}${selectedCustomer ? `-${selectedCustomer.name}`: ''}`;
@@ -84,7 +93,12 @@ const SalesProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, c
                         </p>
                     </div>
                 </div>
-                <Table columns={columns} data={profitabilityData} footerData={footerData} />
+                <DataTable 
+                    columns={columns} 
+                    data={profitabilityData} 
+                    calculateFooter={calculateFooter}
+                    searchableColumns={['id', 'customer']}
+                />
             </div>
         </div>
     );

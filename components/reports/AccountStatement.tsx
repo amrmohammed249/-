@@ -46,14 +46,29 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
         } else {
             purchases.forEach(p => { if (p.supplier === party.name && new Date(p.date) >= start && new Date(p.date) <= end) allTransactions.push({ date: p.date, description: `فاتورة مشتريات رقم ${p.id}`, debit: 0, credit: p.total }); });
             purchaseReturns.forEach(pr => { if (pr.supplier === party.name && new Date(pr.date) >= start && new Date(pr.date) <= end) allTransactions.push({ date: pr.date, description: `مرتجع مشتريات رقم ${pr.id}`, debit: pr.total, credit: 0 }); });
-            treasury.forEach(t => { if (t.partyType === 'supplier' && t.partyId === party.id && new Date(t.date) >= start && new Date(t.date) <= end) allTransactions.push({ date: t.date, description: t.description, debit: t.amount > 0 ? t.amount : 0, credit: t.amount < 0 ? Math.abs(t.amount) : 0 }); });
+            treasury.forEach(t => { 
+                if (t.partyType === 'supplier' && t.partyId === party.id && new Date(t.date) >= start && new Date(t.date) <= end) {
+                    // Payment to supplier (amount < 0) is a DEBIT.
+                    // Receipt from supplier (amount > 0) is a CREDIT.
+                    allTransactions.push({ 
+                        date: t.date, 
+                        description: t.description, 
+                        debit: t.amount < 0 ? Math.abs(t.amount) : 0, 
+                        credit: t.amount > 0 ? t.amount : 0 
+                    });
+                }
+            });
         }
 
         allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         let runningBalance = ob;
         const transactionsWithBalance = allTransactions.map((t, index) => {
-            runningBalance += (t.debit - t.credit);
+            if (partyType === 'customer') {
+                runningBalance += (t.debit - t.credit);
+            } else { // Supplier is a liability account
+                runningBalance += (t.credit - t.debit);
+            }
             return { ...t, id: index, balance: runningBalance };
         });
 

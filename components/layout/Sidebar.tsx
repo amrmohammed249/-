@@ -15,26 +15,38 @@ import { DocumentTextIcon } from '../icons/DocumentTextIcon';
 import { DocumentReportIcon } from '../icons/DocumentReportIcon';
 import { ClipboardDocumentListIcon } from '../icons/ClipboardDocumentListIcon';
 import { DataContext } from '../../context/DataContext';
+import { WindowContext } from '../../context/WindowContext';
 import { CircleStackIcon } from '../icons/CircleStackIcon';
 import { OfficeBuildingIcon } from '../icons/OfficeBuildingIcon';
 import { ArrowUturnLeftIcon } from '../icons/ArrowUturnLeftIcon';
 import { XIcon } from '../icons/XIcon';
 import { ClipboardDocumentCheckIcon } from '../icons/ClipboardDocumentCheckIcon';
+import { BarcodeIcon } from '../icons/BarcodeIcon';
 
 interface NavItemProps {
-  to: string;
+  to?: string;
+  onClick?: () => void;
   label: string;
   icon: React.ReactNode;
   end?: boolean;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ to, label, icon, end = true }) => {
+const NavItem: React.FC<NavItemProps> = ({ to, onClick, label, icon, end = true }) => {
   const activeClass = "bg-blue-500 text-white";
   const inactiveClass = "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700";
 
+  if (onClick) {
+    return (
+        <button onClick={onClick} className={`w-full flex items-center px-4 py-3 my-1 rounded-lg transition-colors duration-200 ${inactiveClass}`}>
+            <div className="w-6 h-6 ml-3">{icon}</div>
+            <span>{label}</span>
+        </button>
+    );
+  }
+
   return (
     <NavLink
-      to={to}
+      to={to!}
       end={end}
       className={({ isActive }) =>
         `flex items-center px-4 py-3 my-1 rounded-lg transition-colors duration-200 ${isActive ? activeClass : inactiveClass}`
@@ -49,7 +61,7 @@ const NavItem: React.FC<NavItemProps> = ({ to, label, icon, end = true }) => {
 interface DropdownNavProps {
     label: string;
     icon: React.ReactNode;
-    items: { to: string; label: string; icon: React.ReactNode; }[];
+    items: { to?: string; onClick?: () => void; label: string; icon: React.ReactNode; }[];
     initialOpen?: boolean;
 }
 
@@ -66,7 +78,7 @@ const DropdownNav: React.FC<DropdownNavProps> = ({ label, icon, items, initialOp
             </button>
             {isOpen && (
                 <div className="pr-4 border-r-2 border-gray-200 dark:border-gray-600 mr-5">
-                    {items.map((item) => <NavItem key={item.to} {...item} />)}
+                    {items.map((item, index) => <NavItem key={item.to || index} {...item} />)}
                 </div>
             )}
         </div>
@@ -80,6 +92,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { currentUser } = useContext(DataContext);
+  const { openWindow } = useContext(WindowContext);
   
   if (!currentUser) return null;
 
@@ -112,7 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     label: "المبيعات",
     icon: <ShoppingCartIcon />,
     items: [
-        { to: '/sales', label: 'فواتير المبيعات', icon: <DocumentTextIcon /> },
+        { onClick: () => openWindow({ path: '/sales', title: 'فواتير المبيعات', icon: <DocumentTextIcon /> }), label: 'فواتير المبيعات', icon: <DocumentTextIcon /> },
         { to: '/sales-returns', label: 'مردودات المبيعات', icon: <ArrowUturnLeftIcon /> },
     ]
   };
@@ -121,7 +134,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     label: "المشتريات",
     icon: <TruckIcon />,
     items: [
-        { to: '/purchases', label: 'فواتير المشتريات', icon: <DocumentTextIcon /> },
+        { onClick: () => openWindow({ path: '/purchases', title: 'فواتير المشتريات', icon: <DocumentTextIcon /> }), label: 'فواتير المشتريات', icon: <DocumentTextIcon /> },
         { to: '/purchases-returns', label: 'مردودات المشتريات', icon: <ArrowUturnLeftIcon /> },
     ]
   };
@@ -132,6 +145,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     items: [
       { to: '/inventory', label: 'قائمة الأصناف', icon: <DocumentTextIcon /> },
       { to: '/inventory/adjustments', label: 'تسويات المخزون', icon: <ClipboardDocumentCheckIcon /> },
+      { to: '/barcode-tools', label: 'أدوات الباركود', icon: <BarcodeIcon /> },
     ]
   };
 

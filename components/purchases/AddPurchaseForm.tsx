@@ -1,3 +1,5 @@
+
+
 import React, { useState, useContext, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { Purchase, LineItem, InventoryItem, Supplier } from '../../types';
@@ -125,6 +127,7 @@ const AddPurchaseForm: React.FC<AddPurchaseFormProps> = ({ onClose, onSuccess })
         unitName: selectedInventoryItem.baseUnit,
         quantity: 1, 
         price: selectedInventoryItem.purchasePrice, 
+        discount: 0,
         total: selectedInventoryItem.purchasePrice
     };
     
@@ -157,12 +160,16 @@ const AddPurchaseForm: React.FC<AddPurchaseFormProps> = ({ onClose, onSuccess })
     }
     
     const supplierName = suppliers.find((s: any) => s.id === supplierId)?.name || 'غير معروف';
+    const subtotal = lineItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalDiscount = lineItems.reduce((sum, item) => sum + item.discount, 0);
 
     const newPurchase = addPurchase({
         supplier: supplierName,
         date,
         status,
         items: lineItems,
+        subtotal,
+        totalDiscount,
         total: grandTotal,
     });
     

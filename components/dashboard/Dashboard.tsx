@@ -1,9 +1,8 @@
 import React, { useState, useContext, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import Card from '../shared/Card';
 import Modal from '../shared/Modal';
-import AddSaleForm from '../sales/AddSaleForm';
-import AddPurchaseForm from '../purchases/AddPurchaseForm';
 import AddTreasuryTransactionForm from '../treasury/AddTreasuryTransactionForm';
 import { BanknotesIcon } from '../icons/BanknotesIcon';
 import { ShoppingCartIcon } from '../icons/ShoppingCartIcon';
@@ -23,6 +22,8 @@ import { IdentificationIcon } from '../icons/IdentificationIcon';
 import AccountStatementLauncherModal from './AccountStatementLauncherModal';
 import PurchaseInvoiceView from '../purchases/PurchaseInvoiceView';
 import TreasuryVoucherView from '../treasury/TreasuryVoucherView';
+import { WindowContext } from '../../context/WindowContext';
+import { DocumentTextIcon } from '../icons/DocumentTextIcon';
 
 const QuickActionButton = ({ label, icon, onClick, className }: any) => (
     <button onClick={onClick} className={`flex items-center space-x-2 space-x-reverse px-4 py-2 text-sm font-medium rounded-lg transition-colors ${className}`}>
@@ -32,14 +33,14 @@ const QuickActionButton = ({ label, icon, onClick, className }: any) => (
   );
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const { 
     sales, purchases, customers, suppliers,
     totalReceivables, totalPayables, inventoryValue, totalCashBalance,
     recentTransactions, topCustomers
    } = useContext(DataContext);
+  const { openWindow } = useContext(WindowContext);
   
-  const [isSaleModalOpen, setSaleModalOpen] = useState(false);
-  const [isPurchaseModalOpen, setPurchaseModalOpen] = useState(false);
   const [isReceiptModalOpen, setReceiptModalOpen] = useState(false);
   const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
   
@@ -52,13 +53,9 @@ const Dashboard: React.FC = () => {
     partyType: null,
   });
 
-  const openSaleModal = useCallback(() => setSaleModalOpen(true), []);
-  const openPurchaseModal = useCallback(() => setPurchaseModalOpen(true), []);
   const openReceiptModal = useCallback(() => setReceiptModalOpen(true), []);
   const openPaymentModal = useCallback(() => setPaymentModalOpen(true), []);
 
-  const closeSaleModal = useCallback(() => setSaleModalOpen(false), []);
-  const closePurchaseModal = useCallback(() => setPurchaseModalOpen(false), []);
   const closeReceiptModal = useCallback(() => setReceiptModalOpen(false), []);
   const closePaymentModal = useCallback(() => setPaymentModalOpen(false), []);
 
@@ -105,16 +102,6 @@ const Dashboard: React.FC = () => {
   const totalSales = sales.reduce((sum, item) => sum + item.total, 0);
   const totalPurchases = purchases.reduce((sum, item) => sum + item.total, 0);
   
-  const handleSaleAdded = useCallback((newSale: Sale) => {
-    setSaleModalOpen(false);
-    setSaleToShow(newSale);
-  }, []);
-
-  const handlePurchaseAdded = useCallback((newPurchase: Purchase) => {
-    setPurchaseModalOpen(false);
-    setPurchaseToShow(newPurchase);
-  }, []);
-  
   const handleTreasuryTransactionAdded = useCallback((newTransaction: TreasuryTransaction) => {
     setReceiptModalOpen(false);
     setPaymentModalOpen(false);
@@ -139,8 +126,8 @@ const Dashboard: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md flex flex-col sm:flex-row justify-between items-center gap-4">
         <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">لوحة التحكم</h2>
         <div className="flex flex-wrap gap-2 justify-center">
-          <QuickActionButton label="فاتورة مبيعات" icon={<ShoppingCartIcon className="w-5 h-5"/>} onClick={openSaleModal} className="bg-blue-500 text-white hover:bg-blue-600" />
-          <QuickActionButton label="فاتورة مشتريات" icon={<TruckIcon className="w-5 h-5"/>} onClick={openPurchaseModal} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
+          <QuickActionButton label="فاتورة مبيعات" icon={<ShoppingCartIcon className="w-5 h-5"/>} onClick={() => openWindow({ path: '/sales', title: 'فواتير المبيعات', icon: <DocumentTextIcon /> })} className="bg-blue-500 text-white hover:bg-blue-600" />
+          <QuickActionButton label="فاتورة مشتريات" icon={<TruckIcon className="w-5 h-5"/>} onClick={() => openWindow({ path: '/purchases', title: 'فواتير المشتريات', icon: <DocumentTextIcon /> })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
           <QuickActionButton label="سند قبض" icon={<ArrowDownOnSquareIcon className="w-5 h-5"/>} onClick={openReceiptModal} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
           <QuickActionButton label="سند صرف" icon={<ArrowUpOnSquareIcon className="w-5 h-5"/>} onClick={openPaymentModal} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
         </div>
@@ -270,12 +257,6 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
       
-      <Modal isOpen={isSaleModalOpen} onClose={closeSaleModal} title="إضافة فاتورة مبيعات جديدة">
-        <AddSaleForm onClose={closeSaleModal} onSuccess={handleSaleAdded} />
-      </Modal>
-      <Modal isOpen={isPurchaseModalOpen} onClose={closePurchaseModal} title="إضافة فاتورة مشتريات جديدة">
-        <AddPurchaseForm onClose={closePurchaseModal} onSuccess={handlePurchaseAdded} />
-      </Modal>
       <Modal isOpen={isReceiptModalOpen} onClose={closeReceiptModal} title="إضافة سند قبض جديد">
         <AddTreasuryTransactionForm defaultType="سند قبض" onClose={closeReceiptModal} onSuccess={handleTreasuryTransactionAdded} />
       </Modal>

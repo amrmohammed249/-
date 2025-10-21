@@ -1,3 +1,5 @@
+
+
 import React, { useState, useContext, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import type { Sale, LineItem, InventoryItem } from '../../types';
@@ -113,6 +115,7 @@ const EditSaleForm: React.FC<{ sale: Sale; onClose: () => void }> = ({ sale, onC
         unitName: selectedInventoryItem.baseUnit,
         quantity: 1, 
         price: selectedInventoryItem.salePrice, 
+        discount: 0,
         total: selectedInventoryItem.salePrice
     };
 
@@ -176,6 +179,8 @@ const EditSaleForm: React.FC<{ sale: Sale; onClose: () => void }> = ({ sale, onC
         ...formData,
         customer: customers.find((c: any) => c.id === customerId)?.name || 'غير معروف',
         items: lineItems,
+        subtotal: 0, // Recalculate if needed
+        totalDiscount: 0, // Recalculate if needed
         total: grandTotal,
     };
     updateSale(updatedSaleData);

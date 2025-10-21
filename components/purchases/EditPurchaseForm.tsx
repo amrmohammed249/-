@@ -1,3 +1,5 @@
+
+
 import React, { useState, useContext, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { Purchase, LineItem, InventoryItem } from '../../types';
@@ -72,6 +74,7 @@ const EditPurchaseForm: React.FC<{ purchase: Purchase; onClose: () => void }> = 
       unitName: selectedInventoryItem.baseUnit,
       quantity: 1, 
       price: selectedInventoryItem.purchasePrice, 
+      discount: 0,
       total: selectedInventoryItem.purchasePrice
     };
     
@@ -95,12 +98,17 @@ const EditPurchaseForm: React.FC<{ purchase: Purchase; onClose: () => void }> = 
       showToast('الرجاء اختيار مورد وإضافة بند واحد على الأقل.', 'error');
       return;
     }
+    
+    const subtotal = lineItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalDiscount = lineItems.reduce((sum, item) => sum + item.discount, 0);
 
     const updatedPurchaseData: Purchase = {
         ...purchase,
         ...formData,
         supplier: suppliers.find((s: any) => s.id === supplierId)?.name || 'غير معروف',
         items: lineItems,
+        subtotal,
+        totalDiscount,
         total: grandTotal,
     };
     updatePurchase(updatedPurchaseData);

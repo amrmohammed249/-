@@ -1,3 +1,5 @@
+
+
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import type { SaleReturn, LineItem, InventoryItem, Customer } from '../../types';
@@ -78,6 +80,7 @@ const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSucces
         unitName: selectedInventoryItem.baseUnit,
         quantity: 1, 
         price: selectedInventoryItem.salePrice, 
+        discount: 0,
         total: selectedInventoryItem.salePrice 
     };
 
@@ -112,6 +115,8 @@ const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSucces
         date,
         originalSaleId,
         items: lineItems,
+        subtotal: grandTotal,
+        totalDiscount: 0,
         total: grandTotal,
     });
     onSuccess(newReturn);

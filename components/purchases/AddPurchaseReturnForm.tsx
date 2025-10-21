@@ -1,3 +1,5 @@
+
+
 import React, { useState, useContext, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { PurchaseReturn, LineItem, InventoryItem, Supplier } from '../../types';
@@ -97,6 +99,7 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
         unitName: selectedInventoryItem.baseUnit,
         quantity: 1, 
         price: selectedInventoryItem.purchasePrice, 
+        discount: 0,
         total: selectedInventoryItem.purchasePrice
     };
     
@@ -145,12 +148,16 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
     }
     
     const supplierName = suppliers.find((s: any) => s.id === supplierId)?.name || 'غير معروف';
+    const subtotal = lineItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalDiscount = lineItems.reduce((sum, item) => sum + item.discount, 0);
 
     const newReturn = addPurchaseReturn({
         supplier: supplierName,
         date,
         originalPurchaseId,
         items: lineItems,
+        subtotal,
+        totalDiscount,
         total: grandTotal,
     });
     

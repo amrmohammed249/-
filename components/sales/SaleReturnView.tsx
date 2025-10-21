@@ -85,7 +85,7 @@ const SaleReturnView: React.FC<SaleReturnViewProps> = ({ isOpen, onClose, saleRe
           <div>
             <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">العميل</h3>
             <p className="font-bold">{customer?.name}</p>
-            <p className="text-sm">{customer?.contact}</p>
+            <p className="text-sm">{customer?.address}</p>
             <p className="text-sm">{customer?.phone}</p>
           </div>
           <div className="text-left">

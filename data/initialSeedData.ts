@@ -60,6 +60,8 @@ export const chartOfAccountsData: AccountNode[] = [
     id: '4', name: 'الإيرادات والمصروفات', code: '4000', balance: 0,
     children: [
         { id: '4-1', name: 'مبيعات محلية', code: '4101', balance: 0 },
+        { id: '4-5', name: 'خصومات المبيعات', code: '4102', balance: 0 },
+        { id: '4-6', name: 'خصومات المشتريات', code: '4103', balance: 0 },
         { 
             id: '4-2', name: 'مصروفات تشغيل', code: '4200', balance: 0,
             children: [

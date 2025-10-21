@@ -22,12 +22,23 @@ import Toast from './components/shared/Toast';
 import ActivityLog from './components/activity/ActivityLog';
 import Archive from './components/archive/Archive';
 import FixedAssets from './components/fixedassets/FixedAssets';
+import { WindowContext } from './context/WindowContext';
+import ActiveWindowsBar from './components/layout/ActiveWindowsBar';
+import { ActiveWindow, Sale } from './types';
+import BarcodeTools from './components/barcode/BarcodeTools';
+import BarcodeLabelPrint from './components/printing/BarcodeLabelPrint';
+import InvoiceTestPrintPage from './components/printing/InvoiceTestPrintPage';
 
 
 const App: React.FC = () => {
-  const { currentUser, isDataLoaded, hasData, createNewDataset } = useContext(DataContext);
+  const { currentUser, isDataLoaded, hasData, createNewDataset, processBarcodeScan } = useContext(DataContext);
+  const { activeWindows, visibleWindowId } = useContext(WindowContext);
   const location = useLocation();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+
+  const visibleWindow = activeWindows.find(w => w.id === visibleWindowId);
+  const isPrintRoute = location.pathname.startsWith('/print/');
+
 
   useEffect(() => {
     if (isDataLoaded && !hasData) {
@@ -37,8 +48,72 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // On route change, close the sidebar on mobile
-    setSidebarOpen(false);
-  }, [location]);
+    if (!isPrintRoute) {
+      setSidebarOpen(false);
+    }
+  }, [location, isPrintRoute]);
+
+  // Barcode scanner listener logic
+  useEffect(() => {
+      let barcode = '';
+      let lastKeyTime = 0;
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+          // Ignore events from inputs, textareas, and selects to avoid interfering with manual typing
+          const activeEl = document.activeElement;
+          if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')) {
+              return;
+          }
+
+          const currentTime = Date.now();
+          const timeDiff = currentTime - lastKeyTime;
+          lastKeyTime = currentTime;
+
+          // Reset if the delay between keys is too long, indicating manual typing
+          if (timeDiff > 100) {
+              barcode = '';
+          }
+
+          if (e.key === 'Enter') {
+              if (barcode.length > 2) { // Minimum length for a barcode scan
+                  e.preventDefault();
+                  processBarcodeScan(barcode);
+              }
+              barcode = '';
+          } else if (e.key.length === 1) { // It's a character, not a control key
+              barcode += e.key;
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+          window.removeEventListener('keydown', handleKeyDown);
+      };
+  }, [processBarcodeScan]);
+
+
+  const renderFullScreenPage = (window: ActiveWindow) => {
+    switch (window.path) {
+      case '/sales':
+        return <Sales windowId={window.id} />;
+      case '/purchases':
+        return <Purchases windowId={window.id} />;
+      default:
+        return null;
+    }
+  };
+  
+  // Special rendering for print routes to avoid the main layout
+  if (isPrintRoute) {
+    return (
+      <Routes>
+        <Route path="/print/test/barcode" element={<BarcodeLabelPrint />} />
+        <Route path="/print/barcode/:itemId" element={<BarcodeLabelPrint />} />
+        <Route path="/print/test/invoice" element={<InvoiceTestPrintPage />} />
+      </Routes>
+    );
+  }
+
 
   // 1. Initial loading state while waiting for data to load or first dataset to be created.
   if (!isDataLoaded || !hasData) {
@@ -66,34 +141,44 @@ const App: React.FC = () => {
   // 3. If user is logged in, render the full application layout.
   return (
     <>
-      <div dir="rtl" className="flex h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
-        <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header onMenuClick={() => setSidebarOpen(true)} />
-          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
-            <Routes>
-              <Route path="/login" element={<Navigate to="/" />} />
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/accounts/chart" element={<ChartOfAccounts />} />
-              <Route path="/accounts/journal" element={<JournalEntries />} />
-              <Route path="/inventory" element={<Inventory />} />
-              <Route path="/inventory/adjustments" element={<InventoryAdjustments />} />
-              <Route path="/fixed-assets" element={<FixedAssets />} />
-              <Route path="/sales" element={<Sales />} />
-              <Route path="/sales-returns" element={<SaleReturns />} />
-              <Route path="/purchases" element={<Purchases />} />
-              <Route path="/purchases-returns" element={<PurchaseReturns />} />
-              <Route path="/treasury" element={<Treasury />} />
-              <Route path="/customers" element={<Customers />} />
-              <Route path="/suppliers" element={<Suppliers />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/activity-log" element={<ActivityLog />} />
-              <Route path="/archive" element={<Archive />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </main>
+      <div dir="rtl" className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+        <div className="flex flex-1 overflow-hidden">
+          {visibleWindow ? (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {renderFullScreenPage(visibleWindow)}
+            </div>
+          ) : (
+            <>
+              <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <Header onMenuClick={() => setSidebarOpen(true)} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
+                  <Routes>
+                    <Route path="/login" element={<Navigate to="/" />} />
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/accounts/chart" element={<ChartOfAccounts />} />
+                    <Route path="/accounts/journal" element={<JournalEntries />} />
+                    <Route path="/inventory" element={<Inventory />} />
+                    <Route path="/inventory/adjustments" element={<InventoryAdjustments />} />
+                    <Route path="/barcode-tools" element={<BarcodeTools />} />
+                    <Route path="/fixed-assets" element={<FixedAssets />} />
+                    <Route path="/sales-returns" element={<SaleReturns />} />
+                    <Route path="/purchases-returns" element={<PurchaseReturns />} />
+                    <Route path="/treasury" element={<Treasury />} />
+                    <Route path="/customers" element={<Customers />} />
+                    <Route path="/suppliers" element={<Suppliers />} />
+                    <Route path="/reports" element={<Reports />} />
+                    <Route path="/activity-log" element={<ActivityLog />} />
+                    <Route path="/archive" element={<Archive />} />
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="*" element={<Navigate to="/" />} />
+                  </Routes>
+                </main>
+              </div>
+            </>
+          )}
         </div>
+        <ActiveWindowsBar />
       </div>
       <Toast />
     </>

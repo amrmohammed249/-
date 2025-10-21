@@ -72,6 +72,65 @@ const updateBalancesRecursively = (nodes: AccountNode[], accountId: string, amou
     return { updated: nodeUpdatedInChildren, change: totalChange };
 };
 
+const findNodeRecursive = (nodes: AccountNode[], key: 'id' | 'code', value: string): AccountNode | null => {
+    for (const node of nodes) {
+        if (node[key] === value) return node;
+        if (node.children) {
+            const found = findNodeRecursive(node.children, key, value);
+            if (found) return found;
+        }
+    }
+    return null;
+};
+
+const migrateChartOfAccounts = (chart: AccountNode[]): AccountNode[] => {
+    const newChart = JSON.parse(JSON.stringify(chart));
+
+    const requiredAccounts = [
+        // Roots
+        { id: '1', name: 'الأصول', code: '1000', parentCode: null },
+        { id: '2', name: 'الالتزامات', code: '2000', parentCode: null },
+        { id: '3', name: 'حقوق الملكية', code: '3000', parentCode: null },
+        { id: '4', name: 'الإيرادات والمصروفات', code: '4000', parentCode: null },
+        // Level 2
+        { id: '1-1', name: 'الأصول المتداولة', code: '1100', parentCode: '1000' },
+        { id: '1-2', name: 'الأصول الثابتة', code: '1200', parentCode: '1000' },
+        { id: '4-2', name: 'مصروفات تشغيل', code: '4200', parentCode: '4000' },
+        { id: '4-3', name: 'إيرادات أخرى', code: '4300', parentCode: '4000' },
+        // Level 3 & 4 (Leaves)
+        { id: '1-1-3', name: 'العملاء', code: '1103', parentCode: '1100' },
+        { id: '1-1-4', name: 'المخزون', code: '1104', parentCode: '1100' },
+        { id: '2-1', name: 'الموردين', code: '2101', parentCode: '2000' },
+        { id: '4-1', name: 'مبيعات محلية', code: '4101', parentCode: '4000' },
+        { id: '4-5', name: 'خصومات المبيعات', code: '4102', parentCode: '4000' },
+        { id: '4-6', name: 'خصومات المشتريات', code: '4103', parentCode: '4000' },
+        { id: '4-2-3', name: 'مصروف بضاعة تالفة', code: '4203', parentCode: '4200' },
+        { id: '4-2-4', name: 'تكلفة البضاعة المباعة', code: '4204', parentCode: '4200' },
+        { id: '4-3-1', name: 'أرباح فروقات جرد', code: '4301', parentCode: '4300' },
+    ];
+
+    requiredAccounts.forEach(acc => {
+        if (!findNodeRecursive(newChart, 'code', acc.code)) {
+            console.log(`MIGRATION: Account with code ${acc.code} (${acc.name}) is missing. Adding it.`);
+            const newNode = { id: acc.id, code: acc.code, name: acc.name, balance: 0, children: [] };
+            
+            if (acc.parentCode) {
+                 const parent = findNodeRecursive(newChart, 'code', acc.parentCode);
+                 if (parent) {
+                     if (!parent.children) parent.children = [];
+                     parent.children.push(newNode);
+                 } else {
+                     console.error(`Migration failed: Parent account ${acc.parentCode} not found for ${acc.code}.`);
+                 }
+            } else { // It's a root account
+                 newChart.push(newNode);
+            }
+        }
+    });
+
+    return newChart;
+};
+
 
 const initialState = {
     companyInfo: seedData.companyInfo,
@@ -201,7 +260,7 @@ function dataReducer(state: AppState, action: Action): AppState {
                     journal: state.sequences.journal + 1,
                 },
                 activityLog: [log, ...state.activityLog],
-                notifications: [notification, ...state.notifications].slice(0, 50),
+                notifications: notification ? [notification, ...state.notifications].slice(0, 50) : state.notifications,
             };
         }
 
@@ -379,7 +438,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const loadedPrintSettings = loadedData.printSettings || seedData.printSettingsData;
             finalState.printSettings = { ...seedData.printSettingsData, ...loadedPrintSettings };
             finalState.financialYear = loadedData.financialYear || seedData.financialYearData;
-            finalState.chartOfAccounts = loadedData.chartOfAccounts || [];
+            
+            // Migrate Chart of Accounts to ensure all required accounts exist
+            const chart = loadedData.chartOfAccounts || [];
+            finalState.chartOfAccounts = migrateChartOfAccounts(chart);
+
             finalState.sequences = loadedData.sequences || seedData.sequencesData;
             finalState.unitDefinitions = loadedData.unitDefinitions || seedData.unitDefinitionsData;
             finalState.journal = loadedData.journal || [];
@@ -612,7 +675,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }});
     }, [data.journal, data.chartOfAccounts, createActivityLog]);
 
-    const addSale = useCallback((sale: Omit<Sale, 'id' | 'journalEntryId'>) => {
+    const addSale = useCallback((sale: Omit<Sale, 'id' | 'journalEntryId'>): Sale => {
         const LOW_STOCK_THRESHOLD = 10;
         const newSaleId = `INV-${String(data.sequences.sale).padStart(3, '0')}`;
         const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
@@ -639,14 +702,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const updatedCustomers = data.customers.map(c => c.name === sale.customer ? {...c, balance: c.balance + sale.total} : c);
 
-        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103')!;
-        const salesAccount = findAccountByCode(data.chartOfAccounts, '4101')!;
-        const cogsAccount = findAccountByCode(data.chartOfAccounts, '4204')!;
-        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104')!;
+        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103');
+        const salesAccount = findAccountByCode(data.chartOfAccounts, '4101');
+        const salesDiscountAccount = findAccountByCode(data.chartOfAccounts, '4102');
+        const cogsAccount = findAccountByCode(data.chartOfAccounts, '4204');
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104');
+
+        if (!customerAccount || !salesAccount || !salesDiscountAccount || !cogsAccount || !inventoryAccount) {
+            const missing = [
+                !customerAccount && "'العملاء (1103)'",
+                !salesAccount && "'مبيعات محلية (4101)'",
+                !salesDiscountAccount && "'خصومات المبيعات (4102)'",
+                !cogsAccount && "'تكلفة البضاعة المباعة (4204)'",
+                !inventoryAccount && "'المخزون (1104)'",
+            ].filter(Boolean).join(', ');
+            throw new Error(`حسابات نظام أساسية مفقودة: ${missing}. يرجى مراجعة شجرة الحسابات.`);
+        }
         
         const journalEntryLines: JournalLine[] = [
             { accountId: customerAccount.id, accountName: customerAccount.name, debit: sale.total, credit: 0 },
-            { accountId: salesAccount.id, accountName: salesAccount.name, debit: 0, credit: sale.total },
+            { accountId: salesDiscountAccount.id, accountName: salesDiscountAccount.name, debit: sale.totalDiscount, credit: 0 },
+            { accountId: salesAccount.id, accountName: salesAccount.name, debit: 0, credit: sale.subtotal },
             { accountId: cogsAccount.id, accountName: cogsAccount.name, debit: costOfGoodsSold, credit: 0 },
             { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: costOfGoodsSold },
         ];
@@ -660,7 +736,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newJournalEntry: JournalEntry = {
             id: newJournalEntryId,
             date: sale.date, description: `فاتورة مبيعات رقم ${newSaleId}`,
-            debit: sale.total + costOfGoodsSold, credit: sale.total + costOfGoodsSold, status: 'مرحل',
+            debit: sale.total + sale.totalDiscount + costOfGoodsSold, 
+            credit: sale.subtotal + costOfGoodsSold, 
+            status: 'مرحل',
             lines: journalEntryLines
         };
     
@@ -726,11 +804,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
         purchase.items.forEach(line => {
-            const item = updatedInventory.find(i => i.id === line.itemId);
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
             if (item) {
                 let quantityInBaseUnit = line.quantity;
                 if (line.unitId !== 'base') {
-                    const packingUnit = item.units.find(u => u.id === line.unitId);
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
                 item.stock += quantityInBaseUnit;
@@ -738,12 +816,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         const updatedSuppliers = data.suppliers.map(s => s.name === purchase.supplier ? {...s, balance: s.balance + purchase.total} : s);
 
-        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104')!;
-        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101')!;
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104');
+        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101');
+        const purchaseDiscountAccount = findAccountByCode(data.chartOfAccounts, '4103');
+
+        if (!inventoryAccount || !supplierAccount || !purchaseDiscountAccount) {
+            const missing = [
+                !inventoryAccount && "'المخزون (1104)'",
+                !supplierAccount && "'الموردين (2101)'",
+                !purchaseDiscountAccount && "'خصومات المشتريات (4103)'",
+            ].filter(Boolean).join(', ');
+            throw new Error(`حسابات نظام أساسية مفقودة: ${missing}. يرجى مراجعة شجرة الحسابات.`);
+        }
 
         const journalEntryLines: JournalLine[] = [
-            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: purchase.total, credit: 0 },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: purchase.subtotal, credit: 0 },
             { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: 0, credit: purchase.total },
+            { accountId: purchaseDiscountAccount.id, accountName: purchaseDiscountAccount.name, debit: 0, credit: purchase.totalDiscount },
         ];
     
         const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
@@ -755,7 +844,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newJournalEntry: JournalEntry = {
             id: newJournalEntryId,
             date: purchase.date, description: `فاتورة مشتريات رقم ${newPurchaseId}`,
-            debit: purchase.total, credit: purchase.total, status: 'مرحل',
+            debit: purchase.subtotal, 
+            credit: purchase.total + purchase.totalDiscount, 
+            status: 'مرحل',
             lines: journalEntryLines,
         };
     
@@ -815,23 +906,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newId = `TRN-${String(data.sequences.treasury).padStart(3, '0')}`;
         const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
         
-        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103')!;
-        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101')!;
+        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103');
+        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101');
 
         let contraAccountId: string, contraAccountName: string;
         let updatedCustomers: Customer[] | undefined;
         let updatedSuppliers: Supplier[] | undefined;
 
         if (tr.partyType === 'customer') {
+            if (!customerAccount) throw new Error("حساب العملاء الرئيسي (1103) مفقود.");
             contraAccountId = customerAccount.id;
             contraAccountName = customerAccount.name;
             updatedCustomers = data.customers.map(c => c.id === tr.partyId ? {...c, balance: c.balance + (tr.type === 'سند صرف' ? Math.abs(tr.amount) : -Math.abs(tr.amount))} : c);
         } else if (tr.partyType === 'supplier') {
+            if (!supplierAccount) throw new Error("حساب الموردين الرئيسي (2101) مفقود.");
             contraAccountId = supplierAccount.id;
             contraAccountName = supplierAccount.name;
             updatedSuppliers = data.suppliers.map(s => s.id === tr.partyId ? {...s, balance: s.balance + (tr.type === 'سند صرف' ? -Math.abs(tr.amount) : Math.abs(tr.amount))} : s);
         } else {
-             const account = findAccountById(data.chartOfAccounts, tr.partyId!)!;
+             const account = findAccountById(data.chartOfAccounts, tr.partyId!);
+             if (!account) throw new Error(`الحساب المحدد بالمعرف ${tr.partyId} غير موجود.`);
              contraAccountId = account.id;
              contraAccountName = account.name;
         }
@@ -896,7 +990,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const addInventoryAdjustment = useCallback((adjustment: Omit<InventoryAdjustment, 'id' | 'journalEntryId'>): InventoryAdjustment => {
         const newId = `ADJ-${String(data.sequences.inventoryAdjustment).padStart(3, '0')}`;
         const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
-        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104')!;
+        
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104');
+        if (!inventoryAccount) throw new Error("حساب المخزون الرئيسي (1104) مفقود.");
         
         const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
         adjustment.items.forEach(line => {

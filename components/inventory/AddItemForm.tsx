@@ -16,6 +16,7 @@ const AddItemForm: React.FC<AddItemFormProps> = ({ onClose, onSuccess }) => {
   
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
+  const [barcode, setBarcode] = useState('');
   const [baseUnitId, setBaseUnitId] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
   const [salePrice, setSalePrice] = useState('');
@@ -94,28 +95,33 @@ const AddItemForm: React.FC<AddItemFormProps> = ({ onClose, onSuccess }) => {
         salePrice: Number(p.salePrice),
       }));
 
-    const newItemData: Omit<InventoryItem, 'id'> = {
-      name,
-      category,
-      baseUnit: baseUnitName,
-      purchasePrice: Number(purchasePrice),
-      salePrice: Number(salePrice),
-      stock: Number(stock),
-      units: finalPackingUnits,
-    };
-    
-    const newItem = addItem(newItemData);
-    if (onSuccess) {
-      onSuccess(newItem);
+    try {
+        const newItemData: Omit<InventoryItem, 'id'> = {
+          name,
+          barcode: barcode.trim(),
+          category,
+          baseUnit: baseUnitName,
+          purchasePrice: Number(purchasePrice),
+          salePrice: Number(salePrice),
+          stock: Number(stock),
+          units: finalPackingUnits,
+        };
+        
+        const newItem = addItem(newItemData);
+        if (onSuccess) {
+          onSuccess(newItem);
+        }
+        onClose();
+    } catch (error) {
+        // Error toast is shown in addItem function
     }
-    onClose();
   };
 
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">اسم الصنف</label>
             <input type="text" id="name" value={name} onChange={e => setName(e.target.value)} className="input-style w-full mt-1" required />
@@ -123,6 +129,10 @@ const AddItemForm: React.FC<AddItemFormProps> = ({ onClose, onSuccess }) => {
           <div>
             <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">الفئة</label>
             <input type="text" id="category" value={category} onChange={e => setCategory(e.target.value)} className="input-style w-full mt-1" />
+          </div>
+          <div>
+            <label htmlFor="barcode" className="block text-sm font-medium text-gray-700 dark:text-gray-300">الباركود</label>
+            <input type="text" id="barcode" value={barcode} onChange={e => setBarcode(e.target.value)} className="input-style w-full mt-1" />
           </div>
         </div>
 

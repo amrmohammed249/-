@@ -74,7 +74,7 @@ const PurchaseReturnView: React.FC<PurchaseReturnViewProps> = ({ isOpen, onClose
           <div>
             <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">إلى المورد</h3>
             <p className="font-bold">{supplier?.name}</p>
-            <p className="text-sm">{supplier?.contact}</p>
+            <p className="text-sm">{supplier?.address}</p>
             <p className="text-sm">{supplier?.phone}</p>
           </div>
           <div className="text-left">

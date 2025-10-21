@@ -22,6 +22,7 @@ interface InvoiceViewProps {
   onClose: () => void;
   sale: Sale;
   customSettings?: any;
+  isPrintView?: boolean;
 }
 
 const componentMap: { [key: string]: React.FC<any> } = {
@@ -35,7 +36,7 @@ const componentMap: { [key: string]: React.FC<any> } = {
     spacer: SpacerElement,
 };
 
-const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, customSettings }) => {
+const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, customSettings, isPrintView = false }) => {
   const context = useContext(DataContext);
   const { companyInfo, customers } = context;
   const printSettings = customSettings || context.printSettings;
@@ -73,19 +74,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
       printSettings
   };
 
-  // Define static header components to filter them from the dynamic layout
   const staticHeaderComponents: InvoiceComponentType[] = ['logo', 'companyInfo', 'billTo', 'invoiceMeta', 'invoiceTitle'];
 
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`تفاصيل الفاتورة: ${sale.id}`} size="4xl">
-      {!customSettings && (
-        <div className="no-print mb-6 flex flex-wrap gap-2 justify-end">
-          <ActionButton icon={<PrinterIcon className="w-5 h-5" />} label="طباعة" onClick={handlePrint} />
-          <ActionButton icon={<ArrowDownTrayIcon className="w-5 h-5" />} label="تصدير PDF" onClick={handleExportPDF} />
-        </div>
-      )}
-
+  const invoiceContent = (
       <div id="printable-invoice" className="p-8 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-200 rounded-sm shadow-lg">
          <style>
           {`
@@ -96,15 +87,12 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
           `}
         </style>
 
-        {/* Fixed Header */}
         <header className="flex justify-between items-start pb-6 border-b dark:border-gray-600">
-            {/* Right Column: Logo + Company Info */}
             <div className="flex-1">
                 {printSettings.visibility.logo !== false && <LogoElement {...componentProps} />}
                 {printSettings.visibility.companyInfo !== false && <CompanyInfoElement {...componentProps} />}
             </div>
             
-            {/* Center Column: Invoice Title + Invoice Number */}
             <div className="flex-1 flex flex-col justify-start items-center text-center pt-2">
                 {printSettings.visibility.invoiceTitle !== false && (
                     <h2 
@@ -117,15 +105,12 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
                 <p className="font-medium font-mono text-sm mt-1">{sale.id}</p>
             </div>
 
-            {/* Left Column: Bill To + Invoice Meta */}
             <div className="flex-1 text-left">
                 {printSettings.visibility.billTo !== false && <BillToElement {...componentProps} />}
                 {printSettings.visibility.invoiceMeta !== false && <InvoiceMetaElement {...componentProps} />}
             </div>
         </header>
 
-
-        {/* Dynamic Body */}
         <div className="mt-6">
             {printSettings.layout
                 .filter((componentId: InvoiceComponentType) => !staticHeaderComponents.includes(componentId))
@@ -138,6 +123,21 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
             })}
         </div>
       </div>
+  );
+
+  if (isPrintView) {
+    return invoiceContent;
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`تفاصيل الفاتورة: ${sale.id}`} size="4xl">
+      {!customSettings && (
+        <div className="no-print mb-6 flex flex-wrap gap-2 justify-end">
+          <ActionButton icon={<PrinterIcon className="w-5 h-5" />} label="طباعة" onClick={handlePrint} />
+          <ActionButton icon={<ArrowDownTrayIcon className="w-5 h-5" />} label="تصدير PDF" onClick={handleExportPDF} />
+        </div>
+      )}
+      {invoiceContent}
     </Modal>
   );
 };

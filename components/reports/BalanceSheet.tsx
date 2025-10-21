@@ -7,6 +7,42 @@ interface ReportProps {
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
 
+// Helper functions to perform calculations on a temporary copy of the chart
+const findNodeRecursive = (nodes: AccountNode[], key: 'id' | 'code', value: string): AccountNode | null => {
+    for (const node of nodes) {
+        if (node[key] === value) return node;
+        if (node.children) {
+            const found = findNodeRecursive(node.children, key, value);
+            if (found) return found;
+        }
+    }
+    return null;
+};
+
+const updateBalancesRecursively = (nodes: AccountNode[], accountId: string, amount: number): { updated: boolean; change: number } => {
+    let totalChange = 0;
+    let nodeUpdatedInChildren = false;
+
+    for (const node of nodes) {
+        if (node.id === accountId) {
+            node.balance = (node.balance || 0) + amount;
+            return { updated: true, change: amount };
+        }
+
+        if (node.children) {
+            const result = updateBalancesRecursively(node.children, accountId, amount);
+            if (result.updated) {
+                node.balance = (node.balance || 0) + result.change;
+                nodeUpdatedInChildren = true;
+                totalChange += result.change;
+            }
+        }
+    }
+    
+    return { updated: nodeUpdatedInChildren, change: totalChange };
+};
+
+
 // Robust recursive function to sum balances from leaf nodes up.
 const sumBalancesForNode = (node: AccountNode | undefined): number => {
     if (!node) return 0;
@@ -47,7 +83,24 @@ const AccountSection: React.FC<{ node: AccountNode; level?: number }> = ({ node,
 
 
 const BalanceSheet: React.FC<ReportProps> = ({ asOfDate, onDataReady }) => {
-    const { chartOfAccounts } = useContext(DataContext);
+    const { chartOfAccounts, inventory } = useContext(DataContext);
+    
+    const inventoryValue = useMemo(() => inventory.reduce((sum: number, i: any) => sum + (i.stock * i.purchasePrice), 0), [inventory]);
+
+    const correctedChartOfAccounts = useMemo(() => {
+        const newChart = JSON.parse(JSON.stringify(chartOfAccounts));
+        const inventoryAccount = findNodeRecursive(newChart, 'code', '1104');
+        
+        if (inventoryAccount) {
+            const currentBalance = inventoryAccount.balance || 0;
+            const difference = inventoryValue - currentBalance;
+
+            if (difference !== 0) {
+                updateBalancesRecursively(newChart, inventoryAccount.id, difference);
+            }
+        }
+        return newChart;
+    }, [chartOfAccounts, inventoryValue]);
 
     const {
         assets,
@@ -58,10 +111,10 @@ const BalanceSheet: React.FC<ReportProps> = ({ asOfDate, onDataReady }) => {
         totalEquity,
     } = useMemo(() => {
         const rootNodes = {
-            assets: chartOfAccounts.find((n: any) => n.code === '1000'),
-            liabilities: chartOfAccounts.find((n: any) => n.code === '2000'),
-            equity: chartOfAccounts.find((n: any) => n.code === '3000'),
-            revAndExp: chartOfAccounts.find((n: any) => n.code === '4000'),
+            assets: correctedChartOfAccounts.find((n: any) => n.code === '1000'),
+            liabilities: correctedChartOfAccounts.find((n: any) => n.code === '2000'),
+            equity: correctedChartOfAccounts.find((n: any) => n.code === '3000'),
+            revAndExp: correctedChartOfAccounts.find((n: any) => n.code === '4000'),
         };
 
         // 1. Calculate Net Profit/Loss for the period
@@ -97,7 +150,7 @@ const BalanceSheet: React.FC<ReportProps> = ({ asOfDate, onDataReady }) => {
             totalLiabilities,
             totalEquity
         };
-    }, [chartOfAccounts]);
+    }, [correctedChartOfAccounts]);
     
     const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
     const isBalanced = Math.round(totalAssets) === Math.round(totalLiabilitiesAndEquity);

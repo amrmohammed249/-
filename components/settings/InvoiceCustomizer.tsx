@@ -1,3 +1,5 @@
+
+
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { PrintSettings, Sale, InvoiceComponentType } from '../../types';
@@ -10,9 +12,11 @@ const sampleSaleForPreview: Sale = {
     customer: 'عميل افتراضي', 
     date: new Date().toISOString().slice(0, 10),
     items: [
-        { itemId: 'ITM001', itemName: 'منتج افتراضي 1', unitId: 'base', unitName: 'قطعة', quantity: 2, price: 150.00, total: 300.00 },
-        { itemId: 'ITM002', itemName: 'منتج افتراضي 2', unitId: 'base', unitName: 'وحدة', quantity: 1, price: 450.50, total: 450.50 },
+        { itemId: 'ITM001', itemName: 'منتج افتراضي 1', unitId: 'base', unitName: 'قطعة', quantity: 2, price: 150.00, discount: 0, total: 300.00 },
+        { itemId: 'ITM002', itemName: 'منتج افتراضي 2', unitId: 'base', unitName: 'وحدة', quantity: 1, price: 450.50, discount: 0, total: 450.50 },
     ],
+    subtotal: 750.50,
+    totalDiscount: 0,
     total: 750.50,
     status: 'مدفوعة'
 };

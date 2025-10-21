@@ -1,3 +1,5 @@
+
+
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -11,6 +13,7 @@ import InvoiceCustomizer from './InvoiceCustomizer';
 import InvoiceView from '../sales/InvoiceView';
 import { Sale, PrintSettings } from '../../types';
 import BackupAndRestore from './BackupAndRestore';
+import PrintSettingsPage from './PrintSettingsPage';
 
 
 const Settings: React.FC = () => {
@@ -44,9 +47,11 @@ const Settings: React.FC = () => {
         customer: 'عميل افتراضي', 
         date: new Date().toISOString().slice(0, 10),
         items: [
-            { itemId: 'ITM001', itemName: 'منتج افتراضي 1', unitId: 'base', unitName: 'قطعة', quantity: 2, price: 150.00, total: 300.00 },
-            { itemId: 'ITM002', itemName: 'منتج افتراضي 2', unitId: 'base', unitName: 'وحدة', quantity: 1, price: 450.50, total: 450.50 },
+            { itemId: 'ITM001', itemName: 'منتج افتراضي 1', unitId: 'base', unitName: 'قطعة', quantity: 2, price: 150.00, discount: 0, total: 300.00 },
+            { itemId: 'ITM002', itemName: 'منتج افتراضي 2', unitId: 'base', unitName: 'وحدة', quantity: 1, price: 450.50, discount: 0, total: 450.50 },
         ],
+        subtotal: 750.50,
+        totalDiscount: 0,
         total: 750.50,
         status: 'مدفوعة'
     };
@@ -122,11 +127,13 @@ const Settings: React.FC = () => {
 
             <BackupAndRestore />
             
+            <PrintSettingsPage />
+
             <form onSubmit={handleSaveAllSettings}>
                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                     <div className="flex justify-between items-center mb-4">
                         <div>
-                             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">إعدادات الطباعة والفواتير</h2>
+                             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">إعدادات تصميم الفواتير</h2>
                              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                                 قم بتصميم شكل الفاتورة ليعكس هوية علامتك التجارية.
                              </p>

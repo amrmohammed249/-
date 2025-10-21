@@ -1,3 +1,5 @@
+import { ReactNode } from 'react';
+
 export interface AccountNode {
   id: string;
   name: string;
@@ -25,6 +27,7 @@ export interface PackingUnit {
 export interface InventoryItem {
   id: string;
   name: string;
+  barcode?: string;
   baseUnit: string; // The smallest unit for tracking stock (e.g., 'كيلو', 'قطعة')
   units: PackingUnit[]; // Array of bigger units (e.g., 'شوال', 'كرتونة')
   category: string;
@@ -41,6 +44,7 @@ export interface LineItem {
   unitName: string; // e.g., 'كيلو' or 'شوال'
   quantity: number; // Quantity of the selected unit
   price: number; // Price of the selected unit
+  discount: number; // Discount amount for this line
   total: number;
 }
 
@@ -49,6 +53,8 @@ export interface Sale {
   customer: string;
   date: string;
   items: LineItem[];
+  subtotal: number;
+  totalDiscount: number;
   total: number;
   status: 'مدفوعة' | 'مستحقة' | 'جزئية';
   journalEntryId?: string;
@@ -60,6 +66,8 @@ export interface Purchase {
   supplier: string;
   date: string;
   items: LineItem[];
+  subtotal: number;
+  totalDiscount: number;
   total: number;
   status: 'مدفوعة' | 'مستحقة';
   journalEntryId?: string;
@@ -72,6 +80,8 @@ export interface SaleReturn {
   date: string;
   originalSaleId?: string;
   items: LineItem[];
+  subtotal: number;
+  totalDiscount: number;
   total: number;
   journalEntryId?: string;
   isArchived?: boolean;
@@ -83,6 +93,8 @@ export interface PurchaseReturn {
   date: string;
   originalPurchaseId?: string;
   items: LineItem[];
+  subtotal: number;
+  totalDiscount: number;
   total: number;
   journalEntryId?: string;
   isArchived?: boolean;
@@ -265,4 +277,12 @@ export interface PrintSettings {
   visibility: {
     [key in InvoiceComponentType]?: boolean;
   };
+}
+
+export interface ActiveWindow {
+  id: string;
+  path: string;
+  title: string;
+  icon: ReactNode;
+  isDirty?: boolean;
 }

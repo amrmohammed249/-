@@ -13,8 +13,24 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
+      :root {
+        --bg: #F7FAFC;
+        --panel: #FFFFFF;
+        --accent: #1F8EF1;
+        --accent-2: #10B981;
+        --text: #1F2937;
+        --muted: #6B7280;
+        --danger: #EF4444;
+        --warning: #F59E0B;
+        --radius: 8px;
+        --shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+      }
       body {
         font-family: 'Cairo', sans-serif;
+        background-color: var(--bg);
+      }
+      .dark body {
+        background-color: #0d1117;
       }
       @media print {
         body * {

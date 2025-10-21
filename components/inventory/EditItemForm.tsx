@@ -16,6 +16,7 @@ const EditItemForm: React.FC<EditItemFormProps> = ({ item, onClose }) => {
   
   const [name, setName] = useState(item.name);
   const [category, setCategory] = useState(item.category);
+  const [barcode, setBarcode] = useState(item.barcode || '');
   const [baseUnitId, setBaseUnitId] = useState(() => unitDefinitions.find((u: UnitDefinition) => u.name === item.baseUnit)?.id || '');
   const [purchasePrice, setPurchasePrice] = useState(item.purchasePrice.toString());
   const [salePrice, setSalePrice] = useState(item.salePrice.toString());
@@ -88,25 +89,30 @@ const EditItemForm: React.FC<EditItemFormProps> = ({ item, onClose }) => {
         salePrice: Number(p.salePrice),
       }));
 
-    const updatedItem: InventoryItem = {
-      ...item,
-      name,
-      category,
-      baseUnit: baseUnitName,
-      purchasePrice: Number(purchasePrice),
-      salePrice: Number(salePrice),
-      stock: Number(stock),
-      units: finalPackingUnits,
-    };
-    
-    updateItem(updatedItem);
-    onClose();
+    try {
+        const updatedItem: InventoryItem = {
+          ...item,
+          name,
+          category,
+          barcode: barcode.trim(),
+          baseUnit: baseUnitName,
+          purchasePrice: Number(purchasePrice),
+          salePrice: Number(salePrice),
+          stock: Number(stock),
+          units: finalPackingUnits,
+        };
+        
+        updateItem(updatedItem);
+        onClose();
+    } catch (error) {
+        // Error is handled inside updateItem by showing a toast
+    }
   };
 
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">اسم الصنف</label>
             <input type="text" id="name" value={name} onChange={e => setName(e.target.value)} className="input-style w-full mt-1" required />
@@ -114,6 +120,10 @@ const EditItemForm: React.FC<EditItemFormProps> = ({ item, onClose }) => {
           <div>
             <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">الفئة</label>
             <input type="text" id="category" value={category} onChange={e => setCategory(e.target.value)} className="input-style w-full mt-1" />
+          </div>
+          <div>
+            <label htmlFor="barcode" className="block text-sm font-medium text-gray-700 dark:text-gray-300">الباركود</label>
+            <input type="text" id="barcode" value={barcode} onChange={e => setBarcode(e.target.value)} className="input-style w-full mt-1" />
           </div>
         </div>
 
@@ -143,7 +153,7 @@ const EditItemForm: React.FC<EditItemFormProps> = ({ item, onClose }) => {
                  <div>
                     <label htmlFor="stock" className="block text-sm font-medium text-gray-700 dark:text-gray-300">الرصيد الحالي</label>
                     <input type="number" id="stock" value={stock} onChange={e => setStock(e.target.value)} className="input-style w-full mt-1" required min="0" disabled/>
-                     <p className="text-xs text-gray-500 mt-1">لا يمكن تعديل الرصيد من هنا. استخدم القيود لضبط المخزون.</p>
+                     <p className="text-xs text-gray-500 mt-1">لا يمكن تعديل الرصيد من هنا. استخدم التسويات الجردية لضبط المخزون.</p>
                 </div>
             </div>
         </div>

@@ -12,28 +12,29 @@ import ExpenseReport from './ExpenseReport';
 import SaleReturnsReport from './SaleReturnsReport';
 import PurchaseReturnsReport from './PurchaseReturnsReport';
 import ReportActionBar from './ReportActionBar';
-import { AccountNode } from '../../types';
+import { AccountNode, InventoryItem } from '../../types';
 import TreasuryReport from './TreasuryReport';
+import ItemMovementReport from './ItemMovementReport'; // Import the new report
 
 declare var jspdf: any;
 declare var html2canvas: any;
-declare var XLSX: any;
 
 
-type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'expense' | 'customerSummary' | 'inventory';
+type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement';
 
-const reportTabs: { key: ReportTabKey; label: string; isTable: boolean }[] = [
-    { key: 'profitAndLoss', label: 'قائمة الدخل', isTable: false },
-    { key: 'balanceSheet', label: 'الميزانية العمومية', isTable: false },
-    { key: 'treasury', label: 'حركة الخزينة', isTable: true },
-    { key: 'sales', label: 'المبيعات', isTable: true },
-    { key: 'saleReturns', label: 'مردودات المبيعات', isTable: true },
-    { key: 'purchases', label: 'المشتريات', isTable: true },
-    { key: 'purchaseReturns', label: 'مردودات المشتريات', isTable: true },
-    { key: 'salesProfitability', label: 'ربحية المبيعات', isTable: true },
-    { key: 'expense', label: 'المصروفات', isTable: true },
-    { key: 'customerSummary', label: 'ملخص العملاء', isTable: true },
-    { key: 'inventory', label: 'المخزون', isTable: true },
+const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category: string }[] = [
+    { key: 'profitAndLoss', label: 'قائمة الدخل', isTable: false, category: 'تقارير مالية' },
+    { key: 'balanceSheet', label: 'الميزانية العمومية', isTable: false, category: 'تقارير مالية' },
+    { key: 'treasury', label: 'حركة الخزينة', isTable: true, category: 'تقارير مالية' },
+    { key: 'expense', label: 'المصروفات', isTable: true, category: 'تقارير مالية' },
+    { key: 'sales', label: 'المبيعات', isTable: true, category: 'تقارير المبيعات والمشتريات' },
+    { key: 'saleReturns', label: 'مردودات المبيعات', isTable: true, category: 'تقارير المبيعات والمشتريات' },
+    { key: 'purchases', label: 'المشتريات', isTable: true, category: 'تقارير المبيعات والمشتريات' },
+    { key: 'purchaseReturns', label: 'مردودات المشتريات', isTable: true, category: 'تقارير المبيعات والمشتريات' },
+    { key: 'salesProfitability', label: 'ربحية المبيعات', isTable: true, category: 'تقارير تحليلية' },
+    { key: 'customerSummary', label: 'ملخص العملاء', isTable: true, category: 'تقارير تحليلية' },
+    { key: 'inventory', label: 'أرصدة المخزون', isTable: true, category: 'تقارير المخزون' },
+    { key: 'itemMovement', label: 'حركة صنف', isTable: true, category: 'تقارير المخزون' },
 ];
 
 const flattenAccounts = (nodes: AccountNode[]): AccountNode[] => {
@@ -54,23 +55,47 @@ const Reports: React.FC = () => {
     const [startDate, setStartDate] = useState(financialYear.startDate);
     const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
 
+    // Filters for different reports
     const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
     const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
     const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
+    const [selectedItemCategory, setSelectedItemCategory] = useState<string>('');
     const [selectedExpenseAccountId, setSelectedExpenseAccountId] = useState<string>('');
     const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>('');
     
     const [reportExportProps, setReportExportProps] = useState<{ data: any[], columns: any[], name: string }>({ data: [], columns: [], name: '' });
 
+    const groupedTabs = useMemo(() => {
+        const categories = ['تقارير مالية', 'تقارير المبيعات والمشتريات', 'تقارير المخزون', 'تقارير تحليلية'];
+        const groups: { [key: string]: typeof reportTabs } = {};
+        
+        categories.forEach(cat => {
+            groups[cat] = reportTabs.filter(tab => tab.category === cat);
+        });
+
+        return groups;
+
+    }, []);
+
 
     useEffect(() => {
-        // Reset specific filters when tab changes
         setSelectedCustomerId('');
         setSelectedSupplierId('');
         setSelectedInventoryId('');
+        setSelectedItemCategory('');
         setSelectedExpenseAccountId('');
         setSelectedTreasuryId('');
     }, [activeTab]);
+
+    const itemCategories = useMemo(() => {
+        const categories = new Set<string>();
+        inventory.forEach((item: InventoryItem) => {
+            if (item.category) {
+                categories.add(item.category);
+            }
+        });
+        return Array.from(categories).sort();
+    }, [inventory]);
 
     const expenseAccounts = useMemo(() => {
         const expenseRoot = chartOfAccounts.find((n: AccountNode) => n.code === '4000')?.children?.find((n: AccountNode) => n.code === '4200');
@@ -103,36 +128,6 @@ const Reports: React.FC = () => {
         }
     };
 
-    const onExportCSV = () => {
-        const { data, columns, name } = reportExportProps;
-        if (!data || !columns || data.length === 0) {
-            alert('لا توجد بيانات لتصديرها.');
-            return;
-        }
-
-        const headers = columns.map(col => col.header).join(',');
-        const rows = data.map(row => {
-            return columns.map(col => {
-                let value = col.render ? col.render(row) : row[col.accessor];
-                // Strip HTML and clean up value for CSV
-                if (typeof value === 'string') {
-                    value = value.replace(/<[^>]*>?/gm, '').replace(/,/g, '');
-                }
-                return `"${value}"`;
-            }).join(',');
-        });
-
-        const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers, ...rows].join('\n');
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `${name}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    const currentTabInfo = reportTabs.find(t => t.key === activeTab);
     const isDateRangeReport = activeTab !== 'balanceSheet' && activeTab !== 'inventory';
 
     const renderReport = () => {
@@ -146,9 +141,10 @@ const Reports: React.FC = () => {
             case 'balanceSheet': return <BalanceSheet asOfDate={endDate} onDataReady={handleDataReady} />;
             case 'customerSummary': return <CustomerSummaryReport {...props} />;
             case 'inventory': return <InventoryReport asOfDate={endDate} onDataReady={handleDataReady} itemId={selectedInventoryId} />;
-            case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} />;
+            case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
             case 'expense': return <ExpenseReport {...props} expenseAccountId={selectedExpenseAccountId} />;
             case 'treasury': return <TreasuryReport {...props} treasuryAccountId={selectedTreasuryId} />;
+            case 'itemMovement': return <ItemMovementReport {...props} />;
             default: return <p>الرجاء اختيار تقرير لعرضه.</p>;
         }
     };
@@ -175,7 +171,7 @@ const Reports: React.FC = () => {
                         </div>
                     )}
                     
-                    {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability' || activeTab === 'customerSummary') && (
+                    {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability') && (
                         <div>
                             <label htmlFor="customerFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العميل</label>
                             <select id="customerFilter" value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="input-style w-full">
@@ -193,6 +189,24 @@ const Reports: React.FC = () => {
                                 {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
+                    )}
+                    {activeTab === 'salesProfitability' && (
+                        <>
+                            <div>
+                                <label htmlFor="itemFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الصنف</label>
+                                <select id="itemFilter" value={selectedInventoryId} onChange={(e) => setSelectedInventoryId(e.target.value)} className="input-style w-full">
+                                    <option value="">كل الأصناف</option>
+                                    {inventory.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="itemCategoryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">فئة الصنف</label>
+                                <select id="itemCategoryFilter" value={selectedItemCategory} onChange={(e) => setSelectedItemCategory(e.target.value)} className="input-style w-full">
+                                    <option value="">كل الفئات</option>
+                                    {itemCategories.map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
+                        </>
                     )}
                     {activeTab === 'inventory' && (
                          <div>
@@ -217,29 +231,36 @@ const Reports: React.FC = () => {
                             <label htmlFor="treasuryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الخزينة</label>
                             <select id="treasuryFilter" value={selectedTreasuryId} onChange={(e) => setSelectedTreasuryId(e.target.value)} className="input-style w-full">
                                 <option value="">كل الخزائن</option>
-                                {treasuriesList.filter((t: any) => !t.isTotal).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                {Array.isArray(treasuriesList) && (treasuriesList as {id: string, name: string, isTotal?: boolean}[]).filter((t) => !t.isTotal).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                             </select>
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="bg-gray-200 dark:bg-gray-900 rounded-lg p-1 mt-6 flex-shrink-0">
-                <nav className="flex space-x-1 space-x-reverse overflow-x-auto">
-                    {reportTabs.sort((a,b) => a.label.localeCompare(b.label)).map(tab => (
-                        <button
-                            key={tab.key}
-                            onClick={() => setActiveTab(tab.key)}
-                            className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                                activeTab === tab.key
-                                ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow'
-                                : 'text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-gray-700/50'
-                            }`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </nav>
+            <div className="flex-shrink-0 mt-6 space-y-4">
+                {Object.entries(groupedTabs).map(([category, tabs]) => (
+                    <div key={category}>
+                        <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">{category}</h3>
+                        <div className="bg-gray-200 dark:bg-gray-900 rounded-lg p-1">
+                             <nav className="flex flex-wrap gap-1">
+                                {tabs.map(tab => (
+                                    <button
+                                        key={tab.key}
+                                        onClick={() => setActiveTab(tab.key)}
+                                        className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
+                                            activeTab === tab.key
+                                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow'
+                                            : 'text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-gray-700/50'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+                    </div>
+                ))}
             </div>
             
             <div className="flex-grow bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-y-auto mt-6">
@@ -248,9 +269,7 @@ const Reports: React.FC = () => {
             
             <div className="flex-shrink-0 mt-6">
                 <ReportActionBar 
-                    isTable={currentTabInfo?.isTable ?? true}
                     onExportPDF={onExportPDF}
-                    onExportCSV={onExportCSV}
                 />
             </div>
         </div>

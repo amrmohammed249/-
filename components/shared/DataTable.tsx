@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { PencilIcon, TrashIcon, EyeIcon, ArrowUturnLeftIcon, MagnifyingGlassIcon, ArrowsUpDownIcon, ChevronUpIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons';
 
 type Column = {
-  header: string;
+  // FIX: Allow React.ReactNode for complex headers.
+  header: React.ReactNode;
   accessor: string;
   render?: (row: any) => React.ReactNode;
   sortable?: boolean;
@@ -19,6 +20,7 @@ interface DataTableProps {
   onView?: (row: any) => void;
   onUnarchive?: (row: any) => void;
   onDelete?: (row: any) => void;
+  onRowClick?: (row: any) => void;
   rowClassName?: (row: any) => string;
   searchableColumns?: string[];
   calculateFooter?: (data: any[]) => { [key: string]: string | number };
@@ -35,6 +37,7 @@ const DataTable: React.FC<DataTableProps> = ({
   onView,
   onUnarchive,
   onDelete,
+  onRowClick,
   rowClassName,
   searchableColumns = [],
   calculateFooter,
@@ -152,14 +155,18 @@ const DataTable: React.FC<DataTableProps> = ({
         </thead>
         <tbody>
           {paginatedData.map((row, rowIndex) => (
-            <tr key={row.id || rowIndex} className={`bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 ${rowClassName ? rowClassName(row) : ''}`}>
+            <tr 
+              key={row.id || rowIndex} 
+              className={`bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 ${rowClassName ? rowClassName(row) : ''} ${onRowClick ? 'cursor-pointer' : ''}`}
+              onClick={() => onRowClick && onRowClick(row)}
+            >
               {columns.map((col, colIndex) => (
                 <td key={colIndex} className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">
                   {col.render ? col.render(row) : row[col.accessor]}
                 </td>
               ))}
               {actions.length > 0 && (
-                <td className="px-6 py-4 text-center">
+                <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-center items-center space-x-2 space-x-reverse">
                     {actions.includes('view') && onView && <button onClick={() => onView(row)} className="text-gray-400 hover:text-blue-500" title="عرض التفاصيل"><EyeIcon className="w-5 h-5"/></button>}
                     {actions.includes('edit') && onEdit && <button onClick={() => onEdit(row)} className="text-gray-400 hover:text-green-500" title="تعديل"><PencilIcon className="w-5 h-5"/></button>}

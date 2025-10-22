@@ -9,7 +9,7 @@ interface FormProps {
 }
 
 const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess }) => {
-    const { inventory, chartOfAccounts, addInventoryAdjustment, showToast } = useContext(DataContext);
+    const { inventory, chartOfAccounts, addInventoryAdjustment, showToast, generalSettings } = useContext(DataContext);
     
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [type, setType] = useState<'إضافة' | 'صرف'>('صرف');
@@ -18,6 +18,8 @@ const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess })
     const [items, setItems] = useState<Partial<InventoryAdjustmentLineItem>[]>([]);
     const [newItemId, setNewItemId] = useState('');
     const [totalValue, setTotalValue] = useState(0);
+    const [itemErrors, setItemErrors] = useState<Record<string, string>>({});
+
 
     const contraAccountOptions = useMemo(() => {
         const flatten = (nodes: AccountNode[]): AccountNode[] => {
@@ -49,7 +51,7 @@ const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess })
         return relevantNodes.filter(acc => !forbiddenIds.includes(acc.id)).sort((a,b) => a.code.localeCompare(b.code));
     }, [chartOfAccounts, type]);
     
-    useEffect(() => setContraAccountId(''), [type]); // Reset contra account when type changes
+    useEffect(() => { setContraAccountId(''); setItems([]); setItemErrors({}); }, [type]);
 
     useEffect(() => {
         const total = items.reduce((sum, item) => sum + (item.total || 0), 0);
@@ -80,10 +82,16 @@ const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess })
         const item = newItems[index];
         const numQuantity = parseFloat(quantity) || 0;
         
-        if (type === 'صرف') {
+        if (type === 'صرف' && !generalSettings.allowNegativeStock) {
             const inventoryItem = inventory.find(i => i.id === item.itemId);
             if (inventoryItem && numQuantity > inventoryItem.stock) {
-                showToast(`الكمية تتجاوز المخزون المتاح (${inventoryItem.stock})`, 'warning');
+                setItemErrors(prev => ({...prev, [item.itemId!]: `المتاح: ${inventoryItem.stock}`}));
+            } else {
+                 setItemErrors(prev => {
+                    const newErrors = {...prev};
+                    delete newErrors[item.itemId!];
+                    return newErrors;
+                });
             }
         }
         
@@ -93,7 +101,15 @@ const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess })
     };
     
     const handleRemoveItem = (index: number) => {
+        const itemToRemove = items[index];
         setItems(items.filter((_, i) => i !== index));
+        if (itemToRemove) {
+            setItemErrors(prev => {
+                const newErrors = {...prev};
+                delete newErrors[itemToRemove.itemId!];
+                return newErrors;
+            });
+        }
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -116,18 +132,20 @@ const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess })
              showToast('الحساب المقابل غير صالح.', 'error');
              return;
         }
-
-        const newAdjustment = addInventoryAdjustment({
-            date,
-            type,
-            contraAccountId,
-            contraAccountName: contraAccount.name,
-            description,
-            items: finalItems,
-            totalValue
-        });
-        
-        onSuccess(newAdjustment);
+        try {
+            const newAdjustment = addInventoryAdjustment({
+                date,
+                type,
+                contraAccountId,
+                contraAccountName: contraAccount.name,
+                description,
+                items: finalItems,
+                totalValue
+            });
+            onSuccess(newAdjustment);
+        } catch(error: any) {
+            showToast(error.message, 'error');
+        }
     };
 
     return (
@@ -158,19 +176,23 @@ const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess })
             </div>
 
             <div className="border-t pt-4">
-                {items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-12 gap-2 items-center mb-2">
-                        <span className="col-span-5 font-medium">{item.itemName}</span>
-                        <div className="col-span-2">
-                             <input type="number" value={item.quantity} onChange={e => handleItemChange(index, e.target.value)} className="input-style w-full" placeholder="الكمية" min="0.01" step="any"/>
+                {items.map((item, index) => {
+                    const error = item.itemId ? itemErrors[item.itemId] : undefined;
+                    return (
+                        <div key={index} className="grid grid-cols-12 gap-2 items-start mb-2">
+                            <span className="col-span-5 font-medium self-center">{item.itemName}</span>
+                            <div className="col-span-2">
+                                <input type="number" value={item.quantity} onChange={e => handleItemChange(index, e.target.value)} className={`input-style w-full ${error ? 'border-red-500' : ''}`} placeholder="الكمية" min="0.01" step="any"/>
+                                {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+                            </div>
+                            <span className="col-span-2 text-center self-center">{item.cost?.toLocaleString()} (للوحدة)</span>
+                            <span className="col-span-2 text-center font-semibold self-center">{item.total?.toLocaleString()}</span>
+                            <button type="button" onClick={() => handleRemoveItem(index)} className="col-span-1 text-red-500 hover:text-red-700 self-center">
+                                <TrashIcon className="w-5 h-5"/>
+                            </button>
                         </div>
-                        <span className="col-span-2 text-center">{item.cost?.toLocaleString()} (للوحدة)</span>
-                        <span className="col-span-2 text-center font-semibold">{item.total?.toLocaleString()}</span>
-                        <button type="button" onClick={() => handleRemoveItem(index)} className="col-span-1 text-red-500 hover:text-red-700">
-                            <TrashIcon className="w-5 h-5"/>
-                        </button>
-                    </div>
-                ))}
+                    )
+                })}
                 <div className="flex items-center space-x-2 space-x-reverse mt-4 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
                     <select value={newItemId} onChange={e => setNewItemId(e.target.value)} className="input-style w-full">
                         <option value="">-- اختر صنف للإضافة --</option>
@@ -191,7 +213,7 @@ const AddInventoryAdjustmentForm: React.FC<FormProps> = ({ onClose, onSuccess })
 
             <div className="mt-6 flex justify-end gap-2">
                 <button type="button" onClick={onClose} className="btn-secondary">إلغاء</button>
-                <button type="submit" className="btn-primary">حفظ التسوية</button>
+                <button type="submit" className="btn-primary" disabled={Object.keys(itemErrors).length > 0}>حفظ التسوية</button>
             </div>
         </form>
     );

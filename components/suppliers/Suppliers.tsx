@@ -1,4 +1,5 @@
 import React, { useState, useContext, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
 import PageHeader from '../shared/PageHeader';
 import DataTable from '../shared/DataTable';
@@ -10,6 +11,7 @@ import { PlusIcon } from '../icons/PlusIcon';
 
 const Suppliers: React.FC = () => {
   const { suppliers, archiveSupplier, showToast } = useContext(DataContext);
+  const navigate = useNavigate();
   
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
@@ -62,6 +64,7 @@ const Suppliers: React.FC = () => {
         actions={['edit', 'archive']}
         onEdit={handleEdit}
         onArchive={handleArchive}
+        onRowClick={(row) => navigate(`/suppliers/${row.id}`)}
         searchableColumns={['id', 'name', 'phone', 'address', 'contact']}
       />
 

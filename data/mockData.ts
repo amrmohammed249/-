@@ -70,8 +70,10 @@ export const journalData = [];
 export const inventoryData: InventoryItem[] = [];
 
 export const salesData: Sale[] = [];
+export const priceQuotesData: any[] = [];
 
 export const purchasesData: Purchase[] = [];
+export const purchaseQuotesData: any[] = [];
 
 export const treasuryData = [];
 

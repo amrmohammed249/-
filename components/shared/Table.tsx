@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { PencilIcon } from '../icons/PencilIcon';
 import { TrashIcon } from '../icons/TrashIcon';
@@ -6,7 +7,8 @@ import { EyeIcon } from '../icons/EyeIcon';
 import { ArrowUturnLeftIcon } from '../icons/ArrowUturnLeftIcon';
 
 type Column = {
-  header: string;
+  // FIX: Allow React.ReactNode for complex headers.
+  header: React.ReactNode;
   accessor: string;
   render?: (row: any) => React.ReactNode;
 };

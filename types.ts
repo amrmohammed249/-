@@ -61,6 +61,18 @@ export interface Sale {
   isArchived?: boolean;
 }
 
+export interface PriceQuote {
+  id: string;
+  customer: string;
+  date: string;
+  items: LineItem[];
+  subtotal: number;
+  totalDiscount: number;
+  total: number;
+  status: 'جديد' | 'تم تحويله' | 'ملغي';
+  isArchived?: boolean;
+}
+
 export interface Purchase {
   id: string;
   supplier: string;
@@ -73,6 +85,19 @@ export interface Purchase {
   journalEntryId?: string;
   isArchived?: boolean;
 }
+
+export interface PurchaseQuote {
+  id: string;
+  supplier: string;
+  date: string;
+  items: LineItem[];
+  subtotal: number;
+  totalDiscount: number;
+  total: number;
+  status: 'جديد' | 'تم تحويله' | 'ملغي';
+  isArchived?: boolean;
+}
+
 
 export interface SaleReturn {
   id: string;
@@ -225,6 +250,10 @@ export interface CompanyInfo {
   name: string;
   address: string;
   phone: string;
+}
+
+export interface GeneralSettings {
+  allowNegativeStock: boolean;
 }
 
 export interface FinancialYear {

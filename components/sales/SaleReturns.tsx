@@ -4,6 +4,7 @@ import PageHeader from '../shared/PageHeader';
 import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddSaleReturnForm from './AddSaleReturnForm';
+import EditSaleReturnForm from './EditSaleReturnForm';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import SaleReturnView from './SaleReturnView';
 import { PlusIcon } from '../icons/PlusIcon';
@@ -13,6 +14,7 @@ const SaleReturns: React.FC = () => {
   const { saleReturns, archiveSaleReturn, showToast } = useContext(DataContext);
 
   const [isAddModalOpen, setAddModalOpen] = useState(false);
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isViewModalOpen, setViewModalOpen] = useState(false);
   const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState<SaleReturn | null>(null);
@@ -22,6 +24,11 @@ const SaleReturns: React.FC = () => {
     setViewModalOpen(true);
   };
   
+  const handleEdit = (saleReturn: SaleReturn) => {
+    setSelectedReturn(saleReturn);
+    setEditModalOpen(true);
+  };
+
   const handleArchive = (saleReturn: SaleReturn) => {
     setSelectedReturn(saleReturn);
     setArchiveModalOpen(true);
@@ -42,6 +49,7 @@ const SaleReturns: React.FC = () => {
   
   const handleSuccess = (newReturn: SaleReturn) => {
       setAddModalOpen(false);
+      setEditModalOpen(false);
       handleView(newReturn);
   }
 
@@ -64,8 +72,9 @@ const SaleReturns: React.FC = () => {
       <DataTable 
         columns={columns} 
         data={saleReturns}
-        actions={['view', 'archive']}
+        actions={['view', 'edit', 'archive']}
         onView={handleView}
+        onEdit={handleEdit}
         onArchive={handleArchive}
         searchableColumns={['id', 'customer', 'date', 'originalSaleId']}
       />
@@ -73,6 +82,12 @@ const SaleReturns: React.FC = () => {
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة مرتجع مبيعات جديد" size="4xl">
         <AddSaleReturnForm onClose={() => setAddModalOpen(false)} onSuccess={handleSuccess} />
       </Modal>
+
+      {selectedReturn && isEditModalOpen && (
+        <Modal isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} title={`تعديل مرتجع مبيعات: ${selectedReturn.id}`} size="4xl">
+            <EditSaleReturnForm saleReturn={selectedReturn} onClose={() => setEditModalOpen(false)} onSuccess={handleSuccess} />
+        </Modal>
+      )}
       
       {selectedReturn && (
         <SaleReturnView

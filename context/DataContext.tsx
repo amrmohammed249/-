@@ -8,13 +8,16 @@ import type {
     Customer,
     FinancialYear,
     FixedAsset,
+    GeneralSettings,
     InventoryAdjustment,
     InventoryItem,
     JournalEntry,
     JournalLine,
     Notification,
+    PriceQuote,
     PrintSettings,
     Purchase,
+    PurchaseQuote,
     PurchaseReturn,
     RecentTransaction,
     Sale,
@@ -136,6 +139,7 @@ const initialState = {
     companyInfo: seedData.companyInfo,
     printSettings: seedData.printSettingsData,
     financialYear: seedData.financialYearData,
+    generalSettings: seedData.generalSettingsData,
     chartOfAccounts: seedData.chartOfAccountsData,
     sequences: seedData.sequencesData,
     unitDefinitions: seedData.unitDefinitionsData,
@@ -143,7 +147,9 @@ const initialState = {
     inventory: seedData.inventoryData,
     inventoryAdjustments: seedData.inventoryAdjustmentsData,
     sales: seedData.salesData,
+    priceQuotes: seedData.priceQuotesData,
     purchases: seedData.purchasesData,
+    purchaseQuotes: seedData.purchaseQuotesData,
     saleReturns: seedData.saleReturnsData,
     purchaseReturns: seedData.purchaseReturnsData,
     treasury: seedData.treasuryData,
@@ -176,6 +182,8 @@ function dataReducer(state: AppState, action: Action): AppState {
             return { ...state, printSettings: action.payload };
         case 'UPDATE_FINANCIAL_YEAR':
             return { ...state, financialYear: action.payload };
+        case 'UPDATE_GENERAL_SETTINGS':
+            return { ...state, generalSettings: action.payload };
 
         case 'MARK_NOTIFICATION_READ':
             return { ...state, notifications: state.notifications.map(n => n.id === action.payload ? { ...n, read: true } : n) };
@@ -263,6 +271,56 @@ function dataReducer(state: AppState, action: Action): AppState {
                 notifications: notification ? [notification, ...state.notifications].slice(0, 50) : state.notifications,
             };
         }
+        
+        case 'UPDATE_SALE': {
+            const { updatedSale, updatedInventory, updatedCustomers, journal, chartOfAccounts, log, notification } = action.payload;
+             return {
+                ...state,
+                sales: state.sales.map(s => s.id === updatedSale.id ? updatedSale : s),
+                inventory: updatedInventory,
+                customers: updatedCustomers,
+                journal,
+                chartOfAccounts,
+                sequences: { ...state.sequences, journal: state.sequences.journal + 1 },
+                activityLog: [log, ...state.activityLog],
+                notifications: notification ? [notification, ...state.notifications].slice(0, 50) : state.notifications,
+            };
+        }
+
+        case 'ADD_PRICE_QUOTE': {
+            return {
+                ...state,
+                priceQuotes: [action.payload.newQuote, ...state.priceQuotes],
+                sequences: { ...state.sequences, priceQuote: state.sequences.priceQuote + 1 },
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        }
+        case 'CANCEL_PRICE_QUOTE': {
+            return {
+                ...state,
+                priceQuotes: state.priceQuotes.map(q => q.id === action.payload.quoteId ? { ...q, status: 'ملغي' } : q),
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        }
+        case 'CONVERT_QUOTE_TO_SALE': {
+            const { updatedQuote, newSale, updatedInventory, updatedCustomers, journalEntry, updatedChartOfAccounts, log, notification } = action.payload;
+            return {
+                ...state,
+                priceQuotes: state.priceQuotes.map(q => q.id === updatedQuote.id ? updatedQuote : q),
+                chartOfAccounts: updatedChartOfAccounts,
+                journal: [journalEntry, ...state.journal],
+                sales: [newSale, ...state.sales],
+                inventory: updatedInventory,
+                customers: updatedCustomers,
+                sequences: { 
+                    ...state.sequences, 
+                    sale: state.sequences.sale + 1,
+                    journal: state.sequences.journal + 1,
+                },
+                activityLog: [log, ...state.activityLog],
+                notifications: notification ? [notification, ...state.notifications].slice(0, 50) : state.notifications,
+            };
+        }
 
         case 'ARCHIVE_SALE': {
             const { updatedSales, updatedInventory, updatedCustomers, log, updatedJournal, chartOfAccounts } = action.payload;
@@ -281,6 +339,54 @@ function dataReducer(state: AppState, action: Action): AppState {
             const { newPurchase, updatedInventory, updatedSuppliers, journalEntry, updatedChartOfAccounts, log } = action.payload;
             return {
                 ...state,
+                chartOfAccounts: updatedChartOfAccounts,
+                journal: [journalEntry, ...state.journal],
+                purchases: [newPurchase, ...state.purchases],
+                inventory: updatedInventory,
+                suppliers: updatedSuppliers,
+                sequences: { 
+                    ...state.sequences, 
+                    purchase: state.sequences.purchase + 1,
+                    journal: state.sequences.journal + 1,
+                },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'UPDATE_PURCHASE': {
+            const { updatedPurchase, updatedInventory, updatedSuppliers, journal, chartOfAccounts, log } = action.payload;
+             return {
+                ...state,
+                purchases: state.purchases.map(p => p.id === updatedPurchase.id ? updatedPurchase : p),
+                inventory: updatedInventory,
+                suppliers: updatedSuppliers,
+                journal,
+                chartOfAccounts,
+                sequences: { ...state.sequences, journal: state.sequences.journal + 1 },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ADD_PURCHASE_QUOTE': {
+            return {
+                ...state,
+                purchaseQuotes: [action.payload.newQuote, ...state.purchaseQuotes],
+                sequences: { ...state.sequences, purchaseQuote: state.sequences.purchaseQuote + 1 },
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        }
+        case 'CANCEL_PURCHASE_QUOTE': {
+            return {
+                ...state,
+                purchaseQuotes: state.purchaseQuotes.map(q => q.id === action.payload.quoteId ? { ...q, status: 'ملغي' } : q),
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        }
+        case 'CONVERT_QUOTE_TO_PURCHASE': {
+            const { updatedQuote, newPurchase, updatedInventory, updatedSuppliers, journalEntry, updatedChartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                purchaseQuotes: state.purchaseQuotes.map(q => q.id === updatedQuote.id ? updatedQuote : q),
                 chartOfAccounts: updatedChartOfAccounts,
                 journal: [journalEntry, ...state.journal],
                 purchases: [newPurchase, ...state.purchases],
@@ -379,6 +485,15 @@ function dataReducer(state: AppState, action: Action): AppState {
             return { ...state, inventory: action.payload.inventory, sequences: action.payload.newSequences || state.sequences, activityLog: [action.payload.log, ...state.activityLog] };
         }
         
+        case 'GENERATE_MISSING_BARCODES': {
+            return {
+                ...state,
+                inventory: action.payload.inventory,
+                sequences: action.payload.sequences,
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+        }
+        
         default:
             return state;
     }
@@ -403,6 +518,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isDataLoaded, useStateIsDataLoaded] = useState(false);
     const [hasData, setHasData] = useState(false);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [scannedItem, setScannedItem] = useState<{ item: InventoryItem; timestamp: number } | null>(null);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('saved');
     const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
     const [dataManager, setDataManager] = useState({ activeDatasetKey: '', datasets: [] as { key: string, name: string }[] });
@@ -438,18 +554,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const loadedPrintSettings = loadedData.printSettings || seedData.printSettingsData;
             finalState.printSettings = { ...seedData.printSettingsData, ...loadedPrintSettings };
             finalState.financialYear = loadedData.financialYear || seedData.financialYearData;
+            finalState.generalSettings = { ...seedData.generalSettingsData, ...(loadedData.generalSettings || {}) };
             
             // Migrate Chart of Accounts to ensure all required accounts exist
             const chart = loadedData.chartOfAccounts || [];
             finalState.chartOfAccounts = migrateChartOfAccounts(chart);
 
-            finalState.sequences = loadedData.sequences || seedData.sequencesData;
+            finalState.sequences = { ...seedData.sequencesData, ...loadedData.sequences };
             finalState.unitDefinitions = loadedData.unitDefinitions || seedData.unitDefinitionsData;
             finalState.journal = loadedData.journal || [];
             finalState.inventory = (loadedData.inventory || []).map((item: any) => ({ ...item, units: item.units || [] }));
             finalState.inventoryAdjustments = loadedData.inventoryAdjustments || [];
             finalState.sales = loadedData.sales || [];
+            finalState.priceQuotes = loadedData.priceQuotes || [];
             finalState.purchases = loadedData.purchases || [];
+            finalState.purchaseQuotes = loadedData.purchaseQuotes || [];
             finalState.saleReturns = loadedData.saleReturns || [];
             finalState.purchaseReturns = loadedData.purchaseReturns || [];
             finalState.treasury = loadedData.treasury || [];
@@ -486,6 +605,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             debouncedSave(dataManager.activeDatasetKey, data);
         }
     }, [data, isDataLoaded, hasData, dataManager.activeDatasetKey, debouncedSave]);
+    
+    const processBarcodeScan = useCallback((barcode: string) => {
+        const item = data.inventory.find((i: InventoryItem) => i.barcode === barcode && !i.isArchived);
+        if (item) {
+            setScannedItem({ item, timestamp: Date.now() });
+            showToast(`تم مسح الصنف: ${item.name}`, 'info');
+        } else {
+            showToast(`باركود غير معروف: ${barcode}`, 'warning');
+        }
+    }, [data.inventory, showToast]);
 
     const createActivityLog = useCallback((action: string, details: string): ActivityLogEntry | null => {
         if (!currentUser) return null;
@@ -757,6 +886,130 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return newSale;
     }, [data.sequences.sale, data.sequences.journal, data.inventory, data.customers, data.chartOfAccounts, createActivityLog, createNotification]);
     
+    const updateSale = useCallback((updatedSale: Sale): Sale => {
+        const originalSale = data.sales.find((s: Sale) => s.id === updatedSale.id);
+        if (!originalSale) {
+            throw new Error("لم يتم العثور على الفاتورة للتحديث");
+        }
+    
+        // --- 1. إنشاء نسخ قابلة للتعديل من الحالة ---
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        const updatedCustomers = JSON.parse(JSON.stringify(data.customers));
+        const updatedChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        let updatedJournal = JSON.parse(JSON.stringify(data.journal));
+    
+        // --- 2. عكس تأثير المعاملة الأصلية ---
+        // إرجاع المخزون
+        originalSale.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+    
+        // إرجاع رصيد العميل
+        const customer = updatedCustomers.find((c: Customer) => c.name === originalSale.customer);
+        if (customer) {
+            customer.balance -= originalSale.total;
+        }
+    
+        // عكس القيد المحاسبي الأصلي وأرشفته
+        const originalJournalEntry = updatedJournal.find((j: JournalEntry) => j.id === originalSale.journalEntryId);
+        if (originalJournalEntry) {
+            originalJournalEntry.lines.forEach((line: JournalLine) => {
+                const amountToReverse = line.credit - line.debit;
+                updateBalancesRecursively(updatedChart, line.accountId, amountToReverse);
+            });
+            updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalSale.journalEntryId ? { ...j, isArchived: true, description: `[ملغي] ${j.description}` } : j);
+        }
+    
+        // --- 3. تطبيق تأثير المعاملة الجديدة ---
+        const LOW_STOCK_THRESHOLD = 10;
+        let newCostOfGoodsSold = 0;
+        let notification: Notification | null = null;
+        updatedSale.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                const oldStock = item.stock;
+                item.stock -= quantityInBaseUnit;
+                newCostOfGoodsSold += quantityInBaseUnit * item.purchasePrice;
+                if (oldStock > LOW_STOCK_THRESHOLD && item.stock <= LOW_STOCK_THRESHOLD) {
+                    notification = createNotification(`انخفاض مخزون الصنف "${line.itemName}" (${item.stock} متبقي)`, 'warning', '/inventory');
+                }
+            }
+        });
+    
+        // تطبيق رصيد العميل الجديد
+        const updatedCustomer = updatedCustomers.find((c: Customer) => c.name === updatedSale.customer);
+        if (updatedCustomer) {
+            updatedCustomer.balance += updatedSale.total;
+        }
+    
+        // --- 4. إنشاء وتطبيق قيد محاسبي جديد ---
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        const customerAccount = findAccountByCode(updatedChart, '1103');
+        const salesAccount = findAccountByCode(updatedChart, '4101');
+        const salesDiscountAccount = findAccountByCode(updatedChart, '4102');
+        const cogsAccount = findAccountByCode(updatedChart, '4204');
+        const inventoryAccount = findAccountByCode(updatedChart, '1104');
+    
+        if (!customerAccount || !salesAccount || !salesDiscountAccount || !cogsAccount || !inventoryAccount) {
+            throw new Error("حسابات نظام أساسية مفقودة. لا يمكن تعديل الفاتورة.");
+        }
+        
+        const newJournalLines: JournalLine[] = [
+            { accountId: customerAccount.id, accountName: customerAccount.name, debit: updatedSale.total, credit: 0 },
+            { accountId: salesDiscountAccount.id, accountName: salesDiscountAccount.name, debit: updatedSale.totalDiscount, credit: 0 },
+            { accountId: salesAccount.id, accountName: salesAccount.name, debit: 0, credit: updatedSale.subtotal },
+            { accountId: cogsAccount.id, accountName: cogsAccount.name, debit: newCostOfGoodsSold, credit: 0 },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: newCostOfGoodsSold },
+        ];
+    
+        newJournalLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChart, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: updatedSale.date,
+            description: `تعديل فاتورة مبيعات رقم ${updatedSale.id}`,
+            debit: updatedSale.total + updatedSale.totalDiscount + newCostOfGoodsSold,
+            credit: updatedSale.subtotal + newCostOfGoodsSold,
+            status: 'مرحل',
+            lines: newJournalLines,
+        };
+        updatedJournal.push(newJournalEntry);
+        
+        const finalUpdatedSale = { ...updatedSale, journalEntryId: newJournalEntryId };
+    
+        // --- 5. إرسال التحديث ---
+        dispatch({
+            type: 'UPDATE_SALE',
+            payload: {
+                updatedSale: finalUpdatedSale,
+                updatedInventory,
+                updatedCustomers,
+                journal: updatedJournal,
+                chartOfAccounts: updatedChart,
+                log: createActivityLog('تعديل فاتورة مبيعات', `فاتورة رقم ${updatedSale.id}`),
+                notification
+            }
+        });
+    
+        return finalUpdatedSale;
+    }, [data.sales, data.inventory, data.customers, data.journal, data.chartOfAccounts, data.sequences.journal, createActivityLog, createNotification]);
+
     const archiveSale = useCallback((id: string) => {
         const sale = data.sales.find(s => s.id === id);
         if (!sale || sale.isArchived) return { success: false, message: 'الفاتورة غير موجودة أو مؤرشفة بالفعل.' };
@@ -864,6 +1117,118 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return newPurchase;
     }, [data.sequences.purchase, data.sequences.journal, data.inventory, data.suppliers, data.chartOfAccounts, createActivityLog]);
     
+    const updatePurchase = useCallback((updatedPurchase: Purchase): Purchase => {
+        const originalPurchase = data.purchases.find((p: Purchase) => p.id === updatedPurchase.id);
+        if (!originalPurchase) {
+            throw new Error("لم يتم العثور على فاتورة الشراء للتحديث");
+        }
+    
+        // --- 1. إنشاء نسخ قابلة للتعديل ---
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        const updatedSuppliers = JSON.parse(JSON.stringify(data.suppliers));
+        const updatedChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        let updatedJournal = JSON.parse(JSON.stringify(data.journal));
+    
+        // --- 2. عكس المعاملة الأصلية ---
+        // إرجاع المخزون
+        originalPurchase.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+    
+        // إرجاع رصيد المورد
+        const supplier = updatedSuppliers.find((s: Supplier) => s.name === originalPurchase.supplier);
+        if (supplier) {
+            supplier.balance -= originalPurchase.total;
+        }
+    
+        // عكس وأرشفة القيد المحاسبي الأصلي
+        const originalJournalEntry = updatedJournal.find((j: JournalEntry) => j.id === originalPurchase.journalEntryId);
+        if (originalJournalEntry) {
+            originalJournalEntry.lines.forEach((line: JournalLine) => {
+                const amountToReverse = line.credit - line.debit;
+                updateBalancesRecursively(updatedChart, line.accountId, amountToReverse);
+            });
+            updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalPurchase.journalEntryId ? { ...j, isArchived: true, description: `[ملغي] ${j.description}` } : j);
+        }
+        
+        // --- 3. تطبيق المعاملة الجديدة ---
+        // تطبيق كميات المخزون الجديدة
+        updatedPurchase.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+    
+        // تطبيق رصيد المورد الجديد
+        const updatedSupplier = updatedSuppliers.find((s: Supplier) => s.name === updatedPurchase.supplier);
+        if (updatedSupplier) {
+            updatedSupplier.balance += updatedPurchase.total;
+        }
+    
+        // --- 4. إنشاء وتطبيق قيد محاسبي جديد ---
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        const inventoryAccount = findAccountByCode(updatedChart, '1104');
+        const supplierAccount = findAccountByCode(updatedChart, '2101');
+        const purchaseDiscountAccount = findAccountByCode(updatedChart, '4103');
+    
+        if (!inventoryAccount || !supplierAccount || !purchaseDiscountAccount) {
+            throw new Error("حسابات نظام أساسية مفقودة. لا يمكن تعديل الفاتورة.");
+        }
+    
+        const newJournalLines: JournalLine[] = [
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: updatedPurchase.subtotal, credit: 0 },
+            { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: 0, credit: updatedPurchase.total },
+            { accountId: purchaseDiscountAccount.id, accountName: purchaseDiscountAccount.name, debit: 0, credit: updatedPurchase.totalDiscount },
+        ];
+    
+        newJournalLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChart, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: updatedPurchase.date,
+            description: `تعديل فاتورة مشتريات رقم ${updatedPurchase.id}`,
+            debit: updatedPurchase.subtotal,
+            credit: updatedPurchase.total + updatedPurchase.totalDiscount,
+            status: 'مرحل',
+            lines: newJournalLines,
+        };
+        updatedJournal.push(newJournalEntry);
+        
+        const finalUpdatedPurchase = { ...updatedPurchase, journalEntryId: newJournalEntryId };
+        
+        // --- 5. إرسال التحديث ---
+        dispatch({
+            type: 'UPDATE_PURCHASE',
+            payload: {
+                updatedPurchase: finalUpdatedPurchase,
+                updatedInventory,
+                updatedSuppliers,
+                journal: updatedJournal,
+                chartOfAccounts: updatedChart,
+                log: createActivityLog('تعديل فاتورة مشتريات', `فاتورة رقم ${updatedPurchase.id}`)
+            }
+        });
+    
+        return finalUpdatedPurchase;
+    }, [data.purchases, data.inventory, data.suppliers, data.journal, data.chartOfAccounts, data.sequences.journal, createActivityLog]);
+
     const archivePurchase = useCallback((id: string) => {
         const purchase = data.purchases.find(p => p.id === id);
         if (!purchase || purchase.isArchived) return { success: false, message: 'الفاتورة غير موجودة أو مؤرشفة بالفعل.' };
@@ -1171,12 +1536,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const addItem = (item: Omit<InventoryItem, 'id'>): InventoryItem => {
         const newIdNumber = data.sequences.item;
         const newPackingUnitStart = data.sequences.packingUnit;
+        let newBarcodeSequence = data.sequences.barcode;
+        
         const newPackingUnits = (item.units || []).map((p, index) => ({ ...p, id: `PU-${newPackingUnitStart + index}` }));
-        const newItem = { ...item, id: `ITM-${String(newIdNumber).padStart(3, '0')}`, units: newPackingUnits };
+        
+        const newItem: InventoryItem = { 
+            ...item, 
+            id: `ITM-${String(newIdNumber).padStart(3, '0')}`, 
+            units: newPackingUnits 
+        };
+        
+        if (!newItem.barcode || newItem.barcode.trim() === '') {
+            newItem.barcode = String(newBarcodeSequence);
+            newBarcodeSequence++;
+        }
         
         dispatch({ type: 'ADD_ITEM', payload: {
             inventory: [newItem, ...data.inventory],
-            newSequences: { ...data.sequences, item: newIdNumber + 1, packingUnit: newPackingUnitStart + newPackingUnits.length },
+            newSequences: { ...data.sequences, item: newIdNumber + 1, packingUnit: newPackingUnitStart + newPackingUnits.length, barcode: newBarcodeSequence },
             log: createActivityLog('إضافة صنف', `تمت إضافة الصنف ${item.name}`),
         }});
         return newItem;
@@ -1198,7 +1575,293 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unarchiveItem = (id: string) => {
         dispatch({ type: 'UNARCHIVE_ITEM', payload: { inventory: data.inventory.map(i => i.id === id ? {...i, isArchived: false} : i), log: createActivityLog('إلغاء أرشفة صنف', `تم إلغاء أرشفة الصنف صاحب المعرف ${id}`) } });
     };
+
+    const addPriceQuote = useCallback((quote: Omit<PriceQuote, 'id' | 'status'>): PriceQuote => {
+        const newQuoteId = `QT-${String(data.sequences.priceQuote).padStart(3, '0')}`;
+        const newQuote: PriceQuote = { 
+            ...quote, 
+            id: newQuoteId, 
+            status: 'جديد'
+        };
+
+        dispatch({
+            type: 'ADD_PRICE_QUOTE',
+            payload: {
+                newQuote,
+                log: createActivityLog('إنشاء بيان أسعار', `تم إنشاء بيان أسعار رقم ${newQuote.id} للعميل ${quote.customer}`)
+            }
+        });
+        showToast(`تم إنشاء بيان الأسعار ${newQuote.id} بنجاح.`);
+        return newQuote;
+    }, [data.sequences.priceQuote, createActivityLog, showToast]);
+
+    const cancelPriceQuote = useCallback((quoteId: string) => {
+        const quote = data.priceQuotes.find(q => q.id === quoteId);
+        if (!quote) return;
+
+        dispatch({
+            type: 'CANCEL_PRICE_QUOTE',
+            payload: {
+                quoteId,
+                log: createActivityLog('إلغاء بيان أسعار', `تم إلغاء بيان الأسعار رقم ${quoteId}`)
+            }
+        });
+    }, [data.priceQuotes, createActivityLog]);
+
+    const convertQuoteToSale = useCallback((quoteId: string) => {
+        const quote = data.priceQuotes.find(q => q.id === quoteId);
+        if (!quote || quote.status !== 'جديد') {
+            showToast('لا يمكن تحويل بيان الأسعار هذا.', 'error');
+            return;
+        }
+
+        for (const line of quote.items) {
+            const item = data.inventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (!item) {
+                showToast(`الصنف "${line.itemName}" غير موجود في المخزون.`, 'error');
+                return;
+            }
+            let quantityInBaseUnit = line.quantity;
+            if (line.unitId !== 'base') {
+                const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+            }
+            if (item.stock < quantityInBaseUnit) {
+                showToast(`مخزون الصنف "${line.itemName}" غير كافٍ (${item.stock} متبقي).`, 'error');
+                return;
+            }
+        }
+        
+        const saleData: Omit<Sale, 'id' | 'journalEntryId'> = {
+            customer: quote.customer,
+            date: new Date().toISOString().slice(0, 10),
+            status: 'مستحقة',
+            items: quote.items,
+            subtotal: quote.subtotal,
+            totalDiscount: quote.totalDiscount,
+            total: quote.total
+        };
+
+        const LOW_STOCK_THRESHOLD = 10;
+        const newSaleId = `INV-${String(data.sequences.sale).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        let costOfGoodsSold = 0;
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        let notification: Notification | null = null;
+        saleData.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                const oldStock = item.stock;
+                item.stock -= quantityInBaseUnit;
+                costOfGoodsSold += quantityInBaseUnit * item.purchasePrice;
+                if(oldStock > LOW_STOCK_THRESHOLD && item.stock <= LOW_STOCK_THRESHOLD) {
+                   notification = createNotification(`انخفاض مخزون الصنف "${line.itemName}" (${item.stock} متبقي)`, 'warning', '/inventory');
+                }
+            }
+        });
+
+        const updatedCustomers = data.customers.map(c => c.name === saleData.customer ? {...c, balance: c.balance + saleData.total} : c);
+
+        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103');
+        const salesAccount = findAccountByCode(data.chartOfAccounts, '4101');
+        const salesDiscountAccount = findAccountByCode(data.chartOfAccounts, '4102');
+        const cogsAccount = findAccountByCode(data.chartOfAccounts, '4204');
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104');
+
+        if (!customerAccount || !salesAccount || !salesDiscountAccount || !cogsAccount || !inventoryAccount) {
+            const missing = [!customerAccount && "'العملاء (1103)'", !salesAccount && "'مبيعات محلية (4101)'", !salesDiscountAccount && "'خصومات المبيعات (4102)'", !cogsAccount && "'تكلفة البضاعة المباعة (4204)'", !inventoryAccount && "'المخزون (1104)'",].filter(Boolean).join(', ');
+            showToast(`حسابات نظام أساسية مفقودة: ${missing}. لا يمكن إتمام العملية.`, 'error');
+            return;
+        }
+        
+        const journalEntryLines: JournalLine[] = [
+            { accountId: customerAccount.id, accountName: customerAccount.name, debit: saleData.total, credit: 0 },
+            { accountId: salesDiscountAccount.id, accountName: salesDiscountAccount.name, debit: saleData.totalDiscount, credit: 0 },
+            { accountId: salesAccount.id, accountName: salesAccount.name, debit: 0, credit: saleData.subtotal },
+            { accountId: cogsAccount.id, accountName: cogsAccount.name, debit: costOfGoodsSold, credit: 0 },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: costOfGoodsSold },
+        ];
     
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalEntryLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: saleData.date, description: `فاتورة مبيعات رقم ${newSaleId} (محولة من بيان أسعار ${quoteId})`,
+            debit: saleData.total + saleData.totalDiscount + costOfGoodsSold, 
+            credit: saleData.subtotal + costOfGoodsSold, 
+            status: 'مرحل',
+            lines: journalEntryLines
+        };
+    
+        const newSale: Sale = { ...saleData, id: newSaleId, journalEntryId: newJournalEntryId };
+        const updatedQuote: PriceQuote = { ...quote, status: 'تم تحويله' };
+        
+        dispatch({ type: 'CONVERT_QUOTE_TO_SALE', payload: {
+            updatedQuote,
+            newSale, 
+            updatedInventory, 
+            updatedCustomers,
+            journalEntry: newJournalEntry,
+            updatedChartOfAccounts,
+            log: createActivityLog('تحويل بيان أسعار لفاتورة', `تم تحويل بيان الأسعار ${quoteId} إلى فاتورة مبيعات رقم ${newSale.id}`),
+            notification: notification || createNotification(`فاتورة مبيعات جديدة #${newSale.id}`, 'success', '/sales'),
+        }});
+        showToast(`تم تحويل بيان الأسعار إلى فاتورة رقم ${newSale.id} بنجاح.`);
+        return newSale;
+    }, [data, createActivityLog, createNotification, showToast]);
+    
+    const addPurchaseQuote = useCallback((quote: Omit<PurchaseQuote, 'id' | 'status'>): PurchaseQuote => {
+        const newQuoteId = `PQT-${String(data.sequences.purchaseQuote).padStart(3, '0')}`;
+        const newQuote: PurchaseQuote = { 
+            ...quote, 
+            id: newQuoteId, 
+            status: 'جديد'
+        };
+
+        dispatch({
+            type: 'ADD_PURCHASE_QUOTE',
+            payload: {
+                newQuote,
+                log: createActivityLog('إنشاء طلب شراء', `تم إنشاء طلب شراء رقم ${newQuote.id} للمورد ${quote.supplier}`)
+            }
+        });
+        showToast(`تم إنشاء طلب الشراء ${newQuote.id} بنجاح.`);
+        return newQuote;
+    }, [data.sequences.purchaseQuote, createActivityLog, showToast]);
+
+    const cancelPurchaseQuote = useCallback((quoteId: string) => {
+        const quote = data.purchaseQuotes.find((q: PurchaseQuote) => q.id === quoteId);
+        if (!quote) return;
+
+        dispatch({
+            type: 'CANCEL_PURCHASE_QUOTE',
+            payload: {
+                quoteId,
+                log: createActivityLog('إلغاء طلب شراء', `تم إلغاء طلب الشراء رقم ${quoteId}`)
+            }
+        });
+    }, [data.purchaseQuotes, createActivityLog]);
+
+    const convertQuoteToPurchase = useCallback((quoteId: string) => {
+        const quote = data.purchaseQuotes.find((q: PurchaseQuote) => q.id === quoteId);
+        if (!quote || quote.status !== 'جديد') {
+            showToast('لا يمكن تحويل طلب الشراء هذا.', 'error');
+            return;
+        }
+
+        const purchaseData: Omit<Purchase, 'id' | 'journalEntryId'> = {
+            supplier: quote.supplier,
+            date: new Date().toISOString().slice(0, 10),
+            status: 'مستحقة',
+            items: quote.items,
+            subtotal: quote.subtotal,
+            totalDiscount: quote.totalDiscount,
+            total: quote.total
+        };
+
+        const newPurchaseId = `BILL-${String(data.sequences.purchase).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        purchaseData.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+        const updatedSuppliers = data.suppliers.map((s: Supplier) => s.name === purchaseData.supplier ? {...s, balance: s.balance + purchaseData.total} : s);
+
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104');
+        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101');
+        const purchaseDiscountAccount = findAccountByCode(data.chartOfAccounts, '4103');
+
+        if (!inventoryAccount || !supplierAccount || !purchaseDiscountAccount) {
+            const missing = [!inventoryAccount && "'المخزون (1104)'", !supplierAccount && "'الموردين (2101)'", !purchaseDiscountAccount && "'خصومات المشتريات (4103)'",].filter(Boolean).join(', ');
+            showToast(`حسابات نظام أساسية مفقودة: ${missing}. لا يمكن إتمام العملية.`, 'error');
+            return;
+        }
+
+        const journalEntryLines: JournalLine[] = [
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: purchaseData.subtotal, credit: 0 },
+            { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: 0, credit: purchaseData.total },
+            { accountId: purchaseDiscountAccount.id, accountName: purchaseDiscountAccount.name, debit: 0, credit: purchaseData.totalDiscount },
+        ];
+    
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalEntryLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, amount);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: purchaseData.date, description: `فاتورة مشتريات رقم ${newPurchaseId} (محولة من طلب شراء ${quoteId})`,
+            debit: purchaseData.subtotal, 
+            credit: purchaseData.total + purchaseData.totalDiscount, 
+            status: 'مرحل',
+            lines: journalEntryLines,
+        };
+    
+        const newPurchase: Purchase = { ...purchaseData, id: newPurchaseId, journalEntryId: newJournalEntryId };
+        const updatedQuote: PurchaseQuote = { ...quote, status: 'تم تحويله' };
+        
+        dispatch({ type: 'CONVERT_QUOTE_TO_PURCHASE', payload: {
+            updatedQuote,
+            newPurchase, 
+            updatedInventory, 
+            updatedSuppliers,
+            journalEntry: newJournalEntry,
+            updatedChartOfAccounts,
+            log: createActivityLog('تحويل طلب شراء لفاتورة', `تم تحويل طلب الشراء ${quoteId} إلى فاتورة مشتريات رقم ${newPurchase.id}`),
+        }});
+        showToast(`تم تحويل طلب الشراء إلى فاتورة رقم ${newPurchase.id} بنجاح.`);
+        return newPurchase;
+    }, [data, createActivityLog, showToast]);
+    
+    const generateAndAssignBarcodesForMissing = useCallback(() => {
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        let nextBarcode = data.sequences.barcode;
+        let count = 0;
+        
+        updatedInventory.forEach((item: InventoryItem) => {
+            if (!item.barcode) {
+                item.barcode = String(nextBarcode);
+                nextBarcode++;
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            dispatch({
+                type: 'GENERATE_MISSING_BARCODES',
+                payload: {
+                    inventory: updatedInventory,
+                    sequences: { ...data.sequences, barcode: nextBarcode },
+                    log: createActivityLog('إنشاء باركود جماعي', `تم إنشاء ${count} باركود جديد للأصناف.`)
+                }
+            });
+            showToast(`تم بنجاح إنشاء ${count} باركود جديد للأصناف.`);
+        } else {
+            showToast('كل الأصناف لديها باركود بالفعل.', 'info');
+        }
+    }, [data.inventory, data.sequences, createActivityLog, showToast]);
+
+
     // --- Derived Data ---
     const totalCashBalance = useMemo(() => {
         const treasuryRoot = findAccountByCode(data.chartOfAccounts, '1101');
@@ -1224,7 +1887,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         inventory: data.inventory.filter(i => !i.isArchived),
         inventoryAdjustments: data.inventoryAdjustments.filter(i => !i.isArchived),
         sales: data.sales.filter(s => !s.isArchived),
+        priceQuotes: data.priceQuotes.filter(q => !q.isArchived),
         purchases: data.purchases.filter(p => !p.isArchived),
+        purchaseQuotes: (data.purchaseQuotes || []).filter(q => !q.isArchived),
         saleReturns: data.saleReturns.filter(sr => !sr.isArchived),
         purchaseReturns: data.purchaseReturns.filter(pr => !pr.isArchived),
         users: data.users.filter(u => !u.isArchived),
@@ -1238,7 +1903,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         inventory: data.inventory.filter(i => i.isArchived),
         inventoryAdjustments: data.inventoryAdjustments.filter(i => i.isArchived),
         sales: data.sales.filter(s => s.isArchived),
+        priceQuotes: data.priceQuotes.filter(q => q.isArchived),
         purchases: data.purchases.filter(p => p.isArchived),
+        purchaseQuotes: (data.purchaseQuotes || []).filter(q => q.isArchived),
         saleReturns: data.saleReturns.filter(sr => sr.isArchived),
         purchaseReturns: data.purchaseReturns.filter(pr => pr.isArchived),
         users: data.users.filter(u => u.isArchived),
@@ -1249,6 +1916,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateCompanyInfo = (info: any) => dispatch({ type: 'UPDATE_COMPANY_INFO', payload: info });
     const updatePrintSettings = (settings: PrintSettings) => dispatch({ type: 'UPDATE_PRINT_SETTINGS', payload: settings });
     const updateFinancialYear = (fy: any) => dispatch({ type: 'UPDATE_FINANCIAL_YEAR', payload: fy });
+    const updateGeneralSettings = (settings: GeneralSettings) => dispatch({ type: 'UPDATE_GENERAL_SETTINGS', payload: settings });
     
     const resetTransactionalData = useCallback(() => {
         const resetState = {
@@ -1256,7 +1924,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             inventory: data.inventory.map((item: InventoryItem) => ({ ...item, stock: 0 })),
             inventoryAdjustments: [],
             sales: [],
+            priceQuotes: [],
             purchases: [],
+            purchaseQuotes: [],
             saleReturns: [],
             purchaseReturns: [],
             treasury: [],
@@ -1285,8 +1955,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateAccount = (data: any) => {};
     const archiveAccount = (id: string) => ({ success: true });
     const updateJournalEntry = (entry: any) => {};
-    const updateSale = (sale: any) => {};
-    const updatePurchase = (purchase: any) => {};
+    const updateSaleReturn = useCallback((saleReturn: SaleReturn) => { console.log('Update sale return called', saleReturn); return saleReturn; }, []);
+    const updatePurchaseReturn = useCallback((purchaseReturn: PurchaseReturn) => { console.log('Update purchase return called', purchaseReturn); return purchaseReturn; }, []);
+    const updatePriceQuote = useCallback((quote: PriceQuote) => { console.log('Update price quote called', quote); return quote; }, []);
+    const updatePurchaseQuote = useCallback((quote: PurchaseQuote) => { console.log('Update purchase quote called', quote); return quote; }, []);
+
     const addFixedAsset = (asset: any) => {};
     const updateFixedAsset = (asset: any) => {};
     const archiveFixedAsset = (id: string) => ({ success: true });
@@ -1333,21 +2006,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         companyInfo: data.companyInfo, updateCompanyInfo,
         printSettings: data.printSettings, updatePrintSettings,
         financialYear: data.financialYear, updateFinancialYear,
+        generalSettings: data.generalSettings, updateGeneralSettings,
         chartOfAccounts: data.chartOfAccounts, addAccount, updateAccount, archiveAccount, updateAllOpeningBalances,
         unitDefinitions: data.unitDefinitions, addUnitDefinition,
         journal: activeData.journal, archivedJournal: archivedData.journal,
         addJournalEntry, updateJournalEntry, archiveJournalEntry: (id: string) => archiveJournalEntry(id, true), unarchiveJournalEntry: (id: string) => archiveJournalEntry(id, false),
         inventory: activeData.inventory, archivedInventory: archivedData.inventory,
-        addItem, updateItem, archiveItem, unarchiveItem,
+        addItem, updateItem, archiveItem, unarchiveItem, generateAndAssignBarcodesForMissing,
         inventoryAdjustments: activeData.inventoryAdjustments, addInventoryAdjustment, archiveInventoryAdjustment, unarchiveInventoryAdjustment,
         sales: activeData.sales, archivedSales: archivedData.sales,
         addSale, updateSale, archiveSale, unarchiveSale: () => {},
+        priceQuotes: activeData.priceQuotes,
+        addPriceQuote, cancelPriceQuote, convertQuoteToSale, updatePriceQuote,
+        purchaseQuotes: activeData.purchaseQuotes,
+        addPurchaseQuote, cancelPurchaseQuote, convertQuoteToPurchase, updatePurchaseQuote,
         purchases: activeData.purchases, archivedPurchases: archivedData.purchases,
         addPurchase, updatePurchase, archivePurchase, unarchivePurchase: () => {},
         saleReturns: activeData.saleReturns, archivedSaleReturns: archivedData.saleReturns,
-        addSaleReturn, archiveSaleReturn, unarchiveSaleReturn: () => {},
+        addSaleReturn, updateSaleReturn, archiveSaleReturn, unarchiveSaleReturn: () => {},
         purchaseReturns: activeData.purchaseReturns, archivedPurchaseReturns: archivedData.purchaseReturns,
-        addPurchaseReturn, archivePurchaseReturn, unarchivePurchaseReturn: () => {},
+        addPurchaseReturn, updatePurchaseReturn, archivePurchaseReturn, unarchivePurchaseReturn: () => {},
         treasury: data.treasury, addTreasuryTransaction, treasuriesList, transferTreasuryFunds,
         customers: activeData.customers, archivedCustomers: archivedData.customers, addCustomer, updateCustomer, archiveCustomer, unarchiveCustomer,
         suppliers: activeData.suppliers, archivedSuppliers: archivedData.suppliers,
@@ -1361,6 +2039,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sequences: data.sequences,
         // Derived data
         totalReceivables, totalPayables, inventoryValue, recentTransactions, topCustomers, totalCashBalance,
+        scannedItem, processBarcodeScan,
     };
 
     return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;

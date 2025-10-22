@@ -1,15 +1,28 @@
 import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
+import { InventoryItem, Sale, Customer, LineItem, PackingUnit } from '../../types';
 
 interface ReportProps {
     startDate: string;
     endDate: string;
     customerId?: string;
+    itemId?: string;
+    itemCategoryId?: string;
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
 
-const SalesProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, onDataReady }) => {
+// Define a type for the grouped item object to avoid 'unknown' type errors.
+interface ProfitabilityGroup {
+    itemId: string;
+    itemName: string;
+    totalQuantity: number;
+    totalSales: number;
+    totalCogs: number;
+}
+
+
+const SalesProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, itemId, itemCategoryId, onDataReady }) => {
     const { sales, inventory, customers } = useContext(DataContext);
 
     const profitabilityData = useMemo(() => {
@@ -17,58 +30,99 @@ const SalesProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, c
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
 
-        const selectedCustomer = customerId ? customers.find((c: any) => c.id === customerId) : null;
+        const selectedCustomer = customerId ? customers.find((c: Customer) => c.id === customerId) : null;
 
-        const filteredSales = sales.filter((sale: any) => {
+        // 1. Filter sales by date and customer
+        const filteredSales = sales.filter((sale: Sale) => {
             const saleDate = new Date(sale.date);
             const dateMatch = saleDate >= start && saleDate <= end;
             const customerMatch = !selectedCustomer || sale.customer === selectedCustomer.name;
             return dateMatch && customerMatch;
         });
 
-        return filteredSales.map((sale: any) => {
-            const cogs = sale.items.reduce((sum: number, lineItem: any) => {
-                const inventoryItem = inventory.find((i: any) => i.id === lineItem.itemId);
-                const cost = inventoryItem ? inventoryItem.purchasePrice : 0;
+        // 2. Flatten all line items
+        let allLineItems: (LineItem & { saleId: string; customer: string; })[] = [];
+        filteredSales.forEach((sale: Sale) => {
+            sale.items.forEach((line: LineItem) => {
+                allLineItems.push({
+                    ...line,
+                    saleId: sale.id,
+                    customer: sale.customer,
+                });
+            });
+        });
 
-                let quantityInBaseUnits = lineItem.quantity;
-                if (inventoryItem && lineItem.unitId !== 'base') {
-                    const packingUnit = inventoryItem.units.find((u: any) => u.id === lineItem.unitId);
-                    if (packingUnit && packingUnit.factor > 0) {
-                        quantityInBaseUnits = lineItem.quantity * packingUnit.factor;
-                    }
+        // Add COGS to each line item
+        const itemsWithCogs = allLineItems.map(line => {
+            const inventoryItem = inventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (!inventoryItem) return { ...line, cogs: 0, category: '', quantityInBaseUnits: 0 };
+
+            let quantityInBaseUnits = line.quantity;
+            if (line.unitId !== 'base') {
+                const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === line.unitId);
+                if (packingUnit && packingUnit.factor > 0) {
+                    quantityInBaseUnits = line.quantity * packingUnit.factor;
                 }
-                return sum + (quantityInBaseUnits * cost);
-            }, 0);
+            }
+            const cogs = quantityInBaseUnits * inventoryItem.purchasePrice;
+            return { ...line, cogs, quantityInBaseUnits, category: inventoryItem.category };
+        });
 
-            const profit = sale.total - cogs;
-            const margin = sale.total > 0 ? (profit / sale.total) * 100 : 0;
+        // 3. Filter by item or category
+        const filteredItems = itemsWithCogs.filter(line => {
+            if (itemId) return line.itemId === itemId;
+            if (itemCategoryId) return line.category === itemCategoryId;
+            return true;
+        });
 
+        // 4. Group by item
+        const groupedByItem = filteredItems.reduce((acc, line) => {
+            if (!acc[line.itemId]) {
+                acc[line.itemId] = {
+                    itemId: line.itemId,
+                    itemName: line.itemName,
+                    totalQuantity: 0,
+                    totalSales: 0,
+                    totalCogs: 0,
+                };
+            }
+            acc[line.itemId].totalQuantity += line.quantityInBaseUnits;
+            acc[line.itemId].totalSales += line.total;
+            acc[line.itemId].totalCogs += line.cogs;
+            return acc;
+        }, {} as Record<string, ProfitabilityGroup>);
+
+        // 5. Convert to array and calculate profit & margin
+        return Object.values(groupedByItem).map((item: ProfitabilityGroup) => {
+            const profit = item.totalSales - item.totalCogs;
+            const margin = item.totalSales > 0 ? (profit / item.totalSales) * 100 : 0;
             return {
-                id: sale.id,
-                date: sale.date,
-                customer: sale.customer,
-                totalSale: sale.total,
-                cogs,
+                ...item,
                 profit,
                 margin,
             };
         });
-    }, [sales, inventory, startDate, endDate, customerId, customers]);
+
+    }, [sales, inventory, customers, startDate, endDate, customerId, itemId, itemCategoryId]);
 
     const columns = useMemo(() => [
-        { header: 'رقم الفاتورة', accessor: 'id' },
-        { header: 'العميل', accessor: 'customer' },
-        { header: 'إجمالي البيع', accessor: 'totalSale', render: (row: any) => `${row.totalSale.toLocaleString()} جنيه` },
-        { header: 'تكلفة البضاعة', accessor: 'cogs', render: (row: any) => `${row.cogs.toLocaleString()} جنيه` },
-        { header: 'الربح', accessor: 'profit', render: (row: any) => `${row.profit.toLocaleString()} جنيه` },
+        { header: 'الصنف', accessor: 'itemName' },
+        { header: 'الكمية المباعة (بالوحدة الأساسية)', accessor: 'totalQuantity', render: (row: any) => `${row.totalQuantity.toLocaleString()}` },
+        { header: 'إجمالي المبيعات', accessor: 'totalSales', render: (row: any) => `${row.totalSales.toLocaleString()} جنيه` },
+        { header: 'إجمالي التكلفة', accessor: 'totalCogs', render: (row: any) => `${row.totalCogs.toLocaleString()} جنيه` },
+        { header: 'إجمالي الربح', accessor: 'profit', render: (row: any) => `${row.profit.toLocaleString()} جنيه` },
         { header: 'هامش الربح', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(2)}%` },
     ], []);
     
     const calculateFooter = useCallback((data: any[]) => {
+        const totalSales = data.reduce((sum, item) => sum + item.totalSales, 0);
+        const totalCogs = data.reduce((sum, item) => sum + item.totalCogs, 0);
         const totalProfit = data.reduce((sum, item) => sum + item.profit, 0);
+        
         return {
-            cogs: `إجمالي الربح`,
+            totalQuantity: 'الإجماليات',
+            totalSales: `${totalSales.toLocaleString()} جنيه`,
+            totalCogs: `${totalCogs.toLocaleString()} جنيه`,
             profit: `${totalProfit.toLocaleString()} جنيه`,
         };
     }, []);
@@ -97,7 +151,7 @@ const SalesProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, c
                     columns={columns} 
                     data={profitabilityData} 
                     calculateFooter={calculateFooter}
-                    searchableColumns={['id', 'customer']}
+                    searchableColumns={['itemName']}
                 />
             </div>
         </div>

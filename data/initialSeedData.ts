@@ -1,9 +1,13 @@
-import type { AccountNode, Sale, ActivityLogEntry, Purchase, FixedAsset, User, Customer, Supplier, InventoryItem, JournalEntry, TreasuryTransaction, CompanyInfo, FinancialYear, PrintSettings, Notification, SaleReturn, PurchaseReturn, UnitDefinition, InventoryAdjustment } from '../types';
+import type { AccountNode, Sale, ActivityLogEntry, Purchase, FixedAsset, User, Customer, Supplier, InventoryItem, JournalEntry, TreasuryTransaction, CompanyInfo, FinancialYear, PrintSettings, Notification, SaleReturn, PurchaseReturn, UnitDefinition, InventoryAdjustment, GeneralSettings } from '../types';
 
 export const companyInfo: CompanyInfo = {
   name: "اسم الشركة",
   address: "العنوان",
   phone: "الهاتف",
+};
+
+export const generalSettingsData: GeneralSettings = {
+  allowNegativeStock: false,
 };
 
 export const unitDefinitionsData: UnitDefinition[] = [
@@ -83,6 +87,8 @@ export const chartOfAccountsData: AccountNode[] = [
 export const sequencesData = {
     sale: 1,
     purchase: 1,
+    priceQuote: 1,
+    purchaseQuote: 1,
     saleReturn: 1,
     purchaseReturn: 1,
     item: 1,
@@ -95,6 +101,7 @@ export const sequencesData = {
     account: 1,
     unit: 7,
     packingUnit: 1,
+    barcode: 100001,
 };
 
 
@@ -104,8 +111,10 @@ export const inventoryData: InventoryItem[] = [];
 export const inventoryAdjustmentsData: InventoryAdjustment[] = [];
 
 export const salesData: Sale[] = [];
+export const priceQuotesData: any[] = [];
 
 export const purchasesData: Purchase[] = [];
+export const purchaseQuotesData: any[] = [];
 
 export const treasuryData: TreasuryTransaction[] = [];
 

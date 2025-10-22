@@ -1,45 +1,14 @@
-import React, { useEffect, useContext } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect, useState, useContext } from 'react';
 import { DataContext } from '../../context/DataContext';
+import { InventoryItem } from '../../types';
 
-const BarcodeLabelPrint: React.FC = () => {
-    const { itemId } = useParams<{ itemId?: string }>();
-    const { inventory, companyInfo } = useContext(DataContext);
+interface ItemToPrint {
+    item: InventoryItem;
+    quantity: number;
+}
 
-    // Manually parse quantity from hash URL
-    const hash = window.location.hash;
-    const quantityString = new URLSearchParams(hash.substring(hash.indexOf('?'))).get('quantity');
-    const quantity = quantityString ? parseInt(quantityString, 10) : 1;
+const LabelComponent: React.FC<{item: InventoryItem, companyInfo: any}> = ({ item, companyInfo }) => {
     
-    const isTest = !itemId;
-    const item = isTest 
-        ? { id: 'ITEM-123', name: 'صنف اختباري', barcode: '123456789012', salePrice: 99.99 }
-        : inventory.find((i: any) => i.id === itemId);
-
-    useEffect(() => {
-        if(item) {
-            const timer = setTimeout(() => {
-                window.print();
-            }, 500);
-
-            const handleAfterPrint = () => {
-                 setTimeout(() => {
-                    window.close();
-                 }, 100);
-            };
-            window.addEventListener('afterprint', handleAfterPrint);
-
-            return () => {
-                clearTimeout(timer);
-                window.removeEventListener('afterprint', handleAfterPrint);
-            };
-        }
-    }, [item]);
-
-    if (!item) {
-        return <div className="p-4">لم يتم العثور على الصنف.</div>;
-    }
-
     const generateBarcodeSVG = (text: string) => {
         const lines = [];
         for (let i = 0; i < text.length; i++) {
@@ -55,7 +24,7 @@ const BarcodeLabelPrint: React.FC = () => {
         );
     };
 
-    const LabelComponent: React.FC<{item: any, companyInfo: any}> = ({ item, companyInfo }) => (
+    return (
         <div className="label-content" style={{
             width: '50mm',
             height: '25mm',
@@ -84,9 +53,58 @@ const BarcodeLabelPrint: React.FC = () => {
             </div>
         </div>
     );
+}
+
+const BarcodeLabelBatchPrint: React.FC = () => {
+    const { inventory, companyInfo } = useContext(DataContext);
+    const [itemsToPrint, setItemsToPrint] = useState<ItemToPrint[]>([]);
+    
+    useEffect(() => {
+        const dataStr = sessionStorage.getItem('batchPrintData');
+        if (dataStr) {
+            try {
+                const data: Record<string, number> = JSON.parse(dataStr);
+                const items = Object.entries(data)
+                    .map(([itemId, quantity]) => {
+                        const item = inventory.find((i: InventoryItem) => i.id === itemId);
+                        return item ? { item, quantity } : null;
+                    })
+                    .filter((i): i is ItemToPrint => i !== null);
+                
+                setItemsToPrint(items);
+            } catch (e) {
+                console.error("Failed to parse batch print data", e);
+            } finally {
+                sessionStorage.removeItem('batchPrintData');
+            }
+        }
+    }, [inventory]);
+
+    useEffect(() => {
+        if (itemsToPrint.length > 0) {
+            const timer = setTimeout(() => window.print(), 500);
+            const handleAfterPrint = () => setTimeout(() => window.close(), 100);
+            window.addEventListener('afterprint', handleAfterPrint);
+            return () => {
+                clearTimeout(timer);
+                window.removeEventListener('afterprint', handleAfterPrint);
+            };
+        }
+    }, [itemsToPrint]);
+
+    if (itemsToPrint.length === 0) {
+        return <div className="p-4">جاري تجهيز الملصقات للطباعة...</div>;
+    }
+
+    const allLabels: React.ReactNode[] = [];
+    itemsToPrint.forEach(({ item, quantity }) => {
+        for (let i = 0; i < quantity; i++) {
+            allLabels.push(<LabelComponent key={`${item.id}-${i}`} item={item} companyInfo={companyInfo} />);
+        }
+    });
 
     return (
-        <div id="printable-barcode-label">
+        <div id="printable-barcode-batch">
             <style>
                 {`
                     @media print {
@@ -109,11 +127,9 @@ const BarcodeLabelPrint: React.FC = () => {
                     }
                 `}
             </style>
-             {Array.from({ length: quantity > 0 ? quantity : 1 }).map((_, i) => (
-                <LabelComponent key={i} item={item} companyInfo={companyInfo} />
-             ))}
+            {allLabels}
         </div>
     );
 };
 
-export default BarcodeLabelPrint;
+export default BarcodeLabelBatchPrint;

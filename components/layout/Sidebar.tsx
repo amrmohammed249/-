@@ -22,6 +22,7 @@ import { ArrowUturnLeftIcon } from '../icons/ArrowUturnLeftIcon';
 import { XIcon } from '../icons/XIcon';
 import { ClipboardDocumentCheckIcon } from '../icons/ClipboardDocumentCheckIcon';
 import { BarcodeIcon } from '../icons/BarcodeIcon';
+import { DocumentPlusIcon } from '../icons/DocumentPlusIcon';
 
 interface NavItemProps {
   to?: string;
@@ -125,7 +126,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     label: "المبيعات",
     icon: <ShoppingCartIcon />,
     items: [
-        { onClick: () => openWindow({ path: '/sales', title: 'فواتير المبيعات', icon: <DocumentTextIcon /> }), label: 'فواتير المبيعات', icon: <DocumentTextIcon /> },
+        { onClick: () => openWindow({ path: '/sales/new', title: 'فاتورة مبيعات', icon: <DocumentPlusIcon /> }), label: 'إنشاء فاتورة مبيعات', icon: <DocumentPlusIcon /> },
+        { to: '/sales', label: 'قائمة فواتير المبيعات', icon: <DocumentTextIcon /> },
+        { to: '/price-quotes/list', label: 'قائمة بيانات الأسعار', icon: <ClipboardDocumentListIcon /> },
         { to: '/sales-returns', label: 'مردودات المبيعات', icon: <ArrowUturnLeftIcon /> },
     ]
   };
@@ -134,7 +137,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     label: "المشتريات",
     icon: <TruckIcon />,
     items: [
-        { onClick: () => openWindow({ path: '/purchases', title: 'فواتير المشتريات', icon: <DocumentTextIcon /> }), label: 'فواتير المشتريات', icon: <DocumentTextIcon /> },
+        { onClick: () => openWindow({ path: '/purchases/new', title: 'فاتورة مشتريات', icon: <DocumentPlusIcon /> }), label: 'إنشاء فاتورة مشتريات', icon: <DocumentPlusIcon /> },
+        { to: '/purchases', label: 'قائمة فواتير المشتريات', icon: <DocumentTextIcon /> },
+        { to: '/purchase-quotes/list', label: 'قائمة طلبات الشراء', icon: <ClipboardDocumentListIcon /> },
         { to: '/purchases-returns', label: 'مردودات المشتريات', icon: <ArrowUturnLeftIcon /> },
     ]
   };

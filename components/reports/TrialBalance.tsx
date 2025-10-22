@@ -68,8 +68,6 @@ const TrialBalance: React.FC<ReportProps> = ({ asOfDate }) => {
                     </div>
                      <ReportToolbar
                         reportName={`Trial-Balance-${asOfDate}`}
-                        data={trialBalanceData}
-                        columns={columns}
                     />
                 </div>
                 <Table columns={columns} data={trialBalanceData} footerData={footerData} />

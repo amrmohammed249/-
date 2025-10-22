@@ -8,12 +8,20 @@ import JournalEntries from './components/accounts/JournalEntries';
 import Inventory from './components/inventory/Inventory';
 import InventoryAdjustments from './components/inventory/InventoryAdjustments';
 import Sales from './components/sales/Sales';
+import SaleList from './components/sales/SaleList';
+import PriceQuotes from './components/sales/PriceQuotes';
+import PriceQuoteList from './components/sales/PriceQuoteList';
 import SaleReturns from './components/sales/SaleReturns';
 import Purchases from './components/purchases/Purchases';
+import PurchaseList from './components/purchases/PurchaseList';
+import PurchaseQuotes from './components/purchases/PurchaseQuotes';
+import PurchaseQuoteList from './components/purchases/PurchaseQuoteList';
 import PurchaseReturns from './components/purchases/PurchaseReturns';
 import Treasury from './components/treasury/Treasury';
 import Customers from './components/customers/Customers';
+import CustomerProfile from './components/customers/CustomerProfile';
 import Suppliers from './components/suppliers/Suppliers';
+import SupplierProfile from './components/suppliers/SupplierProfile';
 import Reports from './components/reports/Reports';
 import Settings from './components/settings/Settings';
 import Login from './components/auth/Login';
@@ -24,10 +32,11 @@ import Archive from './components/archive/Archive';
 import FixedAssets from './components/fixedassets/FixedAssets';
 import { WindowContext } from './context/WindowContext';
 import ActiveWindowsBar from './components/layout/ActiveWindowsBar';
-import { ActiveWindow, Sale } from './types';
+import { ActiveWindow } from './types';
 import BarcodeTools from './components/barcode/BarcodeTools';
 import BarcodeLabelPrint from './components/printing/BarcodeLabelPrint';
 import InvoiceTestPrintPage from './components/printing/InvoiceTestPrintPage';
+import BarcodeLabelBatchPrint from './components/printing/BarcodeLabelBatchPrint';
 
 
 const App: React.FC = () => {
@@ -94,9 +103,13 @@ const App: React.FC = () => {
 
   const renderFullScreenPage = (window: ActiveWindow) => {
     switch (window.path) {
-      case '/sales':
+      case '/price-quotes':
+        return <PriceQuotes windowId={window.id} />;
+      case '/purchase-quotes':
+        return <PurchaseQuotes windowId={window.id} />;
+      case '/sales/new':
         return <Sales windowId={window.id} />;
-      case '/purchases':
+      case '/purchases/new':
         return <Purchases windowId={window.id} />;
       default:
         return null;
@@ -108,6 +121,7 @@ const App: React.FC = () => {
     return (
       <Routes>
         <Route path="/print/test/barcode" element={<BarcodeLabelPrint />} />
+        <Route path="/print/barcode/batch" element={<BarcodeLabelBatchPrint />} />
         <Route path="/print/barcode/:itemId" element={<BarcodeLabelPrint />} />
         <Route path="/print/test/invoice" element={<InvoiceTestPrintPage />} />
       </Routes>
@@ -162,11 +176,19 @@ const App: React.FC = () => {
                     <Route path="/inventory/adjustments" element={<InventoryAdjustments />} />
                     <Route path="/barcode-tools" element={<BarcodeTools />} />
                     <Route path="/fixed-assets" element={<FixedAssets />} />
+                    <Route path="/sales" element={<SaleList />} />
+                    <Route path="/sales/edit/:id" element={<Sales />} />
+                    <Route path="/price-quotes/list" element={<PriceQuoteList />} />
+                    <Route path="/purchases" element={<PurchaseList />} />
+                    <Route path="/purchases/edit/:id" element={<Purchases />} />
+                    <Route path="/purchase-quotes/list" element={<PurchaseQuoteList />} />
                     <Route path="/sales-returns" element={<SaleReturns />} />
                     <Route path="/purchases-returns" element={<PurchaseReturns />} />
                     <Route path="/treasury" element={<Treasury />} />
                     <Route path="/customers" element={<Customers />} />
+                    <Route path="/customers/:id" element={<CustomerProfile />} />
                     <Route path="/suppliers" element={<Suppliers />} />
+                    <Route path="/suppliers/:id" element={<SupplierProfile />} />
                     <Route path="/reports" element={<Reports />} />
                     <Route path="/activity-log" element={<ActivityLog />} />
                     <Route path="/archive" element={<Archive />} />

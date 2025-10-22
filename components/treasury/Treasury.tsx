@@ -127,40 +127,40 @@ const Treasury: React.FC = () => {
             )}
             
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">إدارة الخزينة</h2>
-                <div className="text-lg text-left bg-gray-200 px-4 py-2 rounded-lg">
-                    <span className="font-semibold text-gray-600">إجمالي الرصيد: </span>
-                    <span className="font-bold text-blue-700">{formatCurrency(totalBalance)}</span>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">إدارة الخزينة</h2>
+                <div className="text-lg text-left bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg">
+                    <span className="font-semibold text-gray-600 dark:text-gray-300">إجمالي الرصيد: </span>
+                    <span className="font-bold text-blue-700 dark:text-blue-300">{formatCurrency(totalBalance)}</span>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden">
-                <div className="lg:col-span-1 bg-gray-50 p-4 rounded-lg flex flex-col h-full">
+            <div className="flex flex-col gap-6 flex-1 overflow-hidden">
+                <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg flex-shrink-0">
                     <div className="flex justify-between items-center mb-4">
-                         <h3 className="text-lg font-semibold text-gray-700">قائمة الخزائن</h3>
+                         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">قائمة الخزائن</h3>
                          <button onClick={() => setAddTreasuryModalOpen(true)} className="flex items-center text-sm bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600">
                            <AddIcon /> <span>جديدة</span>
                         </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto pr-2 -mr-2 space-y-2">
+                    <div className="flex flex-wrap gap-4">
                         {treasuries.map((treasury: Account) => (
                              <div
                                 key={treasury.id}
                                 onClick={() => setSelectedTreasuryId(treasury.id)}
-                                className={`p-3 rounded-lg cursor-pointer transition-all duration-200 border-2 ${selectedTreasuryId === treasury.id ? 'bg-blue-50 border-blue-500 shadow-sm' : 'bg-white border-transparent hover:bg-gray-100'}`}
+                                className={`p-4 rounded-lg cursor-pointer transition-all duration-200 border-2 w-64 flex-shrink-0 ${selectedTreasuryId === treasury.id ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-500 shadow-sm' : 'bg-white dark:bg-gray-800 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 hover:shadow-md'}`}
                             >
-                                <p className={`font-semibold ${selectedTreasuryId === treasury.id ? 'text-blue-800' : 'text-gray-800'}`}>{treasury.name}</p>
-                                <p className="font-bold text-lg text-gray-900 text-left mt-1">{formatCurrency(treasuryBalances[treasury.id] || 0)}</p>
+                                <p className={`font-semibold text-lg ${selectedTreasuryId === treasury.id ? 'text-blue-800 dark:text-blue-200' : 'text-gray-800 dark:text-gray-200'}`}>{treasury.name}</p>
+                                <p className="font-bold text-2xl text-gray-900 dark:text-white text-left mt-2">{formatCurrency(treasuryBalances[treasury.id] || 0)}</p>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                <div className="lg:col-span-2 h-full overflow-hidden bg-white p-4 rounded-lg shadow-md flex flex-col">
+                <div className="flex-1 overflow-hidden bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col">
                     {selectedTreasuryId ? (
                         <>
-                            <div className="flex justify-between items-center mb-4 pb-3 border-b flex-wrap gap-2">
-                                <h3 className="text-xl font-bold text-gray-800">
+                            <div className="flex justify-between items-center mb-4 pb-3 border-b dark:border-gray-700 flex-wrap gap-2">
+                                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">
                                     حركات: {treasuries.find((t: Account) => t.id === selectedTreasuryId)?.name}
                                 </h3>
                                 <div className="flex space-x-2 space-x-reverse">
@@ -185,12 +185,12 @@ const Treasury: React.FC = () => {
                                   <tbody>
                                     {selectedTreasuryTransactions.map((tx) => (
                                         <tr key={tx.id} onClick={() => setTransactionToView(tx)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                            <td className="px-6 py-4 text-sm text-gray-500">{tx.date}</td>
-                                            <td className="px-6 py-4 text-sm text-gray-900">{tx.description}</td>
-                                            <td className="px-6 py-4 text-sm text-gray-600 font-medium">{getContraAccountName(tx)}</td>
-                                            <td className="px-6 py-4 text-sm text-red-600 font-semibold">{tx.debit > 0 ? formatCurrency(tx.debit) : '-'}</td>
-                                            <td className="px-6 py-4 text-sm text-green-600 font-semibold">{tx.credit > 0 ? formatCurrency(tx.credit) : '-'}</td>
-                                            <td className="px-6 py-4 text-sm font-bold">{formatCurrency(tx.balance)}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{tx.date}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{tx.description}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium">{getContraAccountName(tx)}</td>
+                                            <td className="px-6 py-4 text-sm text-red-600 dark:text-red-400 font-semibold">{tx.debit > 0 ? formatCurrency(tx.debit) : '-'}</td>
+                                            <td className="px-6 py-4 text-sm text-green-600 dark:text-green-400 font-semibold">{tx.credit > 0 ? formatCurrency(tx.credit) : '-'}</td>
+                                            <td className="px-6 py-4 text-sm font-bold text-gray-800 dark:text-gray-200">{formatCurrency(tx.balance)}</td>
                                         </tr>
                                     ))}
                                   </tbody>

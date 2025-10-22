@@ -99,8 +99,6 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
                     </div>
                      <ReportToolbar
                         reportName={`Account-Statement-${party.name}`}
-                        data={transactions}
-                        columns={columns}
                     />
                 </div>
 

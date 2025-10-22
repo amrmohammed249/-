@@ -4,6 +4,7 @@ import PageHeader from '../shared/PageHeader';
 import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddPurchaseReturnForm from './AddPurchaseReturnForm';
+import EditPurchaseReturnForm from './EditPurchaseReturnForm';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import PurchaseReturnView from './PurchaseReturnView';
 import { PlusIcon } from '../icons/PlusIcon';
@@ -13,6 +14,7 @@ const PurchaseReturns: React.FC = () => {
   const { purchaseReturns, archivePurchaseReturn, showToast } = useContext(DataContext);
 
   const [isAddModalOpen, setAddModalOpen] = useState(false);
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isViewModalOpen, setViewModalOpen] = useState(false);
   const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState<PurchaseReturn | null>(null);
@@ -22,6 +24,11 @@ const PurchaseReturns: React.FC = () => {
     setViewModalOpen(true);
   };
   
+  const handleEdit = (purchaseReturn: PurchaseReturn) => {
+    setSelectedReturn(purchaseReturn);
+    setEditModalOpen(true);
+  };
+
   const handleArchive = (purchaseReturn: PurchaseReturn) => {
     setSelectedReturn(purchaseReturn);
     setArchiveModalOpen(true);
@@ -42,6 +49,7 @@ const PurchaseReturns: React.FC = () => {
   
   const handleSuccess = (newReturn: PurchaseReturn) => {
       setAddModalOpen(false);
+      setEditModalOpen(false);
       handleView(newReturn);
   }
 
@@ -64,8 +72,9 @@ const PurchaseReturns: React.FC = () => {
       <DataTable 
         columns={columns} 
         data={purchaseReturns}
-        actions={['view', 'archive']}
+        actions={['view', 'edit', 'archive']}
         onView={handleView}
+        onEdit={handleEdit}
         onArchive={handleArchive}
         searchableColumns={['id', 'supplier', 'date', 'originalPurchaseId']}
       />
@@ -73,6 +82,12 @@ const PurchaseReturns: React.FC = () => {
       <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="إضافة مرتجع مشتريات جديد" size="4xl">
         <AddPurchaseReturnForm onClose={() => setAddModalOpen(false)} onSuccess={handleSuccess} />
       </Modal>
+
+      {selectedReturn && isEditModalOpen && (
+        <Modal isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} title={`تعديل مرتجع مشتريات: ${selectedReturn.id}`} size="4xl">
+          <EditPurchaseReturnForm purchaseReturn={selectedReturn} onClose={() => setEditModalOpen(false)} onSuccess={handleSuccess} />
+        </Modal>
+      )}
       
       {selectedReturn && (
         <PurchaseReturnView

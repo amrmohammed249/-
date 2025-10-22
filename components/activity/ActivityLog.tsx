@@ -8,10 +8,57 @@ const ActivityLog: React.FC = () => {
   const [filterUserId, setFilterUserId] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  const [activeDateFilter, setActiveDateFilter] = useState<string | null>(null);
+
 
   if (currentUser.role !== 'مدير النظام') {
     return <AccessDenied />;
   }
+  
+  const setDateRange = (filter: string | null) => {
+    const today = new Date();
+    const isoString = (d: Date) => d.toISOString().split('T')[0];
+    
+    let start = '';
+    let end = isoString(new Date());
+
+    switch(filter) {
+        case 'today':
+            start = isoString(today);
+            break;
+        case 'yesterday':
+            const yesterday = new Date(today);
+            yesterday.setDate(today.getDate() - 1);
+            start = isoString(yesterday);
+            end = isoString(yesterday);
+            break;
+        case 'last7':
+            const last7 = new Date(today);
+            last7.setDate(today.getDate() - 6);
+            start = isoString(last7);
+            break;
+        case 'last30':
+            const last30 = new Date(today);
+            last30.setDate(today.getDate() - 29);
+            start = isoString(last30);
+            break;
+        case 'all':
+        default:
+            start = '';
+            end = '';
+            break;
+    }
+    setFilterStartDate(start);
+    setFilterEndDate(end);
+    setActiveDateFilter(filter);
+  };
+  
+  const handleManualDateChange = (type: 'start' | 'end', value: string) => {
+      if (type === 'start') setFilterStartDate(value);
+      if (type === 'end') setFilterEndDate(value);
+      setActiveDateFilter(null);
+  };
+
 
   const filteredLog = useMemo(() => {
     if (!Array.isArray(activityLog)) {
@@ -46,6 +93,22 @@ const ActivityLog: React.FC = () => {
     { header: 'الإجراء', accessor: 'action' },
     { header: 'التفاصيل', accessor: 'details' },
   ];
+  
+  const DateFilterButton = ({ label, filter, activeFilter, onClick }: {label: string, filter: string | null, activeFilter: string | null, onClick: (f: string|null) => void}) => {
+      const isActive = filter === activeFilter;
+      return (
+          <button
+              onClick={() => onClick(filter)}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  isActive
+                      ? 'bg-blue-500 text-white font-semibold shadow'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+              }`}
+          >
+              {label}
+          </button>
+      );
+  };
 
   return (
     <div className="space-y-6">
@@ -53,41 +116,51 @@ const ActivityLog: React.FC = () => {
         <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-1">سجل نشاطات النظام</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">مراقبة الإجراءات التي يقوم بها المستخدمون.</p>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4">
-           <div>
-              <label htmlFor="userFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">فلترة حسب المستخدم</label>
-              <select 
-                id="userFilter" 
-                value={filterUserId}
-                onChange={e => setFilterUserId(e.target.value)}
-                className="block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              >
-                  <option value="">كل المستخدمين</option>
-                  {Array.isArray(users) && users.map(user => (
-                      <option key={user.id} value={user.id}>{user.name}</option>
-                  ))}
-              </select>
-          </div>
-           <div>
-              <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">من تاريخ</label>
-              <input 
-                type="date"
-                id="startDate"
-                value={filterStartDate}
-                onChange={e => setFilterStartDate(e.target.value)}
-                className="block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              />
-          </div>
-           <div>
-              <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">إلى تاريخ</label>
-              <input 
-                type="date"
-                id="endDate"
-                value={filterEndDate}
-                onChange={e => setFilterEndDate(e.target.value)}
-                className="block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              />
-          </div>
+        <div className="space-y-4 p-4 border rounded-lg dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+               <div>
+                  <label htmlFor="userFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">فلترة حسب المستخدم</label>
+                  <select 
+                    id="userFilter" 
+                    value={filterUserId}
+                    onChange={e => setFilterUserId(e.target.value)}
+                    className="input-style w-full"
+                  >
+                      <option value="">كل المستخدمين</option>
+                      {Array.isArray(users) && users.map(user => (
+                          <option key={user.id} value={user.id}>{user.name}</option>
+                      ))}
+                  </select>
+              </div>
+               <div>
+                  <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">من تاريخ</label>
+                  <input 
+                    type="date"
+                    id="startDate"
+                    value={filterStartDate}
+                    onChange={e => handleManualDateChange('start', e.target.value)}
+                    className="input-style w-full"
+                  />
+              </div>
+               <div>
+                  <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">إلى تاريخ</label>
+                  <input 
+                    type="date"
+                    id="endDate"
+                    value={filterEndDate}
+                    onChange={e => handleManualDateChange('end', e.target.value)}
+                    className="input-style w-full"
+                  />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-2">نطاقات سريعة:</span>
+                <DateFilterButton label="اليوم" filter="today" activeFilter={activeDateFilter} onClick={setDateRange} />
+                <DateFilterButton label="الأمس" filter="yesterday" activeFilter={activeDateFilter} onClick={setDateRange} />
+                <DateFilterButton label="آخر 7 أيام" filter="last7" activeFilter={activeDateFilter} onClick={setDateRange} />
+                <DateFilterButton label="آخر 30 يوم" filter="last30" activeFilter={activeDateFilter} onClick={setDateRange} />
+                <DateFilterButton label="عرض الكل" filter="all" activeFilter={activeDateFilter} onClick={setDateRange} />
+            </div>
         </div>
       </div>
 

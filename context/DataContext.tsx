@@ -805,6 +805,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [data.journal, data.chartOfAccounts, createActivityLog]);
 
     const addSale = useCallback((sale: Omit<Sale, 'id' | 'journalEntryId'>): Sale => {
+        if (!data.generalSettings.allowNegativeStock) {
+            for (const line of sale.items) {
+                const item = data.inventory.find((i: InventoryItem) => i.id === line.itemId);
+                if (item) {
+                    let quantityInBaseUnit = line.quantity;
+                    if (line.unitId !== 'base') {
+                        const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                        if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                    }
+                    if (quantityInBaseUnit > item.stock) {
+                        throw new Error(`المخزون غير كافٍ للصنف "${line.itemName}". الكمية المتاحة: ${item.stock}`);
+                    }
+                }
+            }
+        }
+        
         const LOW_STOCK_THRESHOLD = 10;
         const newSaleId = `INV-${String(data.sequences.sale).padStart(3, '0')}`;
         const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
@@ -884,7 +900,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }});
     
         return newSale;
-    }, [data.sequences.sale, data.sequences.journal, data.inventory, data.customers, data.chartOfAccounts, createActivityLog, createNotification]);
+    }, [data.sequences.sale, data.sequences.journal, data.inventory, data.customers, data.chartOfAccounts, data.generalSettings, createActivityLog, createNotification]);
     
     const updateSale = useCallback((updatedSale: Sale): Sale => {
         const originalSale = data.sales.find((s: Sale) => s.id === updatedSale.id);
@@ -892,14 +908,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             throw new Error("لم يتم العثور على الفاتورة للتحديث");
         }
     
-        // --- 1. إنشاء نسخ قابلة للتعديل من الحالة ---
         const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
         const updatedCustomers = JSON.parse(JSON.stringify(data.customers));
         const updatedChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
         let updatedJournal = JSON.parse(JSON.stringify(data.journal));
     
-        // --- 2. عكس تأثير المعاملة الأصلية ---
-        // إرجاع المخزون
         originalSale.items.forEach(line => {
             const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
             if (item) {
@@ -912,13 +925,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         });
     
-        // إرجاع رصيد العميل
         const customer = updatedCustomers.find((c: Customer) => c.name === originalSale.customer);
         if (customer) {
             customer.balance -= originalSale.total;
         }
     
-        // عكس القيد المحاسبي الأصلي وأرشفته
         const originalJournalEntry = updatedJournal.find((j: JournalEntry) => j.id === originalSale.journalEntryId);
         if (originalJournalEntry) {
             originalJournalEntry.lines.forEach((line: JournalLine) => {
@@ -927,8 +938,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalSale.journalEntryId ? { ...j, isArchived: true, description: `[ملغي] ${j.description}` } : j);
         }
+
+        if (!data.generalSettings.allowNegativeStock) {
+            for (const line of updatedSale.items) {
+                const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+                if (item) {
+                    let quantityInBaseUnit = line.quantity;
+                    if (line.unitId !== 'base') {
+                        const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                        if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                    }
+                    if (quantityInBaseUnit > item.stock) {
+                        throw new Error(`المخزون غير كافٍ للصنف "${line.itemName}". الكمية المتاحة بعد إلغاء الفاتورة القديمة: ${item.stock}`);
+                    }
+                }
+            }
+        }
     
-        // --- 3. تطبيق تأثير المعاملة الجديدة ---
         const LOW_STOCK_THRESHOLD = 10;
         let newCostOfGoodsSold = 0;
         let notification: Notification | null = null;
@@ -949,13 +975,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         });
     
-        // تطبيق رصيد العميل الجديد
         const updatedCustomer = updatedCustomers.find((c: Customer) => c.name === updatedSale.customer);
         if (updatedCustomer) {
             updatedCustomer.balance += updatedSale.total;
         }
     
-        // --- 4. إنشاء وتطبيق قيد محاسبي جديد ---
         const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
         const customerAccount = findAccountByCode(updatedChart, '1103');
         const salesAccount = findAccountByCode(updatedChart, '4101');
@@ -993,7 +1017,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         const finalUpdatedSale = { ...updatedSale, journalEntryId: newJournalEntryId };
     
-        // --- 5. إرسال التحديث ---
         dispatch({
             type: 'UPDATE_SALE',
             payload: {
@@ -1008,7 +1031,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     
         return finalUpdatedSale;
-    }, [data.sales, data.inventory, data.customers, data.journal, data.chartOfAccounts, data.sequences.journal, createActivityLog, createNotification]);
+    }, [data.sales, data.inventory, data.customers, data.journal, data.chartOfAccounts, data.sequences.journal, data.generalSettings, createActivityLog, createNotification]);
 
     const archiveSale = useCallback((id: string) => {
         const sale = data.sales.find(s => s.id === id);
@@ -1233,6 +1256,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const purchase = data.purchases.find(p => p.id === id);
         if (!purchase || purchase.isArchived) return { success: false, message: 'الفاتورة غير موجودة أو مؤرشفة بالفعل.' };
 
+        if (!data.generalSettings.allowNegativeStock) {
+            for (const line of purchase.items) {
+                const item = data.inventory.find(i => i.id === line.itemId);
+                if (item) {
+                    let quantityInBaseUnit = line.quantity;
+                     if (line.unitId !== 'base') {
+                        const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                        if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                    }
+                    if (quantityInBaseUnit > item.stock) {
+                        return { success: false, message: `لا يمكن أرشفة الفاتورة، المخزون غير كافٍ للصنف "${item.name}" (المتاح: ${item.stock}).` };
+                    }
+                }
+            }
+        }
+
         const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
         purchase.items.forEach(line => {
             const item = updatedInventory.find(i => i.id === line.itemId);
@@ -1265,7 +1304,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             log: createActivityLog('أرشفة فاتورة مشتريات', `تمت أرشفة الفاتورة رقم ${id}`),
         }});
         return { success: true };
-    }, [data.purchases, data.inventory, data.suppliers, data.journal, data.chartOfAccounts, createActivityLog]);
+    }, [data.purchases, data.inventory, data.suppliers, data.journal, data.chartOfAccounts, data.generalSettings, createActivityLog]);
 
     const addTreasuryTransaction = useCallback((tr: Omit<TreasuryTransaction, 'id' | 'balance' | 'journalEntryId'>) => {
         const newId = `TRN-${String(data.sequences.treasury).padStart(3, '0')}`;
@@ -1353,6 +1392,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [addTreasuryTransaction, treasuriesList, showToast]);
 
     const addInventoryAdjustment = useCallback((adjustment: Omit<InventoryAdjustment, 'id' | 'journalEntryId'>): InventoryAdjustment => {
+        if (adjustment.type === 'صرف' && !data.generalSettings.allowNegativeStock) {
+            for (const line of adjustment.items) {
+                const item = data.inventory.find(i => i.id === line.itemId);
+                if (item && line.quantity > item.stock) {
+                    throw new Error(`المخزون غير كافٍ للصنف "${item.name}". المتاح: ${item.stock}.`);
+                }
+            }
+        }
+        
         const newId = `ADJ-${String(data.sequences.inventoryAdjustment).padStart(3, '0')}`;
         const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
         
@@ -1405,7 +1453,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }});
         showToast('تمت إضافة تسوية المخزون بنجاح.');
         return newAdjustment;
-    }, [data.sequences.inventoryAdjustment, data.sequences.journal, data.inventory, data.chartOfAccounts, createActivityLog, showToast]);
+    }, [data.sequences.inventoryAdjustment, data.sequences.journal, data.inventory, data.chartOfAccounts, data.generalSettings, createActivityLog, showToast]);
 
     const archiveInventoryAdjustment = useCallback((id: string) => {
         const adj = data.inventoryAdjustments.find(a => a.id === id);
@@ -1540,9 +1588,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const addItem = (item: Omit<InventoryItem, 'id'>): InventoryItem => {
+        const finalBarcode = item.barcode?.trim() || '';
+        let newBarcodeSequence = data.sequences.barcode;
+        
+        if (finalBarcode) {
+            if (data.inventory.some((i: InventoryItem) => i.barcode === finalBarcode)) {
+                showToast(`الباركود "${finalBarcode}" مستخدم بالفعل لصنف آخر.`, 'error');
+                throw new Error(`Barcode ${finalBarcode} already exists.`);
+            }
+        }
+        
         const newIdNumber = data.sequences.item;
         const newPackingUnitStart = data.sequences.packingUnit;
-        let newBarcodeSequence = data.sequences.barcode;
         
         const newPackingUnits = (item.units || []).map((p, index) => ({ ...p, id: `PU-${newPackingUnitStart + index}` }));
         
@@ -1552,9 +1609,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             units: newPackingUnits 
         };
         
-        if (!newItem.barcode || newItem.barcode.trim() === '') {
+        if (!finalBarcode) {
             newItem.barcode = String(newBarcodeSequence);
             newBarcodeSequence++;
+        } else {
+            newItem.barcode = finalBarcode;
         }
         
         dispatch({ type: 'ADD_ITEM', payload: {
@@ -1564,13 +1623,30 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }});
         return newItem;
     };
+
     const updateItem = (updatedItem: InventoryItem) => {
+        const originalItem = data.inventory.find((i: InventoryItem) => i.id === updatedItem.id);
+        const finalBarcode = updatedItem.barcode?.trim();
+    
+        if (!finalBarcode) {
+            showToast('لا يمكن ترك حقل الباركود فارغاً.', 'error');
+            return;
+        }
+    
+        if (originalItem && finalBarcode !== originalItem.barcode) {
+            if (data.inventory.some((i: InventoryItem) => i.id !== updatedItem.id && i.barcode === finalBarcode)) {
+                showToast(`الباركود "${finalBarcode}" مستخدم بالفعل لصنف آخر.`, 'error');
+                return;
+            }
+        }
+    
         dispatch({ type: 'UPDATE_ITEM', payload: {
             inventory: data.inventory.map(i => i.id === updatedItem.id ? updatedItem : i),
             log: createActivityLog('تعديل صنف', `تم تعديل بيانات الصنف ${updatedItem.name}`),
         }});
         showToast(`تم تحديث الصنف "${updatedItem.name}" بنجاح.`);
     };
+
     const archiveItem = (id: string) => {
         const item = data.inventory.find(i => i.id === id);
         if (!item) return { success: false, message: "الصنف غير موجود." };
@@ -1621,20 +1697,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
         }
 
-        for (const line of quote.items) {
-            const item = data.inventory.find((i: InventoryItem) => i.id === line.itemId);
-            if (!item) {
-                showToast(`الصنف "${line.itemName}" غير موجود في المخزون.`, 'error');
-                return;
-            }
-            let quantityInBaseUnit = line.quantity;
-            if (line.unitId !== 'base') {
-                const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
-                if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
-            }
-            if (item.stock < quantityInBaseUnit) {
-                showToast(`مخزون الصنف "${line.itemName}" غير كافٍ (${item.stock} متبقي).`, 'error');
-                return;
+        if (!data.generalSettings.allowNegativeStock) {
+            for (const line of quote.items) {
+                const item = data.inventory.find((i: InventoryItem) => i.id === line.itemId);
+                if (!item) {
+                    showToast(`الصنف "${line.itemName}" غير موجود في المخزون.`, 'error');
+                    return;
+                }
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                if (item.stock < quantityInBaseUnit) {
+                    showToast(`مخزون الصنف "${line.itemName}" غير كافٍ (${item.stock} متبقي).`, 'error');
+                    return;
+                }
             }
         }
         
@@ -1886,6 +1964,63 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [data.sales, data.purchases]);
     const topCustomers = useMemo(() => [...data.customers].sort((a,b) => b.balance - a.balance).slice(0, 5), [data.customers]);
     
+    // One-time data correction for specific inventory items with fractional stock
+    useEffect(() => {
+        // Use a unique flag for this specific correction to ensure it only runs once per dataset.
+        const correctionFlag = `correction_applied_for_${dataManager.activeDatasetKey}_stock_fix_2024_07_28`;
+        
+        if (isDataLoaded && !localStorage.getItem(correctionFlag)) {
+            // Find items by name or ID that have the specific incorrect stock value.
+            const itemToFix = data.inventory.find(
+                (item: InventoryItem) => 
+                (item.name === 'بهارات غاليه' || item.id === 'ITM-028') &&
+                Math.abs(item.stock - 0.5) < 0.001 // Use tolerance for float comparison
+            );
+
+            if (itemToFix) {
+                console.log("Applying one-time stock correction for item:", itemToFix.name);
+                
+                // Find the expense account for inventory write-offs ('Damaged Goods Expense').
+                const expenseAccount = findAccountByCode(data.chartOfAccounts, '4203');
+                if (!expenseAccount) {
+                    showToast('لم يتم العثور على حساب مصروف البضاعة التالفة (4203) اللازم لإتمام التصحيح.', 'error');
+                    localStorage.setItem(correctionFlag, 'true'); // Set flag even on error to avoid loops.
+                    return;
+                }
+
+                try {
+                    // Create a formal, auditable inventory adjustment to correct the stock.
+                    addInventoryAdjustment({
+                        date: new Date().toISOString().slice(0, 10),
+                        type: 'صرف',
+                        contraAccountId: expenseAccount.id,
+                        contraAccountName: expenseAccount.name,
+                        description: `تصحيح تلقائي للرصيد الخاطئ للصنف ${itemToFix.name}`,
+                        items: [{
+                            itemId: itemToFix.id,
+                            itemName: itemToFix.name,
+                            quantity: 0.5,
+                            cost: itemToFix.purchasePrice,
+                            total: 0.5 * itemToFix.purchasePrice,
+                        }],
+                        totalValue: 0.5 * itemToFix.purchasePrice,
+                    });
+    
+                    showToast(`تم تصحيح رصيد '${itemToFix.name}' إلى صفر بنجاح.`, 'success');
+                } catch (e: any) {
+                     showToast(`فشل تصحيح الرصيد: ${e.message}`, 'error');
+                } finally {
+                    // Set the flag regardless of success to prevent re-running.
+                    localStorage.setItem(correctionFlag, 'true');
+                }
+            } else {
+                // If the item isn't found or the stock is already correct, set the flag so we don't check again.
+                localStorage.setItem(correctionFlag, 'true');
+            }
+        }
+    }, [isDataLoaded, data.inventory, data.chartOfAccounts, dataManager.activeDatasetKey, addInventoryAdjustment, showToast]);
+
+
     // Memoize all filtered data to prevent unnecessary re-renders
     const activeData = useMemo(() => ({
         customers: data.customers.filter(c => !c.isArchived),

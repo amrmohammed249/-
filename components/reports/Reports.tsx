@@ -11,10 +11,11 @@ import SalesProfitabilityReport from './SalesProfitabilityReport';
 import ExpenseReport from './ExpenseReport';
 import SaleReturnsReport from './SaleReturnsReport';
 import PurchaseReturnsReport from './PurchaseReturnsReport';
-import ReportActionBar from './ReportActionBar';
 import { AccountNode, InventoryItem } from '../../types';
 import TreasuryReport from './TreasuryReport';
-import ItemMovementReport from './ItemMovementReport'; // Import the new report
+import ItemMovementReport from './ItemMovementReport';
+import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon } from '../icons';
+
 
 declare var jspdf: any;
 declare var html2canvas: any;
@@ -51,6 +52,7 @@ const flattenAccounts = (nodes: AccountNode[]): AccountNode[] => {
 
 const Reports: React.FC = () => {
     const { currentUser, financialYear, customers, suppliers, inventory, chartOfAccounts, treasuriesList } = useContext(DataContext);
+    const [isReportVisible, setIsReportVisible] = useState(false);
     const [activeTab, setActiveTab] = useState<ReportTabKey>('profitAndLoss');
     const [startDate, setStartDate] = useState(financialYear.startDate);
     const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
@@ -149,9 +151,52 @@ const Reports: React.FC = () => {
         }
     };
 
+    const activeReportTab = reportTabs.find(t => t.key === activeTab);
+
+    if (isReportVisible) {
+        return (
+            <div className="fixed inset-0 bg-gray-100 dark:bg-gray-900 z-[60] flex flex-col">
+                <header className="no-print bg-white dark:bg-gray-800 p-3 shadow-md flex justify-between items-center flex-shrink-0">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setIsReportVisible(false)} className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 font-semibold">
+                           <ArrowUturnLeftIcon className="w-5 h-5 transform rotate-180"/>
+                           <span>العودة للفلاتر</span>
+                        </button>
+                        <div>
+                             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{activeReportTab?.label}</h2>
+                             <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {isDateRangeReport ? `الفترة من ${startDate} إلى ${endDate}` : `حتى تاريخ ${endDate}`}
+                             </p>
+                        </div>
+                    </div>
+                     <div className="flex items-center gap-2">
+                        <button 
+                            onClick={onExportPDF} 
+                            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-sm"
+                        >
+                            <ArrowDownTrayIcon className="w-5 h-5" />
+                            <span>تصدير PDF</span>
+                        </button>
+                        <button 
+                            onClick={() => window.print()} 
+                            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm"
+                        >
+                            <PrinterIcon className="w-5 h-5" />
+                            <span>طباعة</span>
+                        </button>
+                    </div>
+                </header>
+                <main className="flex-1 overflow-y-auto p-4 md:p-6">
+                    {renderReport()}
+                </main>
+            </div>
+        );
+    }
+
     return (
-        <div className="flex flex-col h-full" style={{ maxHeight: 'calc(100vh - 120px)' }}>
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex-shrink-0">
+        <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">مركز التقارير</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
                     {isDateRangeReport ? (
                         <>
@@ -238,7 +283,7 @@ const Reports: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex-shrink-0 mt-6 space-y-4">
+            <div className="space-y-4">
                 {Object.entries(groupedTabs).map(([category, tabs]) => (
                     <div key={category}>
                         <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">{category}</h3>
@@ -263,14 +308,14 @@ const Reports: React.FC = () => {
                 ))}
             </div>
             
-            <div className="flex-grow bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-y-auto mt-6">
-                {renderReport()}
-            </div>
-            
-            <div className="flex-shrink-0 mt-6">
-                <ReportActionBar 
-                    onExportPDF={onExportPDF}
-                />
+            <div className="mt-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md flex justify-center items-center">
+                 <button
+                    onClick={() => setIsReportVisible(true)}
+                    className="px-8 py-3 bg-blue-500 text-white font-bold text-lg rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-lg hover:shadow-xl"
+                >
+                    <EyeIcon className="w-6 h-6" />
+                    عرض التقرير
+                </button>
             </div>
         </div>
     );

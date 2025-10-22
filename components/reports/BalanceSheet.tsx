@@ -89,7 +89,7 @@ const BalanceSheet: React.FC<ReportProps> = ({ asOfDate, onDataReady }) => {
 
     const correctedChartOfAccounts = useMemo(() => {
         const newChart = JSON.parse(JSON.stringify(chartOfAccounts));
-        const inventoryAccount = findNodeRecursive(newChart, 'code', '1104');
+        const inventoryAccount = findNodeRecursive(newChart, 'id', '1-1-4'); // المخزون
         
         if (inventoryAccount) {
             const currentBalance = inventoryAccount.balance || 0;
@@ -111,15 +111,15 @@ const BalanceSheet: React.FC<ReportProps> = ({ asOfDate, onDataReady }) => {
         totalEquity,
     } = useMemo(() => {
         const rootNodes = {
-            assets: correctedChartOfAccounts.find((n: any) => n.code === '1000'),
-            liabilities: correctedChartOfAccounts.find((n: any) => n.code === '2000'),
-            equity: correctedChartOfAccounts.find((n: any) => n.code === '3000'),
-            revAndExp: correctedChartOfAccounts.find((n: any) => n.code === '4000'),
+            assets: correctedChartOfAccounts.find((n: any) => n.id === '1'),
+            liabilities: correctedChartOfAccounts.find((n: any) => n.id === '2'),
+            equity: correctedChartOfAccounts.find((n: any) => n.id === '3'),
+            revAndExp: correctedChartOfAccounts.find((n: any) => n.id === '4'),
         };
 
         // 1. Calculate Net Profit/Loss for the period
-        const revenueNodes = rootNodes.revAndExp?.children?.filter((n: AccountNode) => n.code !== '4200') || [];
-        const expenseNode = rootNodes.revAndExp?.children?.find((n: any) => n.code === '4200');
+        const revenueNodes = rootNodes.revAndExp?.children?.filter((n: AccountNode) => n.id !== '4-2') || [];
+        const expenseNode = rootNodes.revAndExp?.children?.find((n: any) => n.id === '4-2');
         
         const totalRevenueBalance = sumBalancesForNode({ id: 'temp-rev', name: 'temp', code: 'temp', children: revenueNodes});
         const totalExpenseBalance = sumBalancesForNode(expenseNode);

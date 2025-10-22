@@ -14,7 +14,13 @@ const ActivityLog: React.FC = () => {
   }
 
   const filteredLog = useMemo(() => {
+    if (!Array.isArray(activityLog)) {
+      return [];
+    }
     return activityLog.filter(log => {
+      if (!log) { // Guard against null or undefined log entries
+        return false;
+      }
       const logDate = new Date(log.timestamp);
       const startDate = filterStartDate ? new Date(filterStartDate) : null;
       const endDate = filterEndDate ? new Date(filterEndDate) : null;
@@ -57,7 +63,7 @@ const ActivityLog: React.FC = () => {
                 className="block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               >
                   <option value="">كل المستخدمين</option>
-                  {users.map(user => (
+                  {Array.isArray(users) && users.map(user => (
                       <option key={user.id} value={user.id}>{user.name}</option>
                   ))}
               </select>

@@ -448,6 +448,19 @@ function dataReducer(state: AppState, action: Action): AppState {
                 activityLog: [log, ...state.activityLog],
             };
         }
+        
+        case 'UPDATE_INVENTORY_ADJUSTMENT': {
+            const { updatedAdjustment, updatedInventory, journal, chartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                inventoryAdjustments: state.inventoryAdjustments.map(adj => adj.id === updatedAdjustment.id ? updatedAdjustment : adj),
+                inventory: updatedInventory,
+                journal,
+                chartOfAccounts,
+                sequences: { ...state.sequences, journal: state.sequences.journal + 1 },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
 
         case 'ARCHIVE_INVENTORY_ADJUSTMENT': {
             const { updatedAdjustments, updatedInventory, log, updatedJournal, chartOfAccounts } = action.payload;
@@ -1454,6 +1467,96 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         showToast('تمت إضافة تسوية المخزون بنجاح.');
         return newAdjustment;
     }, [data.sequences.inventoryAdjustment, data.sequences.journal, data.inventory, data.chartOfAccounts, data.generalSettings, createActivityLog, showToast]);
+    
+    const updateInventoryAdjustment = useCallback((updatedAdjustment: InventoryAdjustment): InventoryAdjustment => {
+        const originalAdjustment = data.inventoryAdjustments.find((a: InventoryAdjustment) => a.id === updatedAdjustment.id);
+        if (!originalAdjustment) {
+            throw new Error("لم يتم العثور على التسوية للتحديث");
+        }
+
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        const updatedChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        let updatedJournal = JSON.parse(JSON.stringify(data.journal));
+
+        originalAdjustment.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                const change = originalAdjustment.type === 'إضافة' ? -line.quantity : line.quantity;
+                item.stock = parseFloat((item.stock + change).toPrecision(15));
+            }
+        });
+
+        const originalJournalEntry = updatedJournal.find((j: JournalEntry) => j.id === originalAdjustment.journalEntryId);
+        if (originalJournalEntry) {
+            originalJournalEntry.lines.forEach((line: JournalLine) => {
+                const amountToReverse = line.credit - line.debit;
+                updateBalancesRecursively(updatedChart, line.accountId, amountToReverse);
+            });
+            updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalAdjustment.journalEntryId ? { ...j, isArchived: true, description: `[ملغي بسبب التعديل] ${j.description}` } : j);
+        }
+
+        if (updatedAdjustment.type === 'صرف' && !data.generalSettings.allowNegativeStock) {
+            for (const line of updatedAdjustment.items) {
+                const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+                if (item && line.quantity > item.stock) {
+                    throw new Error(`المخزون غير كافٍ للصنف "${line.itemName}". المتاح: ${item.stock}`);
+                }
+            }
+        }
+
+        updatedAdjustment.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                const change = updatedAdjustment.type === 'إضافة' ? line.quantity : -line.quantity;
+                item.stock = parseFloat((item.stock + change).toPrecision(15));
+            }
+        });
+
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        const inventoryAccount = findAccountByCode(updatedChart, '1104');
+        if (!inventoryAccount) throw new Error("حساب المخزون الرئيسي (1104) مفقود.");
+        
+        const journalLines: JournalLine[] = updatedAdjustment.type === 'صرف'
+            ? [
+                { accountId: updatedAdjustment.contraAccountId, accountName: updatedAdjustment.contraAccountName, debit: updatedAdjustment.totalValue, credit: 0 },
+                { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: updatedAdjustment.totalValue }
+              ]
+            : [
+                { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: updatedAdjustment.totalValue, credit: 0 },
+                { accountId: updatedAdjustment.contraAccountId, accountName: updatedAdjustment.contraAccountName, debit: 0, credit: updatedAdjustment.totalValue }
+              ];
+        
+        journalLines.forEach(line => {
+            const amount = line.debit - line.credit;
+            updateBalancesRecursively(updatedChart, line.accountId, amount);
+        });
+
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: updatedAdjustment.date, 
+            description: `تعديل تسوية مخزون رقم ${updatedAdjustment.id}: ${updatedAdjustment.description}`,
+            debit: updatedAdjustment.totalValue, 
+            credit: updatedAdjustment.totalValue, 
+            status: 'مرحل', 
+            lines: journalLines,
+        };
+        updatedJournal.push(newJournalEntry);
+        
+        const finalUpdatedAdjustment = { ...updatedAdjustment, journalEntryId: newJournalEntryId };
+
+        dispatch({
+            type: 'UPDATE_INVENTORY_ADJUSTMENT',
+            payload: {
+                updatedAdjustment: finalUpdatedAdjustment,
+                updatedInventory,
+                journal: updatedJournal,
+                chartOfAccounts: updatedChart,
+                log: createActivityLog('تعديل تسوية مخزون', `تم تعديل التسوية رقم ${updatedAdjustment.id}`)
+            }
+        });
+
+        return finalUpdatedAdjustment;
+    }, [data.inventoryAdjustments, data.inventory, data.chartOfAccounts, data.journal, data.sequences.journal, data.generalSettings, createActivityLog]);
 
     const archiveInventoryAdjustment = useCallback((id: string) => {
         const adj = data.inventoryAdjustments.find(a => a.id === id);
@@ -2154,7 +2257,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addJournalEntry, updateJournalEntry, archiveJournalEntry: (id: string) => archiveJournalEntry(id, true), unarchiveJournalEntry: (id: string) => archiveJournalEntry(id, false),
         inventory: activeData.inventory, archivedInventory: archivedData.inventory,
         addItem, updateItem, archiveItem, unarchiveItem, generateAndAssignBarcodesForMissing,
-        inventoryAdjustments: activeData.inventoryAdjustments, addInventoryAdjustment, archiveInventoryAdjustment, unarchiveInventoryAdjustment,
+        inventoryAdjustments: activeData.inventoryAdjustments, addInventoryAdjustment, updateInventoryAdjustment, archiveInventoryAdjustment, unarchiveInventoryAdjustment,
         sales: activeData.sales, archivedSales: archivedData.sales,
         addSale, updateSale, archiveSale, unarchiveSale: () => {},
         priceQuotes: activeData.priceQuotes,

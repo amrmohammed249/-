@@ -1,27 +1,20 @@
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { InventoryItem, Sale, Purchase, SaleReturn, PurchaseReturn, InventoryAdjustment, PackingUnit, LineItem } from '../../types';
-import { MagnifyingGlassIcon, BoxIcon } from '../icons';
+import { BoxIcon } from '../icons';
 import Card from '../shared/Card';
 
 interface ReportProps {
     startDate: string;
     endDate: string;
+    itemId?: string;
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
 
-const ItemMovementReport: React.FC<ReportProps> = ({ startDate, endDate, onDataReady }) => {
+const ItemMovementReport: React.FC<ReportProps> = ({ startDate, endDate, itemId, onDataReady }) => {
     const { inventory, sales, purchases, saleReturns, purchaseReturns, inventoryAdjustments } = useContext(DataContext);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-
-    const searchResults = useMemo(() => {
-        if (searchTerm.length < 2) return [];
-        const term = searchTerm.toLowerCase();
-        return inventory.filter((item: InventoryItem) => 
-            !item.isArchived && (item.name.toLowerCase().includes(term) || item.id.toLowerCase().includes(term) || item.barcode?.includes(term))
-        ).slice(0, 10);
-    }, [searchTerm, inventory]);
+    
+    const selectedItem = useMemo(() => itemId ? inventory.find((i: InventoryItem) => i.id === itemId) : null, [itemId, inventory]);
 
     const reportData = useMemo(() => {
         if (!selectedItem) return null;
@@ -33,12 +26,14 @@ const ItemMovementReport: React.FC<ReportProps> = ({ startDate, endDate, onDataR
             const packingUnit = itemDetails.units.find((u: PackingUnit) => u.id === lineItem.unitId);
             return packingUnit ? lineItem.quantity * packingUnit.factor : lineItem.quantity;
         };
+        
+        const getItemDetails = (id: string) => inventory.find((inv: InventoryItem) => inv.id === id);
 
         const allTransactions = [
-            ...purchases.flatMap((t: Purchase) => t.items.map(i => ({ ...i, date: t.date, type: 'شراء', description: `فاتورة مشتريات #${t.id}`, change: getQuantityInBaseUnits(i, inventory.find(inv => inv.id === i.itemId)!) }))),
-            ...sales.flatMap((t: Sale) => t.items.map(i => ({ ...i, date: t.date, type: 'بيع', description: `فاتورة مبيعات #${t.id}`, change: -getQuantityInBaseUnits(i, inventory.find(inv => inv.id === i.itemId)!) }))),
-            ...saleReturns.flatMap((t: SaleReturn) => t.items.map(i => ({ ...i, date: t.date, type: 'مرتجع بيع', description: `مرتجع مبيعات #${t.id}`, change: getQuantityInBaseUnits(i, inventory.find(inv => inv.id === i.itemId)!) }))),
-            ...purchaseReturns.flatMap((t: PurchaseReturn) => t.items.map(i => ({ ...i, date: t.date, type: 'مرتجع شراء', description: `مرتجع مشتريات #${t.id}`, change: -getQuantityInBaseUnits(i, inventory.find(inv => inv.id === i.itemId)!) }))),
+            ...purchases.flatMap((t: Purchase) => t.items.map(i => ({ ...i, date: t.date, type: 'شراء', description: `فاتورة مشتريات #${t.id}`, change: getQuantityInBaseUnits(i, getItemDetails(i.itemId)!) }))),
+            ...sales.flatMap((t: Sale) => t.items.map(i => ({ ...i, date: t.date, type: 'بيع', description: `فاتورة مبيعات #${t.id}`, change: -getQuantityInBaseUnits(i, getItemDetails(i.itemId)!) }))),
+            ...saleReturns.flatMap((t: SaleReturn) => t.items.map(i => ({ ...i, date: t.date, type: 'مرتجع بيع', description: `مرتجع مبيعات #${t.id}`, change: getQuantityInBaseUnits(i, getItemDetails(i.itemId)!) }))),
+            ...purchaseReturns.flatMap((t: PurchaseReturn) => t.items.map(i => ({ ...i, date: t.date, type: 'مرتجع شراء', description: `مرتجع مشتريات #${t.id}`, change: -getQuantityInBaseUnits(i, getItemDetails(i.itemId)!) }))),
             ...inventoryAdjustments.flatMap((t: InventoryAdjustment) => t.items.map(i => ({ ...i, date: t.date, type: `تسوية ${t.type}`, description: t.description, change: t.type === 'إضافة' ? i.quantity : -i.quantity }))),
         ].filter(tx => tx.itemId === selectedItem.id);
 
@@ -80,83 +75,79 @@ const ItemMovementReport: React.FC<ReportProps> = ({ startDate, endDate, onDataR
         };
     }, [selectedItem, startDate, endDate, inventory, sales, purchases, saleReturns, purchaseReturns, inventoryAdjustments]);
 
-    const handleSelect = (item: InventoryItem) => {
-        setSelectedItem(item);
-        setSearchTerm('');
-    };
+    useEffect(() => {
+        if(reportData && selectedItem) {
+            onDataReady({
+                data: reportData.transactions,
+                columns: [
+                    { header: 'التاريخ', accessor: 'date'},
+                    { header: 'البيان', accessor: 'description'},
+                    { header: 'وارد', accessor: 'in_quantity'},
+                    { header: 'صادر', accessor: 'out_quantity'},
+                    { header: 'الرصيد', accessor: 'balance'},
+                ],
+                name: `Item-Movement-${selectedItem.name}`
+            })
+        }
+    }, [reportData, selectedItem, onDataReady]);
+
+
+    if (!selectedItem) {
+        return (
+            <div className="text-center py-20 text-gray-500">
+                <BoxIcon className="w-16 h-16 mx-auto mb-4" />
+                <p>الرجاء اختيار صنف من شاشة الفلاتر لعرض تقرير الحركة الخاص به.</p>
+            </div>
+        );
+    }
+    
+    if (!reportData) {
+        return <div className="text-center py-20 text-gray-500">جاري تحميل البيانات...</div>
+    }
 
     return (
         <div id="printable-report" className="p-6">
-            <div className="no-print relative max-w-lg mx-auto mb-6">
-                <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    placeholder="ابحث عن صنف بالاسم أو الكود..."
-                    className="w-full pr-10 pl-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {searchResults.length > 0 && (
-                    <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-10 max-h-60 overflow-y-auto">
-                        {searchResults.map(item => (
-                            <div key={item.id} onClick={() => handleSelect(item)} className="p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700">
-                                {item.name} ({item.id})
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {!selectedItem ? (
-                <div className="text-center py-20 text-gray-500">
-                    <BoxIcon className="w-16 h-16 mx-auto mb-4" />
-                    <p>الرجاء البحث واختيار صنف لعرض تقرير الحركة الخاص به.</p>
+            <div>
+                <div className="text-center mb-6">
+                    <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير حركة صنف: {selectedItem.name}</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                        الفترة من {startDate} إلى {endDate}
+                    </p>
                 </div>
-            ) : !reportData ? (
-                <div className="text-center py-20 text-gray-500">جاري تحميل البيانات...</div>
-            ) : (
-                <div>
-                    <div className="text-center mb-6">
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير حركة صنف: {selectedItem.name}</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                            الفترة من {startDate} إلى {endDate}
-                        </p>
-                    </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-center">
-                        <Card title="رصيد أول المدة" value={reportData.openingBalance.toLocaleString()} icon={<BoxIcon className="text-gray-500"/>} />
-                        <Card title="إجمالي الوارد" value={reportData.totalIn.toLocaleString()} icon={<BoxIcon className="text-green-500"/>} />
-                        <Card title="إجمالي الصادر" value={reportData.totalOut.toLocaleString()} icon={<BoxIcon className="text-red-500"/>} />
-                        <Card title="الرصيد الختامي" value={reportData.closingBalance.toLocaleString()} icon={<BoxIcon className="text-blue-500"/>} />
-                    </div>
-                    
-                    <div className="overflow-x-auto">
-                         <table className="w-full text-sm text-right text-gray-500 dark:text-gray-400">
-                            <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300">
-                                <tr>
-                                    <th className="px-4 py-3">التاريخ</th>
-                                    <th className="px-4 py-3">البيان</th>
-                                    <th className="px-4 py-3 text-center">وارد</th>
-                                    <th className="px-4 py-3 text-center">صادر</th>
-                                    <th className="px-4 py-3 text-center">الرصيد</th>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-center">
+                    <Card title="رصيد أول المدة" value={reportData.openingBalance.toLocaleString()} icon={<BoxIcon className="text-gray-500"/>} />
+                    <Card title="إجمالي الوارد" value={reportData.totalIn.toLocaleString()} icon={<BoxIcon className="text-green-500"/>} />
+                    <Card title="إجمالي الصادر" value={reportData.totalOut.toLocaleString()} icon={<BoxIcon className="text-red-500"/>} />
+                    <Card title="الرصيد الختامي" value={reportData.closingBalance.toLocaleString()} icon={<BoxIcon className="text-blue-500"/>} />
+                </div>
+                
+                <div className="overflow-x-auto">
+                     <table className="w-full text-sm text-right text-gray-500 dark:text-gray-400">
+                        <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300">
+                            <tr>
+                                <th className="px-4 py-3">التاريخ</th>
+                                <th className="px-4 py-3">البيان</th>
+                                <th className="px-4 py-3 text-center">وارد</th>
+                                <th className="px-4 py-3 text-center">صادر</th>
+                                <th className="px-4 py-3 text-center">الرصيد</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {reportData.transactions.map((tx, index) => (
+                                <tr key={index} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                                    <td className="px-4 py-2">{tx.date}</td>
+                                    <td className="px-4 py-2 font-medium">{tx.description}</td>
+                                    <td className="px-4 py-2 text-center text-green-600 font-mono">{tx.in_quantity > 0 ? tx.in_quantity.toLocaleString() : '-'}</td>
+                                    <td className="px-4 py-2 text-center text-red-600 font-mono">{tx.out_quantity > 0 ? tx.out_quantity.toLocaleString() : '-'}</td>
+                                    <td className="px-4 py-2 text-center font-semibold font-mono">{tx.balance.toLocaleString()}</td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {reportData.transactions.map((tx, index) => (
-                                    <tr key={index} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-                                        <td className="px-4 py-2">{tx.date}</td>
-                                        <td className="px-4 py-2 font-medium">{tx.description}</td>
-                                        <td className="px-4 py-2 text-center text-green-600 font-mono">{tx.in_quantity > 0 ? tx.in_quantity.toLocaleString() : '-'}</td>
-                                        <td className="px-4 py-2 text-center text-red-600 font-mono">{tx.out_quantity > 0 ? tx.out_quantity.toLocaleString() : '-'}</td>
-                                        <td className="px-4 py-2 text-center font-semibold font-mono">{tx.balance.toLocaleString()}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                         </table>
-                    </div>
-
+                            ))}
+                        </tbody>
+                     </table>
                 </div>
-            )}
+
+            </div>
         </div>
     );
 };

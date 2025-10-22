@@ -37,12 +37,12 @@ const ProfitAndLoss: React.FC<ReportProps> = ({ startDate, endDate, onDataReady 
     const { chartOfAccounts } = useContext(DataContext);
 
     const { revenues, expenses, totalRevenue, totalExpenses, netProfit } = useMemo(() => {
-        const revAndExpNode = chartOfAccounts.find((n: any) => n.code === '4000');
+        const revAndExpNode = chartOfAccounts.find((n: any) => n.id === '4'); // الإيرادات والمصروفات
         
-        // Revenues are children of 'Revenues and Expenses' (4000) that are NOT 'Operating Expenses' (4200)
-        const revenues = revAndExpNode?.children?.filter((n: AccountNode) => n.code !== '4200') || [];
+        // Revenues are children of 'Revenues and Expenses' that are NOT 'Operating Expenses'
+        const revenues = revAndExpNode?.children?.filter((n: AccountNode) => n.id !== '4-2') || [];
 
-        const expenseNode = revAndExpNode?.children?.find((n: any) => n.code === '4200');
+        const expenseNode = revAndExpNode?.children?.find((n: any) => n.id === '4-2'); // مصروفات تشغيل
         const expenses = expenseNode?.children || [];
 
         // Revenue balances are negative (credits), so we take the absolute value for display.

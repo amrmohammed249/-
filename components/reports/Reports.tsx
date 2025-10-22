@@ -14,7 +14,7 @@ import PurchaseReturnsReport from './PurchaseReturnsReport';
 import { AccountNode, InventoryItem } from '../../types';
 import TreasuryReport from './TreasuryReport';
 import ItemMovementReport from './ItemMovementReport';
-import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon } from '../icons';
+import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon } from '../icons';
 
 
 declare var jspdf: any;
@@ -64,6 +64,7 @@ const Reports: React.FC = () => {
     const [selectedItemCategory, setSelectedItemCategory] = useState<string>('');
     const [selectedExpenseAccountId, setSelectedExpenseAccountId] = useState<string>('');
     const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>('');
+    const [itemSearchTerm, setItemSearchTerm] = useState('');
     
     const [reportExportProps, setReportExportProps] = useState<{ data: any[], columns: any[], name: string }>({ data: [], columns: [], name: '' });
 
@@ -87,6 +88,7 @@ const Reports: React.FC = () => {
         setSelectedItemCategory('');
         setSelectedExpenseAccountId('');
         setSelectedTreasuryId('');
+        setItemSearchTerm('');
     }, [activeTab]);
 
     const itemCategories = useMemo(() => {
@@ -100,10 +102,19 @@ const Reports: React.FC = () => {
     }, [inventory]);
 
     const expenseAccounts = useMemo(() => {
-        const expenseRoot = chartOfAccounts.find((n: AccountNode) => n.code === '4000')?.children?.find((n: AccountNode) => n.code === '4200');
+        const expenseRoot = chartOfAccounts.find((n: AccountNode) => n.id === '4-2'); // مصاريف تشغيل
         if (!expenseRoot || !expenseRoot.children) return [];
         return flattenAccounts(expenseRoot.children).sort((a,b) => a.code.localeCompare(b.code));
     }, [chartOfAccounts]);
+    
+    const itemSearchResults = useMemo(() => {
+        if (itemSearchTerm.length < 1) return [];
+        const term = itemSearchTerm.toLowerCase();
+        return inventory.filter((i: InventoryItem) => 
+            !i.isArchived && 
+            (i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term))
+        ).slice(0, 10);
+    }, [inventory, itemSearchTerm]);
 
     if (currentUser.role !== 'مدير النظام' && currentUser.role !== 'محاسب') {
         return <AccessDenied />;
@@ -131,6 +142,8 @@ const Reports: React.FC = () => {
     };
 
     const isDateRangeReport = activeTab !== 'balanceSheet' && activeTab !== 'inventory';
+    const isViewButtonDisabled = activeTab === 'itemMovement' && !selectedInventoryId;
+
 
     const renderReport = () => {
         const props = { startDate, endDate, onDataReady: handleDataReady };
@@ -146,7 +159,7 @@ const Reports: React.FC = () => {
             case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
             case 'expense': return <ExpenseReport {...props} expenseAccountId={selectedExpenseAccountId} />;
             case 'treasury': return <TreasuryReport {...props} treasuryAccountId={selectedTreasuryId} />;
-            case 'itemMovement': return <ItemMovementReport {...props} />;
+            case 'itemMovement': return <ItemMovementReport {...props} itemId={selectedInventoryId} />;
             default: return <p>الرجاء اختيار تقرير لعرضه.</p>;
         }
     };
@@ -253,13 +266,60 @@ const Reports: React.FC = () => {
                             </div>
                         </>
                     )}
-                    {activeTab === 'inventory' && (
+                     {activeTab === 'inventory' && (
                          <div>
-                            <label htmlFor="inventoryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">المنتج</label>
+                            <label htmlFor="inventoryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الصنف</label>
                             <select id="inventoryFilter" value={selectedInventoryId} onChange={(e) => setSelectedInventoryId(e.target.value)} className="input-style w-full">
-                                <option value="">كل المنتجات</option>
+                                <option value="">كل الأصناف</option>
                                 {inventory.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
                             </select>
+                        </div>
+                    )}
+                    {activeTab === 'itemMovement' && (
+                        <div className="relative">
+                            <label htmlFor="itemMovementFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الصنف</label>
+                            <input
+                                id="itemMovementFilter"
+                                type="text"
+                                value={selectedInventoryId ? (inventory.find((i: InventoryItem) => i.id === selectedInventoryId)?.name || '') : itemSearchTerm}
+                                onChange={(e) => {
+                                    setItemSearchTerm(e.target.value);
+                                    if (selectedInventoryId) setSelectedInventoryId('');
+                                }}
+                                className="input-style w-full"
+                                placeholder="ابحث بالاسم أو الكود..."
+                                required
+                                autoComplete="off"
+                            />
+                            {itemSearchTerm && itemSearchResults.length > 0 && !selectedInventoryId && (
+                              <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-10 max-h-60 overflow-y-auto">
+                                {itemSearchResults.map((item: InventoryItem) => (
+                                  <div
+                                    key={item.id}
+                                    onClick={() => {
+                                      setSelectedInventoryId(item.id);
+                                      setItemSearchTerm('');
+                                    }}
+                                    className="p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  >
+                                    {item.name} <span className="text-xs text-gray-500">({item.id})</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {selectedInventoryId && (
+                                <button
+                                    type="button"
+                                    className="absolute left-2 top-8 text-gray-400 hover:text-red-500"
+                                    onClick={() => {
+                                        setSelectedInventoryId('');
+                                        setItemSearchTerm('');
+                                    }}
+                                    title="إزالة الاختيار"
+                                >
+                                    <XIcon className="w-5 h-5" />
+                                </button>
+                            )}
                         </div>
                     )}
                      {activeTab === 'expense' && (
@@ -276,7 +336,7 @@ const Reports: React.FC = () => {
                             <label htmlFor="treasuryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الخزينة</label>
                             <select id="treasuryFilter" value={selectedTreasuryId} onChange={(e) => setSelectedTreasuryId(e.target.value)} className="input-style w-full">
                                 <option value="">كل الخزائن</option>
-                                {Array.isArray(treasuriesList) && (treasuriesList as {id: string, name: string, isTotal?: boolean}[]).filter((t) => !t.isTotal).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                {(treasuriesList || []).filter((t: any) => !t.isTotal).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
                             </select>
                         </div>
                     )}
@@ -289,7 +349,8 @@ const Reports: React.FC = () => {
                         <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">{category}</h3>
                         <div className="bg-gray-200 dark:bg-gray-900 rounded-lg p-1">
                              <nav className="flex flex-wrap gap-1">
-                                {tabs.map(tab => (
+                                {/* FIX: Cast `tabs` to its correct array type before mapping. */}
+                                {(tabs as typeof reportTabs).map(tab => (
                                     <button
                                         key={tab.key}
                                         onClick={() => setActiveTab(tab.key)}
@@ -311,7 +372,8 @@ const Reports: React.FC = () => {
             <div className="mt-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md flex justify-center items-center">
                  <button
                     onClick={() => setIsReportVisible(true)}
-                    className="px-8 py-3 bg-blue-500 text-white font-bold text-lg rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-lg hover:shadow-xl"
+                    disabled={isViewButtonDisabled}
+                    className="px-8 py-3 bg-blue-500 text-white font-bold text-lg rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-lg hover:shadow-xl disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                     <EyeIcon className="w-6 h-6" />
                     عرض التقرير

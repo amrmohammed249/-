@@ -1,5 +1,3 @@
-
-
 import React, { useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { AccountNode, TreasuryTransaction } from '../../types';
@@ -10,6 +8,12 @@ interface ReportProps {
     expenseAccountId?: string;
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
+
+// Define explicit types to avoid 'unknown'/'any' from Object.entries
+type ExpenseTransaction = TreasuryTransaction & { amount: number; detailName: string };
+type L2Group = { total: number; transactions: ExpenseTransaction[] };
+type L1Group = { total: number; groups: Record<string, L2Group> };
+
 
 // Helper to find the full path of an account in the tree
 const findAccountPath = (nodes: AccountNode[], accountId: string, currentPath: AccountNode[] = []): AccountNode[] | null => {
@@ -30,7 +34,7 @@ const findAccountPath = (nodes: AccountNode[], accountId: string, currentPath: A
 const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccountId, onDataReady }) => {
     const { treasury, chartOfAccounts } = useContext(DataContext);
     
-    const expenseRootId = '4-2'; // Code '4200' for مصاريف تشغيل
+    const expenseRootId = '4-2'; // ID for 'مصاريف تشغيل'
 
     const { hierarchicalExpenses, totalExpenses } = useMemo(() => {
         const start = new Date(startDate);
@@ -52,7 +56,7 @@ const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccou
         });
 
         // Group transactions hierarchically
-        const hierarchy: { [l1Name: string]: { total: number; groups: { [l2Name: string]: { total: number; transactions: any[] } } } } = {};
+        const hierarchy: Record<string, L1Group> = {};
         let total = 0;
 
         expenseTransactions.forEach(t => {
@@ -107,12 +111,9 @@ const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccou
             { header: 'المبلغ', accessor: 'amount' },
         ];
         
-        // FIX: Add type annotation to fix 'unknown' type error.
-        Object.entries(hierarchicalExpenses).forEach(([l1Name, l1Data]: [string, any]) => {
-            // FIX: Add type annotation to fix 'unknown' type error.
-            Object.entries(l1Data.groups).forEach(([l2Name, l2Data]: [string, any]) => {
-                // FIX: Add type annotation to fix 'unknown' type error.
-                l2Data.transactions.forEach((t: any) => {
+        Object.entries(hierarchicalExpenses).forEach(([l1Name, l1Data]: [string, L1Group]) => {
+            Object.entries(l1Data.groups).forEach(([l2Name, l2Data]: [string, L2Group]) => {
+                l2Data.transactions.forEach((t: ExpenseTransaction) => {
                     exportData.push({
                         l1: l1Name,
                         l2: l2Name,
@@ -130,9 +131,7 @@ const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccou
 
     const hasExpenses = Object.keys(hierarchicalExpenses).length > 0;
     
-    // Sort L1 categories by total descending
-    // FIX: Add type annotation to fix 'unknown' type error.
-    const sortedL1Entries = Object.entries(hierarchicalExpenses).sort(([, a]: [string, any], [, b]: [string, any]) => b.total - a.total);
+    const sortedL1Entries = Object.entries(hierarchicalExpenses).sort(([, a]: [string, L1Group], [, b]: [string, L1Group]) => b.total - a.total);
 
     return (
         <div id="printable-report">
@@ -150,8 +149,7 @@ const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccou
                      <div className="text-center py-12 text-gray-500">لا توجد مصروفات في الفترة المحددة.</div>
                 ) : (
                     <div className="space-y-6">
-                        {/* FIX: Add type annotation to fix 'unknown' type error. */}
-                        {sortedL1Entries.map(([l1Name, l1Data]: [string, any]) => (
+                        {sortedL1Entries.map(([l1Name, l1Data]: [string, L1Group]) => (
                             <div key={l1Name} className="border dark:border-gray-700 rounded-lg">
                                 <div className="flex justify-between items-center font-bold bg-gray-100 dark:bg-gray-700/50 p-3 rounded-t-lg">
                                     <h4 className="text-xl text-gray-800 dark:text-gray-100">{l1Name}</h4>
@@ -159,16 +157,14 @@ const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccou
                                 </div>
                                 
                                 <div className="p-2 md:p-4 space-y-4">
-                                  {/* FIX: Add type annotation to fix 'unknown' type error. */}
-                                  {Object.entries(l1Data.groups).sort(([,a]: [string, any],[,b]: [string, any]) => b.total - a.total).map(([l2Name, l2Data]: [string, any]) => (
+                                  {Object.entries(l1Data.groups).sort(([,a]: [string, L2Group],[,b]: [string, L2Group]) => b.total - a.total).map(([l2Name, l2Data]: [string, L2Group]) => (
                                       <div key={l2Name} className="border-r-4 border-gray-200 dark:border-gray-600 pr-4">
                                           <div className="flex justify-between items-center font-semibold text-gray-700 dark:text-gray-300 mb-2">
                                               <h5 className="text-lg">{l2Name}</h5>
                                               <span className="text-lg font-mono">{l2Data.total.toLocaleString()}</span>
                                           </div>
                                           <ul className="divide-y dark:divide-gray-700/50">
-                                              {/* FIX: Add type annotation to fix 'unknown' type error. */}
-                                              {l2Data.transactions.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((t: any) => (
+                                              {l2Data.transactions.sort((a: ExpenseTransaction, b: ExpenseTransaction) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((t: ExpenseTransaction) => (
                                                   <li key={t.id} className="flex justify-between items-center py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700/30 rounded-md -mr-4 px-4">
                                                       <div>
                                                           <p className="font-medium text-gray-800 dark:text-gray-300">{t.description}</p>

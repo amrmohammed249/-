@@ -821,7 +821,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
                 const oldStock = item.stock;
-                item.stock -= quantityInBaseUnit;
+                item.stock = parseFloat((item.stock - quantityInBaseUnit).toPrecision(15));
                 costOfGoodsSold += quantityInBaseUnit * item.purchasePrice;
                 if(oldStock > LOW_STOCK_THRESHOLD && item.stock <= LOW_STOCK_THRESHOLD) {
                    notification = createNotification(`انخفاض مخزون الصنف "${line.itemName}" (${item.stock} متبقي)`, 'warning', '/inventory');
@@ -908,7 +908,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-                item.stock += quantityInBaseUnit;
+                item.stock = parseFloat((item.stock + quantityInBaseUnit).toPrecision(15));
             }
         });
     
@@ -941,7 +941,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
                 const oldStock = item.stock;
-                item.stock -= quantityInBaseUnit;
+                item.stock = parseFloat((item.stock - quantityInBaseUnit).toPrecision(15));
                 newCostOfGoodsSold += quantityInBaseUnit * item.purchasePrice;
                 if (oldStock > LOW_STOCK_THRESHOLD && item.stock <= LOW_STOCK_THRESHOLD) {
                     notification = createNotification(`انخفاض مخزون الصنف "${line.itemName}" (${item.stock} متبقي)`, 'warning', '/inventory');
@@ -1023,7 +1023,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const packingUnit = item.units.find(u => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-                item.stock += quantityInBaseUnit;
+                item.stock = parseFloat((item.stock + quantityInBaseUnit).toPrecision(15));
             }
         });
         const updatedCustomers = data.customers.map(c => c.name === sale.customer ? {...c, balance: c.balance - sale.total} : c);
@@ -1064,7 +1064,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-                item.stock += quantityInBaseUnit;
+                item.stock = parseFloat((item.stock + quantityInBaseUnit).toPrecision(15));
             }
         });
         const updatedSuppliers = data.suppliers.map(s => s.name === purchase.supplier ? {...s, balance: s.balance + purchase.total} : s);
@@ -1139,7 +1139,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-                item.stock -= quantityInBaseUnit;
+                item.stock = parseFloat((item.stock - quantityInBaseUnit).toPrecision(15));
             }
         });
     
@@ -1169,7 +1169,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-                item.stock += quantityInBaseUnit;
+                item.stock = parseFloat((item.stock + quantityInBaseUnit).toPrecision(15));
             }
         });
     
@@ -1242,7 +1242,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const packingUnit = item.units.find(u => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-                item.stock -= quantityInBaseUnit;
+                item.stock = parseFloat((item.stock - quantityInBaseUnit).toPrecision(15));
             }
         });
         const updatedSuppliers = data.suppliers.map(s => s.name === purchase.supplier ? {...s, balance: s.balance - purchase.total} : s);
@@ -1362,7 +1362,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
         adjustment.items.forEach(line => {
             const item = updatedInventory.find(i => i.id === line.itemId);
-            if (item) item.stock += (adjustment.type === 'إضافة' ? line.quantity : -line.quantity);
+            if (item) {
+                const change = adjustment.type === 'إضافة' ? line.quantity : -line.quantity;
+                item.stock = parseFloat((item.stock + change).toPrecision(15));
+            }
         });
     
         const journalLines: JournalLine[] = adjustment.type === 'صرف'
@@ -1411,7 +1414,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
         adj.items.forEach(line => {
             const item = updatedInventory.find(i => i.id === line.itemId);
-            if (item) item.stock -= (adj.type === 'إضافة' ? line.quantity : -line.quantity);
+            if (item) {
+                const change = (adj.type === 'إضافة' ? line.quantity : -line.quantity);
+                item.stock = parseFloat((item.stock - change).toPrecision(15));
+            }
         });
         const updatedAdjustments = data.inventoryAdjustments.map(a => a.id === id ? {...a, isArchived: true} : a);
 
@@ -1658,7 +1664,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
                 const oldStock = item.stock;
-                item.stock -= quantityInBaseUnit;
+                item.stock = parseFloat((item.stock - quantityInBaseUnit).toPrecision(15));
                 costOfGoodsSold += quantityInBaseUnit * item.purchasePrice;
                 if(oldStock > LOW_STOCK_THRESHOLD && item.stock <= LOW_STOCK_THRESHOLD) {
                    notification = createNotification(`انخفاض مخزون الصنف "${line.itemName}" (${item.stock} متبقي)`, 'warning', '/inventory');
@@ -1781,7 +1787,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
                     if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
                 }
-                item.stock += quantityInBaseUnit;
+                item.stock = parseFloat((item.stock + quantityInBaseUnit).toPrecision(15));
             }
         });
         const updatedSuppliers = data.suppliers.map((s: Supplier) => s.name === purchaseData.supplier ? {...s, balance: s.balance + purchaseData.total} : s);

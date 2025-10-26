@@ -45,7 +45,6 @@ const App: React.FC = () => {
   const location = useLocation();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
-  const visibleWindow = activeWindows.find(w => w.id === visibleWindowId);
   const isPrintRoute = location.pathname.startsWith('/print/');
 
 
@@ -157,48 +156,53 @@ const App: React.FC = () => {
     <>
       <div dir="rtl" className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
         <div className="flex flex-1 overflow-hidden">
-          {visibleWindow ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {renderFullScreenPage(visibleWindow)}
+            {/* Main Content Area (Dashboard, lists, etc.) */}
+            <div className={`flex flex-1 overflow-hidden ${visibleWindowId ? 'hidden' : 'flex'}`}>
+                <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <Header onMenuClick={() => setSidebarOpen(true)} />
+                    <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
+                        <Routes>
+                            <Route path="/login" element={<Navigate to="/" />} />
+                            <Route path="/" element={<Dashboard />} />
+                            <Route path="/accounts/chart" element={<ChartOfAccounts />} />
+                            <Route path="/accounts/journal" element={<JournalEntries />} />
+                            <Route path="/inventory" element={<Inventory />} />
+                            <Route path="/inventory/adjustments" element={<InventoryAdjustments />} />
+                            <Route path="/barcode-tools" element={<BarcodeTools />} />
+                            <Route path="/fixed-assets" element={<FixedAssets />} />
+                            <Route path="/sales" element={<SaleList />} />
+                            <Route path="/sales/edit/:id" element={<Sales />} />
+                            <Route path="/price-quotes/list" element={<PriceQuoteList />} />
+                            <Route path="/purchases" element={<PurchaseList />} />
+                            <Route path="/purchases/edit/:id" element={<Purchases />} />
+                            <Route path="/purchase-quotes/list" element={<PurchaseQuoteList />} />
+                            <Route path="/sales-returns" element={<SaleReturns />} />
+                            <Route path="/purchases-returns" element={<PurchaseReturns />} />
+                            <Route path="/treasury" element={<Treasury />} />
+                            <Route path="/customers" element={<Customers />} />
+                            <Route path="/customers/:id" element={<CustomerProfile />} />
+                            <Route path="/suppliers" element={<Suppliers />} />
+                            <Route path="/suppliers/:id" element={<SupplierProfile />} />
+                            <Route path="/reports" element={<Reports />} />
+                            <Route path="/activity-log" element={<ActivityLog />} />
+                            <Route path="/archive" element={<Archive />} />
+                            <Route path="/settings" element={<Settings />} />
+                            <Route path="*" element={<Navigate to="/" />} />
+                        </Routes>
+                    </main>
+                </div>
             </div>
-          ) : (
-            <>
-              <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <Header onMenuClick={() => setSidebarOpen(true)} />
-                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
-                  <Routes>
-                    <Route path="/login" element={<Navigate to="/" />} />
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/accounts/chart" element={<ChartOfAccounts />} />
-                    <Route path="/accounts/journal" element={<JournalEntries />} />
-                    <Route path="/inventory" element={<Inventory />} />
-                    <Route path="/inventory/adjustments" element={<InventoryAdjustments />} />
-                    <Route path="/barcode-tools" element={<BarcodeTools />} />
-                    <Route path="/fixed-assets" element={<FixedAssets />} />
-                    <Route path="/sales" element={<SaleList />} />
-                    <Route path="/sales/edit/:id" element={<Sales />} />
-                    <Route path="/price-quotes/list" element={<PriceQuoteList />} />
-                    <Route path="/purchases" element={<PurchaseList />} />
-                    <Route path="/purchases/edit/:id" element={<Purchases />} />
-                    <Route path="/purchase-quotes/list" element={<PurchaseQuoteList />} />
-                    <Route path="/sales-returns" element={<SaleReturns />} />
-                    <Route path="/purchases-returns" element={<PurchaseReturns />} />
-                    <Route path="/treasury" element={<Treasury />} />
-                    <Route path="/customers" element={<Customers />} />
-                    <Route path="/customers/:id" element={<CustomerProfile />} />
-                    <Route path="/suppliers" element={<Suppliers />} />
-                    <Route path="/suppliers/:id" element={<SupplierProfile />} />
-                    <Route path="/reports" element={<Reports />} />
-                    <Route path="/activity-log" element={<ActivityLog />} />
-                    <Route path="/archive" element={<Archive />} />
-                    <Route path="/settings" element={<Settings />} />
-                    <Route path="*" element={<Navigate to="/" />} />
-                  </Routes>
-                </main>
-              </div>
-            </>
-          )}
+
+            {/* Active Fullscreen Windows Area */}
+            {activeWindows.map(window => (
+                <div
+                    key={window.id}
+                    className={`flex-1 flex-col overflow-hidden ${window.id === visibleWindowId ? 'flex' : 'hidden'}`}
+                >
+                    {renderFullScreenPage(window)}
+                </div>
+            ))}
         </div>
         <ActiveWindowsBar />
       </div>

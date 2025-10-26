@@ -1,5 +1,3 @@
-
-
 import React, { useState, useContext } from 'react';
 import { NavLink } from 'react-router-dom';
 import { HomeIcon } from '../icons/HomeIcon';
@@ -92,7 +90,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const { currentUser } = useContext(DataContext);
+  const { currentUser, sequences } = useContext(DataContext);
   const { openWindow } = useContext(WindowContext);
   
   if (!currentUser) return null;
@@ -126,7 +124,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     label: "المبيعات",
     icon: <ShoppingCartIcon />,
     items: [
-        { onClick: () => openWindow({ path: '/sales/new', title: 'فاتورة مبيعات', icon: <DocumentPlusIcon /> }), label: 'إنشاء فاتورة مبيعات', icon: <DocumentPlusIcon /> },
+        { onClick: () => openWindow({ 
+            path: '/sales/new', 
+            title: 'فاتورة مبيعات', 
+            icon: <DocumentPlusIcon />,
+            state: {
+                activeInvoice: {
+                    id: `INV-${String(sequences.sale).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                    status: 'مدفوعة',
+                },
+                items: [],
+                customer: null,
+                productSearchTerm: '',
+                customerSearchTerm: '',
+                itemErrors: {},
+            }
+          }), label: 'إنشاء فاتورة مبيعات', icon: <DocumentPlusIcon /> },
         { to: '/sales', label: 'قائمة فواتير المبيعات', icon: <DocumentTextIcon /> },
         { to: '/price-quotes/list', label: 'قائمة بيانات الأسعار', icon: <ClipboardDocumentListIcon /> },
         { to: '/sales-returns', label: 'مردودات المبيعات', icon: <ArrowUturnLeftIcon /> },
@@ -137,7 +151,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     label: "المشتريات",
     icon: <TruckIcon />,
     items: [
-        { onClick: () => openWindow({ path: '/purchases/new', title: 'فاتورة مشتريات', icon: <DocumentPlusIcon /> }), label: 'إنشاء فاتورة مشتريات', icon: <DocumentPlusIcon /> },
+        { onClick: () => openWindow({ 
+            path: '/purchases/new', 
+            title: 'فاتورة مشتريات', 
+            icon: <DocumentPlusIcon />,
+            state: {
+                activeBill: {
+                    id: `BILL-${String(sequences.purchase).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                    status: 'مدفوعة',
+                },
+                 items: [],
+                 supplier: null,
+                 productSearchTerm: '',
+                 supplierSearchTerm: '',
+                 isProcessing: false,
+            }
+          }), label: 'إنشاء فاتورة مشتريات', icon: <DocumentPlusIcon /> },
         { to: '/purchases', label: 'قائمة فواتير المشتريات', icon: <DocumentTextIcon /> },
         { to: '/purchase-quotes/list', label: 'قائمة طلبات الشراء', icon: <ClipboardDocumentListIcon /> },
         { to: '/purchases-returns', label: 'مردودات المشتريات', icon: <ArrowUturnLeftIcon /> },

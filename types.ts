@@ -314,4 +314,5 @@ export interface ActiveWindow {
   title: string;
   icon: ReactNode;
   isDirty?: boolean;
+  state?: any;
 }

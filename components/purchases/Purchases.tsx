@@ -10,27 +10,40 @@ import PurchaseInvoiceView from './PurchaseInvoiceView';
 
 interface PurchasesProps {
     windowId?: string;
+    windowState?: any;
+    onStateChange?: (updater: (prevState: any) => any) => void;
 }
 
-const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
+const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateChange }) => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const isEditMode = !!id;
+    const isWindowMode = !!windowId;
 
     const { suppliers, inventory, addPurchase, updatePurchase, purchases, showToast, sequences, scannedItem } = useContext(DataContext);
-    const { visibleWindowId, setWindowDirty, closeWindow } = useContext(WindowContext);
+    const { visibleWindowId, closeWindow } = useContext(WindowContext);
 
     const productSearchRef = useRef<HTMLInputElement>(null);
     const supplierSearchRef = useRef<HTMLInputElement>(null);
     const itemInputRefs = useRef<Record<string, { quantity: HTMLInputElement | null; unit: HTMLSelectElement | null; price: HTMLInputElement | null }>>({});
 
-    const [isDirty, setIsDirty] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [activeBill, setActiveBill] = useState<Partial<Purchase>>({});
-    const [items, setItems] = useState<LineItem[]>([]);
-    const [supplier, setSupplier] = useState<Supplier | null>(null);
-    const [productSearchTerm, setProductSearchTerm] = useState('');
-    const [supplierSearchTerm, setSupplierSearchTerm] = useState('');
+    // Local state for non-windowed (edit) mode
+    const [localState, setLocalState] = useState({
+        activeBill: {},
+        items: [],
+        supplier: null,
+        productSearchTerm: '',
+        supplierSearchTerm: '',
+        isProcessing: false,
+    });
+
+    // Determine which state and setter to use
+    const state = isWindowMode ? windowState : localState;
+    const setState = isWindowMode ? onStateChange! : (updater) => setLocalState(updater as any);
+    
+    const { activeBill, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing } = state || {};
+
+
     const [isAddSupplierModalOpen, setAddSupplierModalOpen] = useState(false);
     const [purchaseToView, setPurchaseToView] = useState<Purchase | null>(null);
 
@@ -38,65 +51,62 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
     const [highlightedSupplierIndex, setHighlightedSupplierIndex] = useState(-1);
     const [lastProcessedScan, setLastProcessedScan] = useState(0);
 
-    useEffect(() => {
-        if (windowId) {
-          setWindowDirty(windowId, isDirty);
-        }
-    }, [isDirty, windowId, setWindowDirty]);
-
-    const manualReset = useCallback(() => {
-        setIsProcessing(false);
-        setItems([]);
-        setSupplier(null);
-        setProductSearchTerm('');
-        setSupplierSearchTerm('');
-        itemInputRefs.current = {};
-        setActiveBill({
-            id: `BILL-${String(sequences.purchase).padStart(3, '0')}`,
-            date: new Date().toISOString().slice(0, 10),
-            status: 'مدفوعة'
-        });
-        setIsDirty(false);
-        supplierSearchRef.current?.focus();
-    }, [sequences.purchase]);
-
     const resetBill = useCallback(() => {
-        if(windowId) {
-            manualReset();
+        const resetState = {
+            activeBill: {
+                id: `BILL-${String(sequences.purchase).padStart(3, '0')}`,
+                date: new Date().toISOString().slice(0, 10),
+                status: 'مدفوعة'
+            },
+            items: [],
+            supplier: null,
+            productSearchTerm: '',
+            supplierSearchTerm: '',
+            isProcessing: false,
+        };
+        if(isWindowMode) {
+            setState(() => resetState);
         } else {
-            navigate('/purchases/new');
+            navigate('/purchases/new'); // Fallback for direct navigation
         }
-    }, [navigate, windowId, manualReset]);
+        supplierSearchRef.current?.focus();
+    }, [sequences.purchase, isWindowMode, setState, navigate]);
 
+
+    // Load data for non-windowed edit mode
     useEffect(() => {
-        if (isEditMode) {
+        if (!isWindowMode && isEditMode) {
             const purchaseToEdit = purchases.find((p: Purchase) => p.id === id);
             if (purchaseToEdit) {
                 const purchaseSupplier = suppliers.find((s: Supplier) => s.name === purchaseToEdit.supplier);
-                setActiveBill(purchaseToEdit);
-                setItems(purchaseToEdit.items);
-                setSupplier(purchaseSupplier || null);
+                setState(prev => ({
+                    ...prev,
+                    activeBill: purchaseToEdit,
+                    items: purchaseToEdit.items,
+                    supplier: purchaseSupplier || null,
+                }));
             } else {
                 showToast('لم يتم العثور على الفاتورة.', 'error');
                 navigate('/purchases');
             }
-        } else {
-            manualReset();
         }
-    }, [id, isEditMode, purchases, suppliers, showToast, navigate, manualReset]);
+    }, [id, isEditMode, isWindowMode, purchases, suppliers, showToast, navigate]);
+
 
     const totals = useMemo(() => {
-        const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        const totalDiscount = items.reduce((sum, item) => sum + item.discount, 0);
+        const subtotal = (items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const totalDiscount = (items || []).reduce((sum, item) => sum + item.discount, 0);
         const grandTotal = subtotal - totalDiscount;
         return { subtotal, totalDiscount, grandTotal };
     }, [items]);
 
     const handleProductSelect = useCallback((product: InventoryItem) => {
-        setIsDirty(true);
-        setItems(currentItems => {
-            if (currentItems.find(item => item.itemId === product.id)) {
-                return currentItems.map(item =>
+        setState(prev => {
+            const currentItems = prev.items || [];
+            const existingItem = currentItems.find(item => item.itemId === product.id);
+            let newItems;
+            if (existingItem) {
+                newItems = currentItems.map(item =>
                     item.itemId === product.id ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.price - item.discount } : item
                 );
             } else {
@@ -110,13 +120,14 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
                     discount: 0,
                     total: product.purchasePrice,
                 };
-                return [...currentItems, newItem];
+                newItems = [...currentItems, newItem];
             }
+            return { ...prev, items: newItems, productSearchTerm: '' };
         });
-        setProductSearchTerm('');
+
         setHighlightedProductIndex(-1);
         productSearchRef.current?.focus();
-    }, [setIsDirty]);
+    }, [setState]);
 
     useEffect(() => {
         const isCurrentWindow = windowId ? visibleWindowId === windowId : !visibleWindowId;
@@ -127,7 +138,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
     }, [scannedItem, lastProcessedScan, visibleWindowId, windowId, handleProductSelect]);
     
     const handleFinalize = useCallback(async (paymentStatus: Purchase['status'], print: boolean = false) => {
-        if (items.length === 0) {
+        if (!items || items.length === 0) {
             showToast('لا يمكن إنشاء فاتورة فارغة.', 'error');
             return;
         }
@@ -135,7 +146,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
             showToast('يجب اختيار مورد للشراء الآجل.', 'error');
             return;
         }
-        setIsProcessing(true);
+        setState(p => ({...p, isProcessing: true}));
 
         const purchaseData: Omit<Purchase, 'id' | 'journalEntryId'> = {
             supplier: supplier?.name || 'مورد نقدي',
@@ -156,20 +167,20 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
             } else {
                 const createdPurchase = addPurchase(purchaseData);
                 showToast(`تم إنشاء فاتورة المشتريات ${createdPurchase.id} بنجاح.`);
-                setIsDirty(false);
                 if (print) {
                     setPurchaseToView(createdPurchase);
                     resetBill();
                 } else {
                     if (windowId) closeWindow(windowId);
-                    navigate('/purchases');
+                    else navigate('/purchases');
                 }
             }
         } catch (error: any) {
             showToast(error.message || 'حدث خطأ أثناء حفظ الفاتورة', 'error');
-            setIsProcessing(false);
+        } finally {
+            setState(p => ({...p, isProcessing: false}));
         }
-    }, [isEditMode, id, items, supplier, activeBill.date, totals, addPurchase, updatePurchase, showToast, navigate, resetBill, windowId, closeWindow]);
+    }, [isEditMode, id, items, supplier, activeBill.date, totals, addPurchase, updatePurchase, showToast, navigate, resetBill, windowId, closeWindow, setState]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -184,12 +195,11 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
     }, [handleFinalize, resetBill]);
 
     const handleItemUpdate = (index: number, field: 'quantity' | 'price' | 'discount' | 'unitId', value: string) => {
-        setIsDirty(true);
-        setItems(currentItems => {
-            const newItems = [...currentItems];
-            const item = newItems[index];
+        setState(prev => {
+            const newItems = [...(prev.items || [])];
+            const item = {...newItems[index]};
             const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
-            if (!inventoryItem) return newItems;
+            if (!inventoryItem) return prev;
 
             if (field === 'unitId') {
                 item.unitId = value;
@@ -208,21 +218,25 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
             }
             
             item.total = (item.quantity * item.price) - item.discount;
-            return newItems;
+            newItems[index] = item;
+            return {...prev, items: newItems};
         });
     };
 
     const handleItemRemove = (index: number) => {
-        setIsDirty(true);
-        const itemToRemove = items[index];
-        if (itemToRemove && itemInputRefs.current[itemToRemove.itemId]) {
-            delete itemInputRefs.current[itemToRemove.itemId];
-        }
-        setItems(currentItems => currentItems.filter((_, i) => i !== index));
+        setState(prev => {
+            const currentItems = prev.items || [];
+            const itemToRemove = currentItems[index];
+            if (itemToRemove && itemInputRefs.current[itemToRemove.itemId]) {
+                delete itemInputRefs.current[itemToRemove.itemId];
+            }
+            const newItems = currentItems.filter((_, i) => i !== index);
+            return {...prev, items: newItems};
+        });
     };
 
     const productSearchResults = useMemo(() => {
-        if (productSearchTerm.length < 1) return [];
+        if (!productSearchTerm || productSearchTerm.length < 1) return [];
         const term = productSearchTerm.toLowerCase();
         return inventory.filter((p: InventoryItem) =>
             !p.isArchived && (p.name.toLowerCase().includes(term) || p.id.toLowerCase().includes(term) || p.barcode?.includes(term))
@@ -230,7 +244,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
     }, [productSearchTerm, inventory]);
 
     const supplierSearchResults = useMemo(() => {
-        if (supplierSearchTerm.length < 1) return [];
+        if (!supplierSearchTerm || supplierSearchTerm.length < 1) return [];
         const term = supplierSearchTerm.toLowerCase();
         return suppliers.filter((s: Supplier) => !s.isArchived && (s.name.toLowerCase().includes(term) || s.phone.includes(term))).slice(0, 5);
     }, [supplierSearchTerm, suppliers]);
@@ -249,12 +263,12 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
         if (supplierSearchResults.length === 0) return;
         if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedSupplierIndex(prev => (prev + 1) % supplierSearchResults.length); } 
         else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedSupplierIndex(prev => (prev - 1 + supplierSearchResults.length) % supplierSearchResults.length); } 
-        else if ((e.key === 'Enter' || e.key === 'Tab') && highlightedSupplierIndex > -1) { e.preventDefault(); setSupplier(supplierSearchResults[highlightedSupplierIndex]); setSupplierSearchTerm(''); setIsDirty(true); setHighlightedSupplierIndex(-1); productSearchRef.current?.focus(); }
+        else if ((e.key === 'Enter' || e.key === 'Tab') && highlightedSupplierIndex > -1) { e.preventDefault(); setState(p => ({...p, supplier: supplierSearchResults[highlightedSupplierIndex], supplierSearchTerm: ''})); setHighlightedSupplierIndex(-1); productSearchRef.current?.focus(); }
     };
 
     const handleItemInputKeyDown = (e: React.KeyboardEvent, index: number, field: 'quantity' | 'unit' | 'price') => {
         const moveFocus = (targetIndex: number) => {
-            if (targetIndex >= 0 && targetIndex < items.length) {
+            if (targetIndex >= 0 && targetIndex < (items || []).length) {
                 const targetItemId = items[targetIndex].itemId;
                 const fieldRef = itemInputRefs.current[targetItemId]?.[field];
                 if (fieldRef) {
@@ -271,26 +285,28 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
         }
     };
 
+    if (!state) return null; // Important for windowed mode initial render
+
     return (
         <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900/50 text-[--text] font-sans">
             <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
                     <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{isEditMode ? 'تعديل فاتورة مشتريات' : 'فاتورة مشتريات جديدة'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeBill.id}</span>
-                    <input type="date" value={activeBill.date || ''} onChange={e => {setActiveBill(p => ({...p, date: e.target.value})); setIsDirty(true);}} className="input-style w-36" />
+                    <input type="date" value={activeBill.date || ''} onChange={e => setState(p => ({...p, activeBill: {...p.activeBill, date: e.target.value}}))} className="input-style w-36" />
                 </div>
                 <div className="flex-grow max-w-sm relative">
                     <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input ref={supplierSearchRef} type="text" placeholder="ابحث عن مورد... (Ctrl+K)" value={supplierSearchTerm} onChange={(e) => setSupplierSearchTerm(e.target.value)} onKeyDown={handleSupplierSearchKeyDown} className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg py-2 pr-10 pl-4 focus:ring-2 focus:ring-[--accent] outline-none" />
+                    <input ref={supplierSearchRef} type="text" placeholder="ابحث عن مورد... (Ctrl+K)" value={supplierSearchTerm || ''} onChange={(e) => setState(p => ({...p, supplierSearchTerm: e.target.value}))} onKeyDown={handleSupplierSearchKeyDown} className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg py-2 pr-10 pl-4 focus:ring-2 focus:ring-[--accent] outline-none" />
                     {supplierSearchResults.length > 0 && (
                         <div className="absolute top-full right-0 left-0 bg-[--panel] dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-30">
-                            {supplierSearchResults.map((s, index) => (<div key={s.id} onClick={() => { setSupplier(s); setSupplierSearchTerm(''); productSearchRef.current?.focus(); setIsDirty(true);}} className={`p-2 cursor-pointer ${index === highlightedSupplierIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}>{s.name} - {s.phone}</div>))}
+                            {supplierSearchResults.map((s, index) => (<div key={s.id} onClick={() => { setState(p => ({...p, supplier: s, supplierSearchTerm: ''})); productSearchRef.current?.focus();}} className={`p-2 cursor-pointer ${index === highlightedSupplierIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}>{s.name} - {s.phone}</div>))}
                         </div>
                     )}
                 </div>
                 <div className="flex items-center gap-2">
                     {supplier ? (
-                        <div className="flex items-center gap-2 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 p-2 rounded-lg"><UsersIcon className="w-5 h-5" /><span className="font-semibold">{supplier.name}</span><button onClick={() => {setSupplier(null); setIsDirty(true);}} className="text-red-500 mr-1 text-lg font-bold">×</button></div>
+                        <div className="flex items-center gap-2 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 p-2 rounded-lg"><UsersIcon className="w-5 h-5" /><span className="font-semibold">{supplier.name}</span><button onClick={() => setState(p => ({...p, supplier: null}))} className="text-red-500 mr-1 text-lg font-bold">×</button></div>
                     ) : (
                         <button onClick={() => setAddSupplierModalOpen(true)} className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"><PlusIcon className="w-4 h-4" /> مورد جديد</button>
                     )}
@@ -300,7 +316,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
                 <main className="w-full md:w-2/3 flex flex-col bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow]">
                     <div className="p-3 border-b dark:border-gray-700 relative">
                         <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input ref={productSearchRef} type="text" placeholder="ابحث بالباركود أو اسم الصنف... (Ctrl+F)" value={productSearchTerm} onChange={(e) => setProductSearchTerm(e.target.value)} onKeyDown={handleProductSearchKeyDown} className="w-full text-lg bg-gray-100 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 pr-12 focus:ring-2 focus:ring-[--accent] outline-none" />
+                        <input ref={productSearchRef} type="text" placeholder="ابحث بالباركود أو اسم الصنف... (Ctrl+F)" value={productSearchTerm || ''} onChange={(e) => setState(p => ({...p, productSearchTerm: e.target.value}))} onKeyDown={handleProductSearchKeyDown} className="w-full text-lg bg-gray-100 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 pr-12 focus:ring-2 focus:ring-[--accent] outline-none" />
                         {productSearchResults.length > 0 && (
                             <div className="absolute top-full right-3 left-3 bg-[--panel] dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-20">
                                 {productSearchResults.map((p, index) => (<div key={p.id} onClick={() => handleProductSelect(p)} className={`p-3 flex justify-between cursor-pointer ${index === highlightedProductIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}><span>{p.name}</span><span className="text-sm text-gray-500">سعر الشراء: {p.purchasePrice}</span></div>))}
@@ -311,8 +327,8 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
                         <table className="w-full text-sm text-right table-auto">
                             <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700/50 sticky top-0 z-10"><tr><th className="px-2 py-3 w-20">الكود</th><th className="px-2 py-3">الصنف</th><th className="px-2 py-3 w-28">الكمية</th><th className="px-2 py-3 w-32">الوحدة</th><th className="px-2 py-3 w-28">السعر</th><th className="px-2 py-3 w-28">الخصم</th><th className="px-2 py-3 w-32 text-left">الإجمالي</th><th className="px-2 py-3 w-12"></th></tr></thead>
                             <tbody>
-                                {items.length === 0 && (<tr><td colSpan={8}><div className="flex flex-col items-center justify-center h-full text-gray-400 py-16"><BoxIcon className="w-16 h-16"/><p>لم تتم إضافة أي أصناف بعد</p></div></td></tr>)}
-                                {items.map((item, index) => {
+                                {(!items || items.length === 0) && (<tr><td colSpan={8}><div className="flex flex-col items-center justify-center h-full text-gray-400 py-16"><BoxIcon className="w-16 h-16"/><p>لم تتم إضافة أي أصناف بعد</p></div></td></tr>)}
+                                {items && items.map((item, index) => {
                                     const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
                                     const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
                                     return (
@@ -339,13 +355,13 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 space-y-3">
                         <button onClick={() => handleFinalize('مدفوعة', true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : (isEditMode ? 'حفظ التعديلات' : 'حفظ وطباعة (F9)')}</button>
                         <div className="grid grid-cols-2 gap-2">
-                             <button onClick={() => handleFinalize('مستحقة', false)} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ كـ مستحقة' : 'حفظ كمستحقة (F2)'}</button>
+                             <button onClick={() => handleFinalize('مستحقة', false)} disabled={isProcessing} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ كـ مستحقة' : 'حفظ كمستحقة (F2)'}</button>
                              <button onClick={() => isEditMode ? navigate('/purchases') : resetBill()} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'إلغاء' : 'فاتورة جديدة (F3)'}</button>
                         </div>
                     </div>
                 </aside>
             </div>
-            {isAddSupplierModalOpen && (<Modal isOpen={isAddSupplierModalOpen} onClose={() => setAddSupplierModalOpen(false)} title="إضافة مورد جديد"><AddSupplierForm onClose={() => setAddSupplierModalOpen(false)} onSuccess={(s) => { setSupplier(s); setAddSupplierModalOpen(false); setIsDirty(true); }} /></Modal>)}
+            {isAddSupplierModalOpen && (<Modal isOpen={isAddSupplierModalOpen} onClose={() => setAddSupplierModalOpen(false)} title="إضافة مورد جديد"><AddSupplierForm onClose={() => setAddSupplierModalOpen(false)} onSuccess={(s) => { setState(p => ({...p, supplier: s})); setAddSupplierModalOpen(false); }} /></Modal>)}
             {purchaseToView && (<PurchaseInvoiceView isOpen={!!purchaseToView} onClose={() => setPurchaseToView(null)} purchase={purchaseToView} />)}
         </div>
     );

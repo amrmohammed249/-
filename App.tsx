@@ -41,7 +41,7 @@ import BarcodeLabelBatchPrint from './components/printing/BarcodeLabelBatchPrint
 
 const App: React.FC = () => {
   const { currentUser, isDataLoaded, hasData, createNewDataset, processBarcodeScan } = useContext(DataContext);
-  const { activeWindows, visibleWindowId } = useContext(WindowContext);
+  const { activeWindows, visibleWindowId, updateWindowState } = useContext(WindowContext);
   const location = useLocation();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
@@ -101,15 +101,19 @@ const App: React.FC = () => {
 
 
   const renderFullScreenPage = (window: ActiveWindow) => {
+    const onStateChange = (updater: (prevState: any) => any) => {
+      updateWindowState(window.id, updater);
+    };
+
     switch (window.path) {
       case '/price-quotes':
-        return <PriceQuotes windowId={window.id} />;
+        return <PriceQuotes windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
       case '/purchase-quotes':
-        return <PurchaseQuotes windowId={window.id} />;
+        return <PurchaseQuotes windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
       case '/sales/new':
-        return <Sales windowId={window.id} />;
+        return <Sales windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
       case '/purchases/new':
-        return <Purchases windowId={window.id} />;
+        return <Purchases windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
       default:
         return null;
     }

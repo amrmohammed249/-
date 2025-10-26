@@ -4,11 +4,12 @@ import { ActiveWindow } from '../types';
 interface WindowContextType {
     activeWindows: ActiveWindow[];
     visibleWindowId: string | null;
-    openWindow: (config: { path: string; title: string; icon: ReactNode }) => void;
+    openWindow: (config: { path: string; title: string; icon: ReactNode; state?: any }) => void;
     closeWindow: (id: string) => void;
     showWindow: (id: string) => void;
     hideWindow: () => void;
     setWindowDirty: (id: string, isDirty: boolean) => void;
+    updateWindowState: (id: string, updater: (prevState: any) => any) => void;
 }
 
 export const WindowContext = createContext<WindowContextType>({} as WindowContextType);
@@ -21,7 +22,7 @@ export const WindowProvider: React.FC<WindowProviderProps> = ({ children }) => {
     const [activeWindows, setActiveWindows] = useState<ActiveWindow[]>([]);
     const [visibleWindowId, setVisibleWindowId] = useState<string | null>(null);
 
-    const openWindow = useCallback((config: { path: string; title: string; icon: ReactNode }) => {
+    const openWindow = useCallback((config: { path: string; title: string; icon: ReactNode; state?: any }) => {
         const existingWindow = activeWindows.find(w => w.path === config.path);
 
         if (existingWindow) {
@@ -29,8 +30,11 @@ export const WindowProvider: React.FC<WindowProviderProps> = ({ children }) => {
         } else {
             const newWindow: ActiveWindow = {
                 id: `win-${Date.now()}`,
-                ...config,
-                isDirty: false, // Initialize as not dirty
+                path: config.path,
+                title: config.title,
+                icon: config.icon,
+                isDirty: false,
+                state: config.state || {},
             };
             setActiveWindows(prev => [...prev, newWindow]);
             setVisibleWindowId(newWindow.id);
@@ -53,7 +57,19 @@ export const WindowProvider: React.FC<WindowProviderProps> = ({ children }) => {
     }, []);
 
     const setWindowDirty = useCallback((id: string, isDirty: boolean) => {
-        setActiveWindows(prev => prev.map(w => w.id === id ? { ...w, isDirty } : w));
+        setActiveWindows(prev => prev.map(w => (w.id === id ? { ...w, isDirty } : w)));
+    }, []);
+
+    const updateWindowState = useCallback((id: string, updater: (prevState: any) => any) => {
+        setActiveWindows(prevWindows =>
+            prevWindows.map(w => {
+                if (w.id === id) {
+                    const newState = updater(w.state);
+                    return { ...w, state: newState, isDirty: true };
+                }
+                return w;
+            })
+        );
     }, []);
 
     const value = {
@@ -64,6 +80,7 @@ export const WindowProvider: React.FC<WindowProviderProps> = ({ children }) => {
         showWindow,
         hideWindow,
         setWindowDirty,
+        updateWindowState,
     };
 
     return <WindowContext.Provider value={value}>{children}</WindowContext.Provider>;

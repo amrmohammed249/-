@@ -37,7 +37,7 @@ const Dashboard: React.FC = () => {
   const { 
     sales, purchases, customers, suppliers,
     totalReceivables, totalPayables, inventoryValue, totalCashBalance,
-    recentTransactions, topCustomers
+    recentTransactions, topCustomers, sequences
    } = useContext(DataContext);
   const { openWindow } = useContext(WindowContext);
   
@@ -126,10 +126,72 @@ const Dashboard: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md flex flex-col sm:flex-row justify-between items-center gap-4">
         <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">لوحة التحكم</h2>
         <div className="flex flex-wrap gap-2 justify-center">
-          <QuickActionButton label="فاتورة مبيعات" icon={<ShoppingCartIcon className="w-5 h-5"/>} onClick={() => openWindow({ path: '/sales/new', title: 'فاتورة مبيعات', icon: <ShoppingCartIcon /> })} className="bg-blue-500 text-white hover:bg-blue-600" />
-          <QuickActionButton label="فاتورة مشتريات" icon={<TruckIcon className="w-5 h-5"/>} onClick={() => openWindow({ path: '/purchases/new', title: 'فاتورة مشتريات', icon: <TruckIcon /> })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
-          <QuickActionButton label="إنشاء بيان أسعار" icon={<DocumentPlusIcon className="w-5 h-5"/>} onClick={() => openWindow({ path: '/price-quotes', title: 'إنشاء بيان أسعار', icon: <DocumentPlusIcon /> })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
-          <QuickActionButton label="إنشاء طلب شراء" icon={<DocumentPlusIcon className="w-5 h-5"/>} onClick={() => openWindow({ path: '/purchase-quotes', title: 'إنشاء طلب شراء', icon: <DocumentPlusIcon /> })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
+          <QuickActionButton label="فاتورة مبيعات" icon={<ShoppingCartIcon className="w-5 h-5"/>} onClick={() => openWindow({ 
+              path: '/sales/new', 
+              title: 'فاتورة مبيعات', 
+              icon: <ShoppingCartIcon />,
+              state: {
+                activeInvoice: {
+                    id: `INV-${String(sequences.sale).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                    status: 'مدفوعة',
+                },
+                items: [],
+                customer: null,
+                productSearchTerm: '',
+                customerSearchTerm: '',
+                itemErrors: {},
+              }
+            })} className="bg-blue-500 text-white hover:bg-blue-600" />
+          <QuickActionButton label="فاتورة مشتريات" icon={<TruckIcon className="w-5 h-5"/>} onClick={() => openWindow({ 
+              path: '/purchases/new', 
+              title: 'فاتورة مشتريات', 
+              icon: <TruckIcon />,
+              state: {
+                activeBill: {
+                    id: `BILL-${String(sequences.purchase).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                    status: 'مدفوعة',
+                },
+                 items: [],
+                 supplier: null,
+                 productSearchTerm: '',
+                 supplierSearchTerm: '',
+                 isProcessing: false,
+              }
+            })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
+          <QuickActionButton label="إنشاء بيان أسعار" icon={<DocumentPlusIcon className="w-5 h-5"/>} onClick={() => openWindow({ 
+              path: '/price-quotes', 
+              title: 'إنشاء بيان أسعار', 
+              icon: <DocumentPlusIcon />,
+              state: {
+                activeQuote: {
+                    id: `QT-${String(sequences.priceQuote).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                },
+                items: [],
+                customer: null,
+                productSearchTerm: '',
+                customerSearchTerm: '',
+                isProcessing: false,
+              }
+            })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
+          <QuickActionButton label="إنشاء طلب شراء" icon={<DocumentPlusIcon className="w-5 h-5"/>} onClick={() => openWindow({ 
+              path: '/purchase-quotes', 
+              title: 'إنشاء طلب شراء', 
+              icon: <DocumentPlusIcon />,
+              state: {
+                activeQuote: {
+                    id: `PQT-${String(sequences.purchaseQuote).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                },
+                items: [],
+                supplier: null,
+                productSearchTerm: '',
+                supplierSearchTerm: '',
+                isProcessing: false,
+              }
+            })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
           <QuickActionButton label="سند قبض" icon={<ArrowDownOnSquareIcon className="w-5 h-5"/>} onClick={openReceiptModal} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
           <QuickActionButton label="سند صرف" icon={<ArrowUpOnSquareIcon className="w-5 h-5"/>} onClick={openPaymentModal} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
         </div>

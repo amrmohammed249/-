@@ -36,7 +36,6 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
 
     const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1);
     const [highlightedSupplierIndex, setHighlightedSupplierIndex] = useState(-1);
-    const [lastAddedItemId, setLastAddedItemId] = useState<string | null>(null);
     const [lastProcessedScan, setLastProcessedScan] = useState(0);
 
     useEffect(() => {
@@ -86,19 +85,6 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
         }
     }, [id, isEditMode, purchases, suppliers, showToast, navigate, manualReset]);
 
-    useEffect(() => {
-      if (lastAddedItemId) {
-        setTimeout(() => {
-          const refs = itemInputRefs.current[lastAddedItemId];
-          if (refs?.quantity) {
-            refs.quantity.focus();
-            refs.quantity.select();
-          }
-        }, 0);
-        setLastAddedItemId(null);
-      }
-    }, [lastAddedItemId]);
-
     const totals = useMemo(() => {
         const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const totalDiscount = items.reduce((sum, item) => sum + item.discount, 0);
@@ -127,10 +113,10 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
                 return [...currentItems, newItem];
             }
         });
-        setLastAddedItemId(product.id);
         setProductSearchTerm('');
         setHighlightedProductIndex(-1);
-    }, []);
+        productSearchRef.current?.focus();
+    }, [setIsDirty]);
 
     useEffect(() => {
         const isCurrentWindow = windowId ? visibleWindowId === windowId : !visibleWindowId;
@@ -279,6 +265,10 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId }) => {
         };
         if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(index + 1); } 
         else if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(index - 1); }
+        else if (e.key === 'Tab' && !e.shiftKey && field === 'price') {
+            e.preventDefault();
+            productSearchRef.current?.focus();
+        }
     };
 
     return (

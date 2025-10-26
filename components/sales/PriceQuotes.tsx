@@ -30,7 +30,6 @@ const SmartPriceQuote: React.FC<SmartPriceQuoteProps> = ({ windowId }) => {
     
     const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1);
     const [highlightedCustomerIndex, setHighlightedCustomerIndex] = useState(-1);
-    const [lastAddedItemId, setLastAddedItemId] = useState<string | null>(null);
 
     const [lastProcessedScan, setLastProcessedScan] = useState(0);
 
@@ -60,19 +59,6 @@ const SmartPriceQuote: React.FC<SmartPriceQuoteProps> = ({ windowId }) => {
         resetQuote();
     }, [resetQuote]);
     
-    useEffect(() => {
-      if (lastAddedItemId) {
-        setTimeout(() => { // Timeout to allow react to render the input
-          const refs = itemInputRefs.current[lastAddedItemId];
-          if (refs?.quantity) {
-            refs.quantity.focus();
-            refs.quantity.select();
-          }
-        }, 0);
-        setLastAddedItemId(null);
-      }
-    }, [lastAddedItemId]);
-
     const totals = useMemo(() => {
         const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const totalDiscount = items.reduce((sum, item) => sum + item.discount, 0);
@@ -102,10 +88,10 @@ const SmartPriceQuote: React.FC<SmartPriceQuoteProps> = ({ windowId }) => {
                 return [...currentItems, newItem];
             }
         });
-        setLastAddedItemId(product.id);
         setProductSearchTerm('');
         setHighlightedProductIndex(-1);
-    }, [setIsDirty, setLastAddedItemId, setProductSearchTerm, setHighlightedProductIndex]);
+        productSearchRef.current?.focus();
+    }, [setIsDirty, setProductSearchTerm, setHighlightedProductIndex]);
     
     useEffect(() => {
         if (visibleWindowId === windowId && scannedItem && scannedItem.timestamp > lastProcessedScan) {
@@ -283,17 +269,9 @@ const SmartPriceQuote: React.FC<SmartPriceQuoteProps> = ({ windowId }) => {
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             moveFocus(index - 1);
-        } else if (e.key === 'Tab' && !e.shiftKey) {
-            if (field === 'quantity') {
-                e.preventDefault();
-                itemInputRefs.current[items[index].itemId]?.unit?.focus();
-            } else if (field === 'unit') {
-                e.preventDefault();
-                itemInputRefs.current[items[index].itemId]?.price?.focus();
-            } else if (field === 'price') {
-                e.preventDefault();
-                productSearchRef.current?.focus();
-            }
+        } else if (e.key === 'Tab' && !e.shiftKey && field === 'price') {
+            e.preventDefault();
+            productSearchRef.current?.focus();
         }
     };
 

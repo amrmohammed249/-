@@ -164,7 +164,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     
       <aside className={`fixed inset-y-0 right-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-xl flex flex-col transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:shadow-md md:inset-auto ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="h-20 flex items-center justify-between px-4 border-b dark:border-gray-700">
-          <h1 className="text-2xl font-bold text-blue-500">ERP System</h1>
+          <h1 className="text-2xl font-bold text-blue-500">Amr Ghobashi</h1>
           <button onClick={onClose} className="md:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" aria-label="إغلاق القائمة">
             <XIcon className="w-6 h-6" />
           </button>

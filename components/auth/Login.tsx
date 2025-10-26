@@ -30,7 +30,7 @@ const Login: React.FC = () => {
           تسجيل الدخول
         </h1>
         <p className="text-center text-gray-500 dark:text-gray-400">
-            مرحباً بك في نظام ERP المحاسبي
+            مرحباً بك في نظام عمرو غباشي المحاسبي
         </p>
 
         <form onSubmit={handleLogin} className="space-y-6">

@@ -100,7 +100,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   const navItems = [
     { to: '/', label: 'الرئيسية', icon: <HomeIcon />, show: true },
-    { to: '/fixed-assets', label: 'الأصول الثابتة', icon: <OfficeBuildingIcon />, show: true },
     { to: '/treasury', label: 'الخزينة', icon: <BanknotesIcon />, show: true },
     { to: '/customers', label: 'العملاء', icon: <UsersIcon />, show: true },
     { to: '/suppliers', label: 'الموردين', icon: <UsersIcon />, show: true },

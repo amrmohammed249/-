@@ -1,6 +1,6 @@
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
-import type { AccountNode } from '../../types';
+import type { AccountNode, FixedAsset } from '../../types';
 import Modal from '../shared/Modal';
 import AddAccountForm from './AddAccountForm';
 import EditAccountForm from './EditAccountForm';
@@ -14,16 +14,18 @@ import { FolderOpenIcon } from '../icons/FolderOpenIcon';
 import { ChevronRightIcon } from '../icons/ChevronRightIcon';
 import OpeningBalancesModal from './OpeningBalancesModal';
 import AccessDenied from '../shared/AccessDenied';
+import { OfficeBuildingIcon } from '../icons/OfficeBuildingIcon';
 
 interface AccountTreeProps {
   nodes: AccountNode[];
+  allFixedAssets: FixedAsset[];
   onAdd: (parentId: string | null) => void;
   onEdit: (account: AccountNode) => void;
   onArchive: (account: AccountNode) => void;
   level?: number;
 }
 
-const AccountTree: React.FC<AccountTreeProps> = ({ nodes, onAdd, onEdit, onArchive, level = 0 }) => {
+const AccountTree: React.FC<AccountTreeProps> = ({ nodes, allFixedAssets, onAdd, onEdit, onArchive, level = 0 }) => {
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({});
   const { currentUser } = useContext(DataContext);
   const canModify = currentUser.role === 'مدير النظام' || currentUser.role === 'محاسب';
@@ -34,41 +36,59 @@ const AccountTree: React.FC<AccountTreeProps> = ({ nodes, onAdd, onEdit, onArchi
 
   return (
     <div>
-      {nodes.map(node => (
-        <div key={node.id} style={{ paddingRight: `${level * 20}px` }}>
-          <div className="flex items-center justify-between p-2 my-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50">
-            <div className="flex items-center">
-              {node.children && node.children.length > 0 ? (
-                <button onClick={() => toggleNode(node.id)} className="ml-2">
-                   {openNodes[node.id] ? <FolderOpenIcon className="w-5 h-5 text-yellow-500" /> : <FolderIcon className="w-5 h-5 text-yellow-500" />}
-                </button>
-              ) : (
-                <DocumentIcon className="w-5 h-5 text-gray-400 ml-2" />
-              )}
-               <span className="font-semibold text-gray-800 dark:text-gray-200">{node.code} - {node.name}</span>
+      {nodes.map(node => {
+        const assetsForThisNode = allFixedAssets.filter(asset => !asset.isArchived && asset.assetAccountId === node.id);
+        const hasChildren = (node.children && node.children.length > 0) || assetsForThisNode.length > 0;
+
+        return (
+          <div key={node.id} style={{ paddingRight: `${level * 20}px` }}>
+            <div className="flex items-center justify-between p-2 my-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50">
+              <div className="flex items-center">
+                {hasChildren ? (
+                  <button onClick={() => toggleNode(node.id)} className="ml-2">
+                     {openNodes[node.id] ? <FolderOpenIcon className="w-5 h-5 text-yellow-500" /> : <FolderIcon className="w-5 h-5 text-yellow-500" />}
+                  </button>
+                ) : (
+                  <DocumentIcon className="w-5 h-5 text-gray-400 ml-2" />
+                )}
+                 <span className="font-semibold text-gray-800 dark:text-gray-200">{node.code} - {node.name}</span>
+              </div>
+              <div className="flex items-center space-x-2 space-x-reverse">
+                 {node.balance !== undefined && <span className={`text-sm font-mono p-1 rounded ${node.balance > 0 ? 'text-blue-600' : node.balance < 0 ? 'text-green-600' : 'text-gray-500'}`}>{Math.abs(node.balance).toLocaleString()} {node.balance < 0 ? 'دائن' : 'مدين'}</span>}
+                 {canModify && (
+                  <>
+                    {node.children && <button onClick={() => onAdd(node.id)} className="text-gray-400 hover:text-blue-500"><PlusIcon className="w-4 h-4" /></button>}
+                    <button onClick={() => onEdit(node)} className="text-gray-400 hover:text-green-500"><PencilIcon className="w-4 h-4" /></button>
+                    <button onClick={() => onArchive(node)} className="text-gray-400 hover:text-red-500"><TrashIcon className="w-4 h-4" /></button>
+                  </>
+                 )}
+              </div>
             </div>
-            <div className="flex items-center space-x-2 space-x-reverse">
-               {node.balance !== undefined && <span className={`text-sm font-mono p-1 rounded ${node.balance > 0 ? 'text-blue-600' : node.balance < 0 ? 'text-green-600' : 'text-gray-500'}`}>{Math.abs(node.balance).toLocaleString()} {node.balance < 0 ? 'دائن' : 'مدين'}</span>}
-               {canModify && (
-                <>
-                  {node.children && <button onClick={() => onAdd(node.id)} className="text-gray-400 hover:text-blue-500"><PlusIcon className="w-4 h-4" /></button>}
-                  <button onClick={() => onEdit(node)} className="text-gray-400 hover:text-green-500"><PencilIcon className="w-4 h-4" /></button>
-                  <button onClick={() => onArchive(node)} className="text-gray-400 hover:text-red-500"><TrashIcon className="w-4 h-4" /></button>
-                </>
-               )}
-            </div>
+            {node.children && openNodes[node.id] && (
+              <AccountTree nodes={node.children} allFixedAssets={allFixedAssets} onAdd={onAdd} onEdit={onEdit} onArchive={onArchive} level={level + 1} />
+            )}
+            {assetsForThisNode.length > 0 && openNodes[node.id] && (
+                <div style={{ paddingRight: `${(level + 1) * 20}px` }}>
+                    {assetsForThisNode.map(asset => (
+                        <div key={asset.id} className="flex items-center justify-between p-2 my-1 rounded-lg">
+                           <div className="flex items-center">
+                               <OfficeBuildingIcon className="w-5 h-5 text-gray-400 ml-2" />
+                               <span className="text-gray-700 dark:text-gray-300">{asset.name}</span>
+                           </div>
+                           <span className="text-sm font-mono text-gray-600 dark:text-gray-400">{asset.bookValue.toLocaleString()}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
           </div>
-          {node.children && openNodes[node.id] && (
-            <AccountTree nodes={node.children} onAdd={onAdd} onEdit={onEdit} onArchive={onArchive} level={level + 1} />
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   );
 };
 
 const ChartOfAccounts: React.FC = () => {
-  const { chartOfAccounts, archiveAccount, showToast, currentUser } = useContext(DataContext);
+  const { chartOfAccounts, archiveAccount, showToast, currentUser, fixedAssets } = useContext(DataContext);
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
@@ -153,7 +173,8 @@ const ChartOfAccounts: React.FC = () => {
             </div>
             <div className="border-t pt-4 dark:border-gray-700">
                 <AccountTree 
-                    nodes={activeAccounts} 
+                    nodes={activeAccounts}
+                    allFixedAssets={fixedAssets}
                     onAdd={handleAdd} 
                     onEdit={handleEdit} 
                     onArchive={handleArchive} 

@@ -221,6 +221,7 @@ export interface FixedAsset {
   depreciationRate: number;
   accumulatedDepreciation: number;
   bookValue: number;
+  assetAccountId: string; // ID of the account in chart of accounts (e.g., '1-2-2' for Cars)
   isArchived?: boolean;
 }
 

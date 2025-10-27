@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } 
 import { useParams, useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
-import { Purchase, LineItem, InventoryItem, Supplier, PackingUnit } from '../../types';
+import { Purchase, LineItem, InventoryItem, Supplier, PackingUnit, TreasuryTransaction } from '../../types';
 import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddSupplierForm from '../suppliers/AddSupplierForm';
@@ -20,7 +20,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
     const isEditMode = !!id;
     const isWindowMode = !!windowId;
 
-    const { suppliers, inventory, addPurchase, updatePurchase, purchases, showToast, sequences, scannedItem } = useContext(DataContext);
+    const { suppliers, inventory, addPurchase, updatePurchase, purchases, showToast, sequences, scannedItem, addTreasuryTransaction, treasuriesList } = useContext(DataContext);
     const { visibleWindowId, closeWindow } = useContext(WindowContext);
 
     const productSearchRef = useRef<HTMLInputElement>(null);
@@ -34,6 +34,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
         supplier: null,
         productSearchTerm: '',
         supplierSearchTerm: '',
+        paidAmount: '0',
         isProcessing: false,
     });
 
@@ -41,7 +42,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
     const state = isWindowMode ? windowState : localState;
     const setState = isWindowMode ? onStateChange! : (updater) => setLocalState(updater as any);
     
-    const { activeBill, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing } = state || {};
+    const { activeBill, items, supplier, productSearchTerm, supplierSearchTerm, paidAmount, isProcessing } = state || {};
 
 
     const [isAddSupplierModalOpen, setAddSupplierModalOpen] = useState(false);
@@ -56,12 +57,13 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
             activeBill: {
                 id: `BILL-${String(sequences.purchase).padStart(3, '0')}`,
                 date: new Date().toISOString().slice(0, 10),
-                status: 'مدفوعة'
+                status: 'مستحقة'
             },
             items: [],
             supplier: null,
             productSearchTerm: '',
             supplierSearchTerm: '',
+            paidAmount: '0',
             isProcessing: false,
         };
         if(isWindowMode) {
@@ -84,21 +86,38 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
                     activeBill: purchaseToEdit,
                     items: purchaseToEdit.items,
                     supplier: purchaseSupplier || null,
+                    paidAmount: String(purchaseToEdit.paidAmount || 0),
                 }));
             } else {
                 showToast('لم يتم العثور على الفاتورة.', 'error');
                 navigate('/purchases');
             }
         }
-    }, [id, isEditMode, isWindowMode, purchases, suppliers, showToast, navigate]);
+    }, [id, isEditMode, isWindowMode, purchases, suppliers, showToast, navigate, setState]);
 
 
-    const totals = useMemo(() => {
+    const { totals, paidAmountValue, remainingAmount } = useMemo(() => {
         const subtotal = (items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
         const totalDiscount = (items || []).reduce((sum, item) => sum + item.discount, 0);
         const grandTotal = subtotal - totalDiscount;
-        return { subtotal, totalDiscount, grandTotal };
-    }, [items]);
+
+        const status = activeBill?.status;
+        const pAmount = parseFloat(paidAmount || '0');
+        let finalPaidAmount = 0;
+        if (status === 'مدفوعة') {
+            finalPaidAmount = grandTotal;
+        } else if (status === 'جزئية') {
+            finalPaidAmount = pAmount;
+        }
+        
+        const remaining = grandTotal - finalPaidAmount;
+
+        return { 
+            totals: { subtotal, totalDiscount, grandTotal },
+            paidAmountValue: finalPaidAmount,
+            remainingAmount: remaining
+        };
+    }, [items, activeBill?.status, paidAmount]);
 
     const handleProductSelect = useCallback((product: InventoryItem) => {
         setState(prev => {
@@ -137,57 +156,107 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
         }
     }, [scannedItem, lastProcessedScan, visibleWindowId, windowId, handleProductSelect]);
     
-    const handleFinalize = useCallback(async (paymentStatus: Purchase['status'], print: boolean = false) => {
+    const handleFinalize = useCallback(async (print: boolean = false) => {
         if (!items || items.length === 0) {
             showToast('لا يمكن إنشاء فاتورة فارغة.', 'error');
             return;
         }
-        if (paymentStatus === 'مستحقة' && !supplier) {
-            showToast('يجب اختيار مورد للشراء الآجل.', 'error');
+        if (!supplier) {
+            showToast('يجب اختيار مورد قبل حفظ الفاتورة.', 'error');
             return;
         }
-        setState(p => ({...p, isProcessing: true}));
 
-        const purchaseData: Omit<Purchase, 'id' | 'journalEntryId'> = {
-            supplier: supplier?.name || 'مورد نقدي',
-            date: activeBill.date!,
-            status: paymentStatus,
-            items: items,
-            subtotal: totals.subtotal,
-            totalDiscount: totals.totalDiscount,
-            total: totals.grandTotal,
-        };
+        if (activeBill.status === 'جزئية') {
+            if (paidAmountValue <= 0 || paidAmountValue >= totals.grandTotal) {
+                showToast('المبلغ المدفوع جزئياً يجب أن يكون أكبر من صفر وأقل من الإجمالي.', 'error');
+                return;
+            }
+        }
+
+        setState(p => ({...p, isProcessing: true}));
 
         try {
             if (isEditMode) {
-                const updatedPurchase = await updatePurchase({ ...purchaseData, id: id! });
-                showToast(`تم تعديل فاتورة المشتريات ${updatedPurchase.id} بنجاح.`);
-                if (print) setPurchaseToView(updatedPurchase);
-                navigate('/purchases');
-            } else {
-                const createdPurchase = addPurchase(purchaseData);
-                showToast(`تم إنشاء فاتورة المشتريات ${createdPurchase.id} بنجاح.`);
-                if (print) {
-                    setPurchaseToView(createdPurchase);
-                    resetBill();
-                } else {
-                    if (windowId) closeWindow(windowId);
-                    else navigate('/purchases');
-                }
+                const updatedPurchaseData: Purchase = {
+                    ...(activeBill as Purchase),
+                    supplier: supplier.name,
+                    date: activeBill.date!,
+                    status: activeBill.status!,
+                    paidAmount: paidAmountValue > 0 ? paidAmountValue : undefined,
+                    items: items,
+                    subtotal: totals.subtotal,
+                    totalDiscount: totals.totalDiscount,
+                    total: totals.grandTotal,
+                };
+                 const updatedPurchase = updatePurchase(updatedPurchaseData);
+                 showToast(`تم تعديل فاتورة المشتريات ${updatedPurchase.id} بنجاح.`);
+                 if (print) {
+                     setPurchaseToView(updatedPurchase);
+                     if (windowId) closeWindow(windowId);
+                     else navigate('/purchases');
+                 } else {
+                     if (windowId) closeWindow(windowId);
+                     else navigate('/purchases');
+                 }
+                 return;
             }
+
+            // 1. Create the purchase first to get its ID
+            const purchaseData: Omit<Purchase, 'id' | 'journalEntryId'> = {
+                supplier: supplier.name,
+                date: activeBill.date!,
+                status: activeBill.status!,
+                paidAmount: paidAmountValue > 0 ? paidAmountValue : undefined,
+                items: items,
+                subtotal: totals.subtotal,
+                totalDiscount: totals.totalDiscount,
+                total: totals.grandTotal,
+            };
+
+            const createdPurchase = addPurchase(purchaseData);
+
+            // 2. If paid, create a treasury transaction
+            if (paidAmountValue > 0) {
+                 const mainTreasury = treasuriesList.find((t: any) => t.name === 'الخزينة الرئيسية') || treasuriesList.find((t: any) => !t.isTotal);
+                if (!mainTreasury) {
+                    throw new Error("لم يتم العثور على خزينة رئيسية لإتمام عملية الدفع.");
+                }
+
+                const transactionData: Omit<TreasuryTransaction, 'id' | 'balance' | 'journalEntryId'> = {
+                    date: createdPurchase.date,
+                    type: 'سند صرف',
+                    treasuryAccountId: mainTreasury.id,
+                    treasuryAccountName: mainTreasury.name,
+                    description: `دفعة من فاتورة مشتريات رقم ${createdPurchase.id}`,
+                    amount: paidAmountValue,
+                    partyType: 'supplier',
+                    partyId: supplier.id
+                };
+                addTreasuryTransaction(transactionData);
+            }
+            
+            showToast(`تم إنشاء فاتورة المشتريات ${createdPurchase.id} بنجاح.`);
+            if (print) {
+                setPurchaseToView(createdPurchase);
+                resetBill();
+            } else {
+                if (windowId) closeWindow(windowId);
+                else navigate('/purchases');
+            }
+
         } catch (error: any) {
             showToast(error.message || 'حدث خطأ أثناء حفظ الفاتورة', 'error');
         } finally {
             setState(p => ({...p, isProcessing: false}));
         }
-    }, [isEditMode, id, items, supplier, activeBill.date, totals, addPurchase, updatePurchase, showToast, navigate, resetBill, windowId, closeWindow, setState]);
+    }, [isEditMode, items, supplier, activeBill, totals, paidAmountValue, addPurchase, updatePurchase, showToast, navigate, resetBill, windowId, closeWindow, setState, addTreasuryTransaction, treasuriesList]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); productSearchRef.current?.focus(); }
             if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); supplierSearchRef.current?.focus(); }
-            if (e.key === 'F9') { e.preventDefault(); handleFinalize('مدفوعة', true); }
-            if (e.key === 'F2') { e.preventDefault(); handleFinalize('مستحقة', false); }
+            if (e.key === 'F9') { e.preventDefault(); handleFinalize(true); }
+            if (e.key === 'F2') { e.preventDefault(); handleFinalize(false); }
             if (e.key === 'F3') { e.preventDefault(); resetBill(); }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -347,15 +416,37 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
                     </div>
                 </main>
                 <aside className="w-full md:w-1/3 flex flex-col gap-4">
-                    <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 flex-grow flex flex-col">
-                        <h2 className="text-lg font-bold border-b dark:border-gray-700 pb-2 mb-4">ملخص الفاتورة</h2>
-                        <div className="space-y-3 text-md flex-grow"><div className="flex justify-between"><span className="text-[--muted]">المجموع الفرعي</span><span className="font-mono font-semibold">{totals.subtotal.toLocaleString()}</span></div><div className="flex justify-between"><span className="text-[--muted]">إجمالي الخصم</span><span className="font-mono font-semibold text-red-500">{totals.totalDiscount.toLocaleString()}</span></div></div>
-                        <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-4"><div className="flex justify-between items-center text-3xl font-bold text-[--accent]"><span>الإجمالي</span><span className="font-mono">{totals.grandTotal.toLocaleString()}</span></div></div>
+                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 flex-grow flex flex-col">
+                        <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2 mb-4">
+                             <h2 className="text-lg font-bold">ملخص الفاتورة</h2>
+                             <select value={activeBill.status || 'مدفوعة'} onChange={e => setState(p => ({...p, activeBill: {...p.activeBill, status: e.target.value}, paidAmount: '0'}))} disabled={isEditMode} className="input-style text-sm">
+                                <option value="مدفوعة">مدفوعة</option>
+                                <option value="مستحقة">مستحقة</option>
+                                <option value="جزئية">جزئية</option>
+                             </select>
+                        </div>
+                        <div className="space-y-3 text-md flex-grow">
+                            <div className="flex justify-between"><span className="text-[--muted]">المجموع الفرعي</span><span className="font-mono font-semibold">{totals.subtotal.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-[--muted]">إجمالي الخصم</span><span className="font-mono font-semibold text-red-500">{totals.totalDiscount.toLocaleString()}</span></div>
+                            {activeBill.status === 'جزئية' && (
+                                <div className="flex justify-between items-center bg-blue-50 dark:bg-blue-900/20 p-2 rounded-md">
+                                    <label htmlFor="paidAmount" className="text-sm font-semibold text-blue-800 dark:text-blue-200">المبلغ المدفوع</label>
+                                    <input type="number" id="paidAmount" value={paidAmount} onChange={e => setState(p => ({...p, paidAmount: e.target.value}))} disabled={isEditMode} className="input-style w-32 text-left font-mono" min="0" step="any"/>
+                                </div>
+                            )}
+                             <div className="flex justify-between"><span className="text-[--muted]">المبلغ المتبقي</span><span className="font-mono font-semibold text-red-600">{remainingAmount.toLocaleString()}</span></div>
+                        </div>
+                        <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-4">
+                            <div className="flex justify-between items-center text-3xl font-bold text-[--accent]">
+                                <span>الإجمالي</span>
+                                <span className="font-mono">{totals.grandTotal.toLocaleString()}</span>
+                            </div>
+                        </div>
                     </div>
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 space-y-3">
-                        <button onClick={() => handleFinalize('مدفوعة', true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : (isEditMode ? 'حفظ التعديلات' : 'حفظ وطباعة (F9)')}</button>
-                        <div className="grid grid-cols-2 gap-2">
-                             <button onClick={() => handleFinalize('مستحقة', false)} disabled={isProcessing} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ كـ مستحقة' : 'حفظ كمستحقة (F2)'}</button>
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : (isEditMode ? 'حفظ وطباعة' : 'حفظ وطباعة (F9)')}</button>
+                         <div className="grid grid-cols-2 gap-2">
+                             <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ وإغلاق' : 'حفظ وإغلاق (F2)'}</button>
                              <button onClick={() => isEditMode ? navigate('/purchases') : resetBill()} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'إلغاء' : 'فاتورة جديدة (F3)'}</button>
                         </div>
                     </div>

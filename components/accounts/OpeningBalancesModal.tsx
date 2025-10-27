@@ -3,7 +3,7 @@
 import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import Modal from '../shared/Modal';
-import { AccountNode, Customer, Supplier } from '../../types';
+import { AccountNode, Customer, Supplier, Sale, SaleReturn, TreasuryTransaction, Purchase, PurchaseReturn, JournalEntry, JournalLine } from '../../types';
 
 interface OpeningBalancesModalProps {
   isOpen: boolean;
@@ -11,7 +11,10 @@ interface OpeningBalancesModalProps {
 }
 
 const OpeningBalancesModal: React.FC<OpeningBalancesModalProps> = ({ isOpen, onClose }) => {
-  const { chartOfAccounts, customers, suppliers, updateAllOpeningBalances, currentUser } = useContext(DataContext);
+  const { 
+    chartOfAccounts, customers, suppliers, updateAllOpeningBalances, currentUser,
+    journal, sales, saleReturns, treasury, purchases, purchaseReturns 
+  } = useContext(DataContext);
   const [activeTab, setActiveTab] = useState<'accounts' | 'customers' | 'suppliers'>('accounts');
   
   const [accountBalances, setAccountBalances] = useState<Record<string, string>>({});
@@ -23,6 +26,7 @@ const OpeningBalancesModal: React.FC<OpeningBalancesModalProps> = ({ isOpen, onC
   const { leafAccounts, customerAccountId, supplierAccountId } = useMemo(() => {
     let customerAccId: string | null = null;
     let supplierAccId: string | null = null;
+    let inventoryAccId: string | null = null;
 
     const findAccountByCode = (nodes: AccountNode[], code: string): AccountNode | null => {
         for (const node of nodes) {
@@ -40,6 +44,9 @@ const OpeningBalancesModal: React.FC<OpeningBalancesModalProps> = ({ isOpen, onC
 
     const supplierNode = findAccountByCode(chartOfAccounts, '2101');
     if(supplierNode) supplierAccId = supplierNode.id;
+    
+    const inventoryNode = findAccountByCode(chartOfAccounts, '1104');
+    if(inventoryNode) inventoryAccId = inventoryNode.id;
 
     const getLeafNodes = (nodes: AccountNode[]): AccountNode[] => {
       let leaves: AccountNode[] = [];
@@ -53,47 +60,71 @@ const OpeningBalancesModal: React.FC<OpeningBalancesModalProps> = ({ isOpen, onC
       return leaves;
     };
     const allLeafAccounts = getLeafNodes(chartOfAccounts).sort((a, b) => a.code.localeCompare(b.code));
-    const filteredLeafs = allLeafAccounts.filter(acc => acc.id !== customerAccId && acc.id !== supplierAccId);
+    const filteredLeafs = allLeafAccounts.filter(acc => acc.id !== customerAccId && acc.id !== supplierAccId && acc.id !== inventoryAccId);
 
     return { leafAccounts: filteredLeafs, customerAccountId: customerAccId, supplierAccountId: supplierAccId };
   }, [chartOfAccounts]);
 
   useEffect(() => {
     if (isOpen) {
-      const initialAccountBalances = leafAccounts.reduce((acc, account) => {
-        acc[account.id] = account.balance?.toString() || '0';
-        return acc;
-      }, {} as Record<string, string>);
-      setAccountBalances(initialAccountBalances);
+        // Calculate and set initial account balances
+        const calculatedAccountBalances = leafAccounts.reduce((acc, account) => {
+            let sumOfTransactions = 0;
+            journal.forEach((entry: JournalEntry) => {
+                if (!entry.isArchived) {
+                    entry.lines.forEach((line: JournalLine) => {
+                        if (line.accountId === account.id) {
+                            sumOfTransactions += (line.debit - line.credit);
+                        }
+                    });
+                }
+            });
+            const openingBalance = (account.balance || 0) - sumOfTransactions;
+            acc[account.id] = String(openingBalance);
+            return acc;
+        }, {} as Record<string, string>);
+        setAccountBalances(calculatedAccountBalances);
 
-      const initialCustomerBalances = customers.reduce((acc: any, customer: Customer) => {
-        acc[customer.id] = customer.balance?.toString() || '0';
-        return acc;
-      }, {} as Record<string, string>);
-      setCustomerBalances(initialCustomerBalances);
-      
-      const initialSupplierBalances = suppliers.reduce((acc: any, supplier: Supplier) => {
-        acc[supplier.id] = supplier.balance?.toString() || '0';
-        return acc;
-      }, {} as Record<string, string>);
-      setSupplierBalances(initialSupplierBalances);
+        // Calculate and set initial customer balances
+        const calculatedCustomerBalances = customers.reduce((acc: any, customer: Customer) => {
+            const totalSales = sales.filter((s: Sale) => s.customer === customer.name && !s.isArchived).reduce((sum, s) => sum + s.total, 0);
+            const totalReturns = saleReturns.filter((sr: SaleReturn) => sr.customer === customer.name && !sr.isArchived).reduce((sum, sr) => sum + sr.total, 0);
+            const totalPayments = treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === customer.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
+            const totalRefunds = treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === customer.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+            const sumOfTransactions = (totalSales + totalRefunds) - (totalReturns + totalPayments);
+            const openingBalance = customer.balance - sumOfTransactions;
+            acc[customer.id] = String(openingBalance);
+            return acc;
+        }, {} as Record<string, string>);
+        setCustomerBalances(calculatedCustomerBalances);
+        
+        // Calculate and set initial supplier balances
+        const calculatedSupplierBalances = suppliers.reduce((acc: any, supplier: Supplier) => {
+            const totalPurchases = purchases.filter((p: Purchase) => p.supplier === supplier.name && !p.isArchived).reduce((sum, p) => sum + p.total, 0);
+            const totalReturns = purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === supplier.name && !pr.isArchived).reduce((sum, pr) => sum + pr.total, 0);
+            const totalPayments = treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === supplier.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+            const totalRefunds = treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === supplier.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
+            const sumOfTransactions = (totalPurchases + totalRefunds) - (totalReturns + totalPayments);
+            const openingBalance = supplier.balance - sumOfTransactions;
+            acc[supplier.id] = String(openingBalance);
+            return acc;
+        }, {} as Record<string, string>);
+        setSupplierBalances(calculatedSupplierBalances);
     }
-  }, [isOpen, leafAccounts, customers, suppliers]);
+}, [isOpen, leafAccounts, customers, suppliers, journal, sales, saleReturns, treasury, purchases, purchaseReturns]);
+
 
   const handleSave = () => {
     const accountUpdates = Object.entries(accountBalances).map(([accountId, balance]) => ({
       accountId,
-      // FIX: Cast balance to string to resolve 'unknown' type error.
       balance: parseFloat(balance as string) || 0,
     }));
     const customerUpdates = Object.entries(customerBalances).map(([customerId, balance]) => ({
       customerId,
-      // FIX: Cast balance to string to resolve 'unknown' type error.
       balance: parseFloat(balance as string) || 0,
     }));
     const supplierUpdates = Object.entries(supplierBalances).map(([supplierId, balance]) => ({
       supplierId,
-      // FIX: Cast balance to string to resolve 'unknown' type error.
       balance: parseFloat(balance as string) || 0,
     }));
 

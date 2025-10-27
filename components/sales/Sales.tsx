@@ -1,10 +1,8 @@
-
-
 import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
-import { Sale, LineItem, InventoryItem, Customer, PackingUnit } from '../../types';
+import { Sale, LineItem, InventoryItem, Customer, PackingUnit, TreasuryTransaction } from '../../types';
 import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddCustomerForm from '../customers/AddCustomerForm';
@@ -22,7 +20,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
     const isEditMode = !!id;
     const isWindowMode = !!windowId;
 
-    const { customers, inventory, addSale, updateSale, sales, showToast, sequences, scannedItem, generalSettings } = useContext(DataContext);
+    const { customers, inventory, addSale, updateSale, sales, showToast, sequences, scannedItem, generalSettings, addTreasuryTransaction, treasuriesList } = useContext(DataContext);
     const { visibleWindowId, closeWindow } = useContext(WindowContext);
     
     const productSearchRef = useRef<HTMLInputElement>(null);
@@ -37,6 +35,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         customer: null,
         productSearchTerm: '',
         customerSearchTerm: '',
+        paidAmount: '0',
         isProcessing: false,
     });
     
@@ -44,7 +43,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
     const state = isWindowMode ? windowState : localState;
     const setState = isWindowMode ? onStateChange! : (updater) => setLocalState(updater as any);
     
-    const { activeInvoice, items, itemErrors, customer, productSearchTerm, customerSearchTerm, isProcessing } = state || {};
+    const { activeInvoice, items, itemErrors, customer, productSearchTerm, customerSearchTerm, paidAmount, isProcessing } = state || {};
 
 
     const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
@@ -59,12 +58,13 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
             activeInvoice: {
                 id: `INV-${String(sequences.sale).padStart(3, '0')}`,
                 date: new Date().toISOString().slice(0, 10),
-                status: 'مدفوعة'
+                status: 'مستحقة'
             },
             items: [],
             customer: null,
             productSearchTerm: '',
             customerSearchTerm: '',
+            paidAmount: '0',
             itemErrors: {},
             isProcessing: false,
         };
@@ -87,21 +87,38 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                     activeInvoice: saleToEdit,
                     items: saleToEdit.items,
                     customer: saleCustomer || null,
+                    paidAmount: String(saleToEdit.paidAmount || 0)
                 }));
             } else {
                 showToast('لم يتم العثور على الفاتورة.', 'error');
                 navigate('/sales');
             }
         }
-    }, [id, isEditMode, isWindowMode, sales, customers, showToast, navigate]);
+    }, [id, isEditMode, isWindowMode, sales, customers, showToast, navigate, setState]);
     
 
-    const totals = useMemo(() => {
+    const { totals, paidAmountValue, remainingAmount } = useMemo(() => {
         const subtotal = (items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
         const totalDiscount = (items || []).reduce((sum, item) => sum + item.discount, 0);
         const grandTotal = subtotal - totalDiscount;
-        return { subtotal, totalDiscount, grandTotal };
-    }, [items]);
+
+        const status = activeInvoice?.status;
+        const pAmount = parseFloat(paidAmount || '0');
+        let finalPaidAmount = 0;
+        if (status === 'مدفوعة') {
+            finalPaidAmount = grandTotal;
+        } else if (status === 'جزئية') {
+            finalPaidAmount = pAmount;
+        }
+        
+        const remaining = grandTotal - finalPaidAmount;
+
+        return { 
+            totals: { subtotal, totalDiscount, grandTotal },
+            paidAmountValue: finalPaidAmount,
+            remainingAmount: remaining
+        };
+    }, [items, activeInvoice?.status, paidAmount]);
 
     const handleProductSelect = useCallback((product: InventoryItem) => {
         setState(prev => {
@@ -139,64 +156,111 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
             setLastProcessedScan(scannedItem.timestamp);
         }
     }, [scannedItem, lastProcessedScan, visibleWindowId, windowId, handleProductSelect]);
-
-    const handleFinalize = useCallback(async (paymentStatus: Sale['status'], print: boolean = false) => {
+    
+    const handleFinalize = useCallback(async (print: boolean = false) => {
         if (!items || items.length === 0) {
             showToast('لا يمكن إنشاء فاتورة فارغة.', 'error');
             return;
         }
-        if (paymentStatus === 'مستحقة' && !customer) {
-            showToast('يجب اختيار عميل للبيع الآجل.', 'error');
+        if (!customer) {
+            showToast('يجب اختيار عميل قبل حفظ الفاتورة.', 'error');
             return;
         }
+        
+        if (activeInvoice.status === 'جزئية') {
+            if (paidAmountValue <= 0 || paidAmountValue >= totals.grandTotal) {
+                showToast('المبلغ المدفوع جزئياً يجب أن يكون أكبر من صفر وأقل من الإجمالي.', 'error');
+                return;
+            }
+        }
+
         setState(p => ({...p, isProcessing: true}));
 
-        const saleData: Omit<Sale, 'id' | 'journalEntryId'> = {
-            customer: customer?.name || 'عميل نقدي',
-            date: activeInvoice.date!,
-            status: paymentStatus,
-            items: items,
-            subtotal: totals.subtotal,
-            totalDiscount: totals.totalDiscount,
-            total: totals.grandTotal,
-        };
-
         try {
-            if (isEditMode) {
-                const updatedSale = await updateSale({ ...saleData, id: id! });
+             if (isEditMode) {
+                const updatedSaleData: Sale = {
+                    ...(activeInvoice as Sale),
+                    customer: customer.name,
+                    date: activeInvoice.date!,
+                    status: activeInvoice.status!,
+                    paidAmount: paidAmountValue > 0 ? paidAmountValue : undefined,
+                    items: items,
+                    subtotal: totals.subtotal,
+                    totalDiscount: totals.totalDiscount,
+                    total: totals.grandTotal,
+                };
+
+                const updatedSale = updateSale(updatedSaleData);
                 showToast(`تم تعديل الفاتورة ${updatedSale.id} بنجاح.`);
-                if (print) setSaleToView(updatedSale);
-                navigate('/sales');
-            } else {
-                const createdSale = addSale(saleData);
-                showToast(`تم إنشاء الفاتورة ${createdSale.id} بنجاح.`);
+                
                 if (print) {
-                    setSaleToView(createdSale);
-                    resetInvoice();
+                    setSaleToView(updatedSale);
+                    // After printing, close window or navigate away
+                    if(windowId) closeWindow(windowId);
+                    else navigate('/sales');
                 } else {
                     if(windowId) closeWindow(windowId);
                     else navigate('/sales');
                 }
+                return; // Exit after handling edit mode
             }
+
+            // 1. Create the sale first to get its ID
+            const saleData: Omit<Sale, 'id' | 'journalEntryId'> = {
+                customer: customer.name,
+                date: activeInvoice.date!,
+                status: activeInvoice.status!,
+                paidAmount: paidAmountValue > 0 ? paidAmountValue : undefined,
+                items: items,
+                subtotal: totals.subtotal,
+                totalDiscount: totals.totalDiscount,
+                total: totals.grandTotal,
+            };
+
+            const createdSale = addSale(saleData);
+
+            // 2. If paid (fully or partially), create a treasury transaction
+            if (paidAmountValue > 0) {
+                const mainTreasury = treasuriesList.find((t: any) => t.name === 'الخزينة الرئيسية') || treasuriesList.find((t: any) => !t.isTotal);
+                if (!mainTreasury) {
+                    throw new Error("لم يتم العثور على خزينة رئيسية لإتمام عملية الدفع.");
+                }
+
+                const transactionData: Omit<TreasuryTransaction, 'id' | 'balance' | 'journalEntryId'> = {
+                    date: createdSale.date,
+                    type: 'سند قبض',
+                    treasuryAccountId: mainTreasury.id,
+                    treasuryAccountName: mainTreasury.name,
+                    description: `دفعة من فاتورة مبيعات رقم ${createdSale.id}`,
+                    amount: paidAmountValue,
+                    partyType: 'customer',
+                    partyId: customer.id
+                };
+                addTreasuryTransaction(transactionData);
+            }
+            
+            showToast(`تم إنشاء الفاتورة ${createdSale.id} بنجاح.`);
+            if (print) {
+                setSaleToView(createdSale);
+                resetInvoice();
+            } else {
+                if(windowId) closeWindow(windowId);
+                else navigate('/sales');
+            }
+
         } catch (error: any) {
             showToast(error.message || 'حدث خطأ أثناء حفظ الفاتورة', 'error');
         } finally {
              setState(p => ({...p, isProcessing: false}));
         }
-    }, [isEditMode, id, items, customer, activeInvoice.date, totals, addSale, updateSale, showToast, navigate, resetInvoice, windowId, closeWindow, setState]);
+    }, [isEditMode, items, customer, activeInvoice, totals, paidAmountValue, addSale, updateSale, showToast, navigate, resetInvoice, windowId, closeWindow, setState, addTreasuryTransaction, treasuriesList]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.ctrlKey && e.key.toLowerCase() === 'f') {
-                 e.preventDefault();
-                 productSearchRef.current?.focus();
-            }
-            if (e.ctrlKey && e.key.toLowerCase() === 'k') {
-                 e.preventDefault();
-                 customerSearchRef.current?.focus();
-            }
-            if (e.key === 'F9') { e.preventDefault(); handleFinalize('مدفوعة', true); }
-            if (e.key === 'F2') { e.preventDefault(); handleFinalize('مستحقة', false); }
+            if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); productSearchRef.current?.focus(); }
+            if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); customerSearchRef.current?.focus(); }
+            if (e.key === 'F9') { e.preventDefault(); handleFinalize(true); }
+            if (e.key === 'F2') { e.preventDefault(); handleFinalize(false); }
             if (e.key === 'F3') { e.preventDefault(); resetInvoice(); }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -299,32 +363,16 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
 
     const handleProductSearchKeyDown = (e: React.KeyboardEvent) => {
         if (productSearchResults.length === 0) return;
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setHighlightedProductIndex(prev => (prev + 1) % productSearchResults.length);
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setHighlightedProductIndex(prev => (prev - 1 + productSearchResults.length) % productSearchResults.length);
-        } else if ((e.key === 'Enter' || e.key === 'Tab') && highlightedProductIndex > -1) {
-            e.preventDefault();
-            handleProductSelect(productSearchResults[highlightedProductIndex]);
-        }
+        if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedProductIndex(prev => (prev + 1) % productSearchResults.length); } 
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedProductIndex(prev => (prev - 1 + productSearchResults.length) % productSearchResults.length); } 
+        else if ((e.key === 'Enter' || e.key === 'Tab') && highlightedProductIndex > -1) { e.preventDefault(); handleProductSelect(productSearchResults[highlightedProductIndex]); }
     };
     
     const handleCustomerSearchKeyDown = (e: React.KeyboardEvent) => {
         if (customerSearchResults.length === 0) return;
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setHighlightedCustomerIndex(prev => (prev + 1) % customerSearchResults.length);
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setHighlightedCustomerIndex(prev => (prev - 1 + customerSearchResults.length) % customerSearchResults.length);
-        } else if ((e.key === 'Enter' || e.key === 'Tab') && highlightedCustomerIndex > -1) {
-            e.preventDefault();
-            setState(p => ({...p, customer: customerSearchResults[highlightedCustomerIndex], customerSearchTerm: ''}));
-            setHighlightedCustomerIndex(-1);
-            productSearchRef.current?.focus();
-        }
+        if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedCustomerIndex(prev => (prev + 1) % customerSearchResults.length); } 
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedCustomerIndex(prev => (prev - 1 + customerSearchResults.length) % customerSearchResults.length); } 
+        else if ((e.key === 'Enter' || e.key === 'Tab') && highlightedCustomerIndex > -1) { e.preventDefault(); setState(p => ({...p, customer: customerSearchResults[highlightedCustomerIndex], customerSearchTerm: ''})); setHighlightedCustomerIndex(-1); productSearchRef.current?.focus(); }
     };
     
     const handleItemInputKeyDown = (e: React.KeyboardEvent, index: number, field: 'quantity' | 'unit' | 'price') => {
@@ -340,10 +388,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         };
         if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(index + 1); } 
         else if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(index - 1); }
-        else if (e.key === 'Tab' && !e.shiftKey && field === 'price') {
-            e.preventDefault();
-            productSearchRef.current?.focus();
-        }
+        else if (e.key === 'Tab' && !e.shiftKey && field === 'price') { e.preventDefault(); productSearchRef.current?.focus(); }
     };
 
     if (!state) return null; // Important for windowed mode initial render
@@ -423,7 +468,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                                                     ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].unit = el; }}
                                                     value={item.unitId} 
                                                     onChange={e => handleItemUpdate(index, 'unitId', e.target.value)} 
-                                                    onKeyDown={(e) => handleItemInputKeyDown(e, index, 'unit')}
+                                                    onKeyDown={(e) => handleItemInputKeyDown(e, index, 'unit')} 
                                                     className="input-style w-full">
                                                     {unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
                                                 </select>
@@ -450,14 +495,36 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                 </main>
                 <aside className="w-full md:w-1/3 flex flex-col gap-4">
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 flex-grow flex flex-col">
-                        <h2 className="text-lg font-bold border-b dark:border-gray-700 pb-2 mb-4">ملخص الفاتورة</h2>
-                        <div className="space-y-3 text-md flex-grow"><div className="flex justify-between"><span className="text-[--muted]">المجموع الفرعي</span><span className="font-mono font-semibold">{totals.subtotal.toLocaleString()}</span></div><div className="flex justify-between"><span className="text-[--muted]">إجمالي الخصم</span><span className="font-mono font-semibold text-red-500">{totals.totalDiscount.toLocaleString()}</span></div></div>
-                        <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-4"><div className="flex justify-between items-center text-3xl font-bold text-[--accent]"><span>الإجمالي</span><span className="font-mono">{totals.grandTotal.toLocaleString()}</span></div></div>
+                        <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2 mb-4">
+                             <h2 className="text-lg font-bold">ملخص الفاتورة</h2>
+                             <select value={activeInvoice.status || 'مدفوعة'} onChange={e => setState(p => ({...p, activeInvoice: {...p.activeInvoice, status: e.target.value}, paidAmount: '0'}))} disabled={isEditMode} className="input-style text-sm">
+                                <option value="مدفوعة">مدفوعة</option>
+                                <option value="مستحقة">مستحقة</option>
+                                <option value="جزئية">جزئية</option>
+                             </select>
+                        </div>
+                        <div className="space-y-3 text-md flex-grow">
+                            <div className="flex justify-between"><span className="text-[--muted]">المجموع الفرعي</span><span className="font-mono font-semibold">{totals.subtotal.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-[--muted]">إجمالي الخصم</span><span className="font-mono font-semibold text-red-500">{totals.totalDiscount.toLocaleString()}</span></div>
+                            {activeInvoice.status === 'جزئية' && (
+                                <div className="flex justify-between items-center bg-blue-50 dark:bg-blue-900/20 p-2 rounded-md">
+                                    <label htmlFor="paidAmount" className="text-sm font-semibold text-blue-800 dark:text-blue-200">المبلغ المدفوع</label>
+                                    <input type="number" id="paidAmount" value={paidAmount} onChange={e => setState(p => ({...p, paidAmount: e.target.value}))} disabled={isEditMode} className="input-style w-32 text-left font-mono" min="0" step="any"/>
+                                </div>
+                            )}
+                             <div className="flex justify-between"><span className="text-[--muted]">المبلغ المتبقي</span><span className="font-mono font-semibold text-red-600">{remainingAmount.toLocaleString()}</span></div>
+                        </div>
+                        <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-4">
+                            <div className="flex justify-between items-center text-3xl font-bold text-[--accent]">
+                                <span>الإجمالي</span>
+                                <span className="font-mono">{totals.grandTotal.toLocaleString()}</span>
+                            </div>
+                        </div>
                     </div>
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 space-y-3">
-                        <button onClick={() => handleFinalize('مدفوعة', true)} disabled={isProcessing || Object.keys(itemErrors || {}).length > 0} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : (isEditMode ? 'حفظ التعديلات' : 'حفظ وطباعة (F9)')}</button>
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing || Object.keys(itemErrors || {}).length > 0} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : (isEditMode ? 'حفظ وطباعة' : 'حفظ وطباعة (F9)')}</button>
                         <div className="grid grid-cols-2 gap-2">
-                             <button onClick={() => handleFinalize('مستحقة', false)} disabled={isProcessing || Object.keys(itemErrors || {}).length > 0} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ كـ مستحقة' : 'حفظ كمستحقة (F2)'}</button>
+                             <button onClick={() => handleFinalize(false)} disabled={isProcessing || Object.keys(itemErrors || {}).length > 0} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ وإغلاق' : 'حفظ وإغلاق (F2)'}</button>
                              <button onClick={() => isEditMode ? navigate('/sales') : resetInvoice()} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'إلغاء' : 'فاتورة جديدة (F3)'}</button>
                         </div>
                     </div>

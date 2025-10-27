@@ -1,11 +1,14 @@
 import React, { useState, useMemo, useContext } from 'react';
 import Modal from '../shared/Modal';
 import { DataContext } from '../../context/DataContext';
-import type { Account, TreasuryTransaction, JournalEntry } from '../../types';
+import type { Account, TreasuryTransaction } from '../../types';
 import AddTreasuryForm from './AddTreasuryForm';
-import GeneralTransactionForm from './GeneralTransactionForm';
+import AddTreasuryTransactionForm from './AddTreasuryTransactionForm';
 import TransferFundsForm from './TransferFundsForm';
 import TreasuryVoucherView from './TreasuryVoucherView';
+import ConfirmationModal from '../shared/ConfirmationModal';
+import { PencilIcon } from '../icons/PencilIcon';
+import EditTreasuryTransactionForm from './EditTreasuryTransactionForm';
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(amount);
@@ -27,12 +30,13 @@ const findAccountById = (accounts: Account[], id: string): Account | null => {
 }
 
 const Treasury: React.FC = () => {
-    const { treasuriesList, treasury: treasuryTransactions, chartOfAccounts, customers, suppliers } = useContext(DataContext);
+    const { treasuriesList, treasury: treasuryTransactions, chartOfAccounts, customers, suppliers, showToast, updateTreasuryTransaction } = useContext(DataContext);
     const treasuries = useMemo(() => treasuriesList.filter((t: any) => !t.isTotal), [treasuriesList]);
     const [selectedTreasuryId, setSelectedTreasuryId] = useState<string | null>(treasuries[0]?.id || null);
     const [isAddTreasuryModalOpen, setAddTreasuryModalOpen] = useState(false);
     const [modalType, setModalType] = useState<'deposit' | 'withdrawal' | 'transfer' | null>(null);
     const [transactionToView, setTransactionToView] = useState<TreasuryTransaction | null>(null);
+    const [transactionToEdit, setTransactionToEdit] = useState<TreasuryTransaction | null>(null);
     
     const treasuryBalances: { [key: string]: number } = useMemo(() => {
         const balances: { [key: string]: number } = {};
@@ -52,19 +56,19 @@ const Treasury: React.FC = () => {
         let currentBalance = treasuryNode.balance || 0;
 
         const filteredAndSortedTxsDesc = treasuryTransactions
-            .filter((tx: any) => tx.treasuryAccountId === selectedTreasuryId)
+            .filter((tx: any) => tx.treasuryAccountId === selectedTreasuryId && !tx.isArchived)
             .sort((a: any,b: any) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id));
 
         return filteredAndSortedTxsDesc.map((tx: any) => {
             const txWithDetails = {
                 ...tx,
                 balance: currentBalance,
-                debit: tx.amount < 0 ? Math.abs(tx.amount) : 0,
-                credit: tx.amount > 0 ? tx.amount : 0,
+                debit: tx.type === 'سند صرف' ? Math.abs(tx.amount) : 0,
+                credit: tx.type === 'سند قبض' ? Math.abs(tx.amount) : 0,
             };
             currentBalance -= tx.amount; // work backwards to get previous balance
             return txWithDetails;
-        }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id));
+        });
     }, [treasuryTransactions, selectedTreasuryId, treasuriesList]);
 
 
@@ -85,22 +89,32 @@ const Treasury: React.FC = () => {
         return 'غير محدد';
     };
 
+    const handleEditSuccess = () => {
+        setTransactionToEdit(null);
+        showToast('تم تعديل السند بنجاح.');
+    };
+
+    const handleTransactionAdded = (newTransaction: TreasuryTransaction) => {
+        setModalType(null);
+        setTransactionToView(newTransaction);
+    };
+
     return (
         <div className="flex flex-col h-full">
              <Modal isOpen={isAddTreasuryModalOpen} onClose={() => setAddTreasuryModalOpen(false)} title="إضافة خزينة جديدة">
                 <AddTreasuryForm onClose={() => setAddTreasuryModalOpen(false)} />
             </Modal>
 
-            {modalType && (modalType === 'deposit' || modalType === 'withdrawal') && selectedTreasuryId && (
+            {modalType && (modalType === 'deposit' || modalType === 'withdrawal') && (
                 <Modal 
                     isOpen={!!modalType} 
                     onClose={() => setModalType(null)} 
                     title={modalType === 'deposit' ? 'إضافة نقدية (سند قبض عام)' : 'صرف نقدية (سند صرف عام)'}
                 >
-                    <GeneralTransactionForm 
-                        treasuryId={selectedTreasuryId}
-                        type={modalType}
+                    <AddTreasuryTransactionForm 
+                        defaultType={modalType === 'deposit' ? 'سند قبض' : 'سند صرف'}
                         onClose={() => setModalType(null)}
+                        onSuccess={handleTransactionAdded}
                     />
                 </Modal>
             )}
@@ -124,6 +138,20 @@ const Treasury: React.FC = () => {
                     onClose={() => setTransactionToView(null)}
                     transaction={transactionToView}
                 />
+            )}
+            
+            {transactionToEdit && (
+                <Modal 
+                    isOpen={!!transactionToEdit}
+                    onClose={() => setTransactionToEdit(null)}
+                    title={`تعديل السند رقم: ${transactionToEdit.id}`}
+                >
+                   <EditTreasuryTransactionForm
+                        transaction={transactionToEdit}
+                        onClose={() => setTransactionToEdit(null)}
+                        onSuccess={handleEditSuccess}
+                   />
+                </Modal>
             )}
             
             <div className="flex justify-between items-center mb-6">
@@ -179,18 +207,23 @@ const Treasury: React.FC = () => {
                                 <table className="w-full text-sm text-right text-gray-500 dark:text-gray-400">
                                   <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300 sticky top-0">
                                       <tr>
-                                        {['التاريخ', 'الوصف', 'الحساب المقابل', 'منصرف', 'وارد', 'الرصيد'].map(h => <th key={h} className="px-6 py-3">{h}</th>)}
+                                        {['التاريخ', 'الوصف', 'الحساب المقابل', 'منصرف', 'وارد', 'الرصيد', 'إجراء'].map(h => <th key={h} className="px-6 py-3">{h}</th>)}
                                       </tr>
                                   </thead>
                                   <tbody>
                                     {selectedTreasuryTransactions.map((tx) => (
-                                        <tr key={tx.id} onClick={() => setTransactionToView(tx)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{tx.date}</td>
-                                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{tx.description}</td>
-                                            <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium">{getContraAccountName(tx)}</td>
-                                            <td className="px-6 py-4 text-sm text-red-600 dark:text-red-400 font-semibold">{tx.debit > 0 ? formatCurrency(tx.debit) : '-'}</td>
-                                            <td className="px-6 py-4 text-sm text-green-600 dark:text-green-400 font-semibold">{tx.credit > 0 ? formatCurrency(tx.credit) : '-'}</td>
-                                            <td className="px-6 py-4 text-sm font-bold text-gray-800 dark:text-gray-200">{formatCurrency(tx.balance)}</td>
+                                        <tr key={tx.id} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400" onClick={() => setTransactionToView(tx)}>{tx.date}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100" onClick={() => setTransactionToView(tx)}>{tx.description}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium" onClick={() => setTransactionToView(tx)}>{getContraAccountName(tx)}</td>
+                                            <td className="px-6 py-4 text-sm text-red-600 dark:text-red-400 font-semibold" onClick={() => setTransactionToView(tx)}>{tx.debit > 0 ? formatCurrency(tx.debit) : '-'}</td>
+                                            <td className="px-6 py-4 text-sm text-green-600 dark:text-green-400 font-semibold" onClick={() => setTransactionToView(tx)}>{tx.credit > 0 ? formatCurrency(tx.credit) : '-'}</td>
+                                            <td className="px-6 py-4 text-sm font-bold text-gray-800 dark:text-gray-200" onClick={() => setTransactionToView(tx)}>{formatCurrency(tx.balance)}</td>
+                                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => setTransactionToEdit(tx)} className="text-gray-400 hover:text-green-500" title="تعديل">
+                                                    <PencilIcon className="w-5 h-5"/>
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                   </tbody>

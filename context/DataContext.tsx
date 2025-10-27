@@ -212,12 +212,20 @@ function dataReducer(state: AppState, action: Action): AppState {
                 activityLog: [action.payload.log, ...state.activityLog]
             };
         
+        case 'UPDATE_CHART_OF_ACCOUNTS':
+            return {
+                ...state,
+                chartOfAccounts: action.payload.chartOfAccounts,
+                activityLog: [action.payload.log, ...state.activityLog]
+            };
+
         case 'UPDATE_OPENING_BALANCES':
             return {
                 ...state,
                 customers: action.payload.customers,
                 suppliers: action.payload.suppliers,
                 chartOfAccounts: action.payload.chartOfAccounts,
+                journal: action.payload.journal || state.journal,
                 activityLog: [action.payload.log, ...state.activityLog]
             };
         
@@ -432,6 +440,20 @@ function dataReducer(state: AppState, action: Action): AppState {
             };
         }
 
+        case 'UPDATE_TREASURY_TRANSACTION': {
+            const { treasury, journal, chartOfAccounts, customers, suppliers, sequences, log } = action.payload;
+             return {
+                ...state,
+                treasury,
+                journal,
+                chartOfAccounts,
+                customers,
+                suppliers,
+                sequences,
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
         case 'ADD_INVENTORY_ADJUSTMENT': {
             const { newAdjustment, updatedInventory, journalEntry, updatedChartOfAccounts, log } = action.payload;
             return {
@@ -487,6 +509,7 @@ function dataReducer(state: AppState, action: Action): AppState {
             return { ...state, customers: action.payload.customers, sequences: { ...state.sequences, customer: action.payload.newSequence || state.sequences.customer }, activityLog: [action.payload.log, ...state.activityLog] };
         }
         case 'ADD_SUPPLIER':
+        case 'UPDATE_SUPPLIER':
         case 'ARCHIVE_SUPPLIER':
         case 'UNARCHIVE_SUPPLIER': {
             return { ...state, suppliers: action.payload.suppliers, sequences: { ...state.sequences, supplier: action.payload.newSequence || state.sequences.supplier }, activityLog: [action.payload.log, ...state.activityLog] };
@@ -709,58 +732,123 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         customerUpdates: { customerId: string, balance: number }[],
         supplierUpdates: { supplierId: string, balance: number }[],
     }) => {
-        const newCustomers = data.customers.map((c: Customer) => {
-            const update = customerUpdates.find(u => u.customerId === c.id);
-            return update ? { ...c, balance: update.balance } : c;
-        });
-    
-        const newSuppliers = data.suppliers.map((s: Supplier) => {
-            const update = supplierUpdates.find(u => u.supplierId === s.id);
-            return update ? { ...s, balance: update.balance } : s;
-        });
-
         const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        const newCustomers = JSON.parse(JSON.stringify(data.customers));
+        const newSuppliers = JSON.parse(JSON.stringify(data.suppliers));
+        let newJournal = JSON.parse(JSON.stringify(data.journal));
+        
+        const openingBalanceJournalDescription = "قيد الأرصدة الافتتاحية";
+        const oldOpeningBalanceJournal = newJournal.find((j: JournalEntry) => j.description === openingBalanceJournalDescription && !j.isArchived);
+
+        // Reverse old balances before applying new ones
+        if (oldOpeningBalanceJournal) {
+            oldOpeningBalanceJournal.lines.forEach((line: JournalLine) => {
+                updateBalancesRecursively(newChart, line.accountId, line.credit - line.debit);
+            });
+            newJournal = newJournal.map((j: JournalEntry) => j.id === oldOpeningBalanceJournal.id ? { ...j, isArchived: true, description: `[ملغي] ${j.description}` } : j);
+        }
+
+        const newJournalLines: JournalLine[] = [];
+
+        // Apply new balances and create journal lines
+        const customerAccountNode = findAccountByCode(newChart, '1103');
+        if (!customerAccountNode) throw new Error("حساب العملاء (1103) غير موجود.");
+        const totalCustomerOpeningBalance = customerUpdates.reduce((sum, u) => sum + u.balance, 0);
+        if (totalCustomerOpeningBalance > 0) {
+            newJournalLines.push({ accountId: customerAccountNode.id, accountName: customerAccountNode.name, debit: totalCustomerOpeningBalance, credit: 0 });
+        }
+
+        const supplierAccountNode = findAccountByCode(newChart, '2101');
+        if (!supplierAccountNode) throw new Error("حساب الموردين (2101) غير موجود.");
+        const totalSupplierOpeningBalance = supplierUpdates.reduce((sum, u) => sum + u.balance, 0);
+        if (totalSupplierOpeningBalance > 0) {
+            newJournalLines.push({ accountId: supplierAccountNode.id, accountName: supplierAccountNode.name, debit: 0, credit: totalSupplierOpeningBalance });
+        }
+        
+        const inventoryAccountNode = findAccountByCode(newChart, '1104');
+        if (!inventoryAccountNode) throw new Error("حساب المخزون (1104) غير موجود.");
+        const totalInventoryValue = data.inventory.reduce((sum: number, item: InventoryItem) => sum + (item.stock * item.purchasePrice), 0);
+        if (totalInventoryValue > 0) {
+            newJournalLines.push({ accountId: inventoryAccountNode.id, accountName: inventoryAccountNode.name, debit: totalInventoryValue, credit: 0 });
+        }
 
         accountUpdates.forEach(update => {
             const account = findAccountById(newChart, update.accountId);
-            if (account) {
-                const oldBalance = account.balance || 0;
-                const difference = update.balance - oldBalance;
-                if (difference !== 0) {
-                    updateBalancesRecursively(newChart, update.accountId, difference);
-                }
+            if (!account) return;
+            const newOpeningBalance = update.balance;
+            if (newOpeningBalance > 0) {
+                newJournalLines.push({ accountId: account.id, accountName: account.name, debit: newOpeningBalance, credit: 0 });
+            } else if (newOpeningBalance < 0) {
+                newJournalLines.push({ accountId: account.id, accountName: account.name, debit: 0, credit: Math.abs(newOpeningBalance) });
             }
         });
-        
-        const customerAccountNode = findAccountByCode(newChart, '1103');
-        if (customerAccountNode) {
-            const newTotalCustomerBalance = customerUpdates.reduce((sum, u) => sum + u.balance, 0);
-            const oldTotalCustomerBalance = customerAccountNode.balance || 0;
-            const difference = newTotalCustomerBalance - oldTotalCustomerBalance;
-            if(difference !== 0) {
-                 updateBalancesRecursively(newChart, customerAccountNode.id, difference);
-            }
+
+        // Find/Create Balancing Account
+        let balancingAccount = findNodeRecursive(newChart, 'code', '3103');
+        if (!balancingAccount) {
+            const equityRoot = findNodeRecursive(newChart, 'code', '3000');
+            if (!equityRoot) throw new Error("حساب حقوق الملكية (3000) غير موجود.");
+            balancingAccount = {
+                id: `ACC-OB-CAPITAL-${Date.now()}`, name: "رأس المال الافتتاحي", code: '3103', balance: 0, children: []
+            };
+            if (!equityRoot.children) equityRoot.children = [];
+            equityRoot.children.push(balancingAccount);
+        }
+
+        const totalOpeningDebit = newJournalLines.reduce((sum, line) => sum + line.debit, 0);
+        const totalOpeningCredit = newJournalLines.reduce((sum, line) => sum + line.credit, 0);
+        const balanceAmount = totalOpeningCredit - totalOpeningDebit;
+
+        if (balanceAmount > 0) {
+            newJournalLines.push({ accountId: balancingAccount.id, accountName: balancingAccount.name, debit: balanceAmount, credit: 0 });
+        } else if (balanceAmount < 0) {
+            newJournalLines.push({ accountId: balancingAccount.id, accountName: balancingAccount.name, debit: 0, credit: Math.abs(balanceAmount) });
+        }
+
+        // Create and apply new journal entry
+        if (newJournalLines.length > 0) {
+            const newJournalId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+            const newOpeningBalanceJournal: JournalEntry = {
+                id: newJournalId, date: data.financialYear.startDate, description: openingBalanceJournalDescription,
+                debit: newJournalLines.reduce((s, l) => s + l.debit, 0), credit: newJournalLines.reduce((s, l) => s + l.credit, 0),
+                status: 'مرحل', lines: newJournalLines
+            };
+            newJournal.push(newOpeningBalanceJournal);
+            newOpeningBalanceJournal.lines.forEach(line => {
+                updateBalancesRecursively(newChart, line.accountId, line.debit - line.credit);
+            });
         }
         
-        const supplierAccountNode = findAccountByCode(newChart, '2101');
-        if (supplierAccountNode) {
-            const newTotalSupplierBalance = supplierUpdates.reduce((sum, u) => sum + u.balance, 0);
-            // Supplier balances are credits, so they are negative in the chart.
-            const oldTotalSupplierBalance = supplierAccountNode.balance || 0;
-            const difference = (-newTotalSupplierBalance) - oldTotalSupplierBalance;
-             if(difference !== 0) {
-                updateBalancesRecursively(newChart, supplierAccountNode.id, difference);
-            }
-        }
+        // Update individual customer/supplier balances to reflect their total current balance
+        customerUpdates.forEach(update => {
+            const customer = newCustomers.find((c: Customer) => c.id === update.customerId);
+            if (!customer) return;
+            const sumOfTransactions = data.sales.filter((s: Sale) => s.customer === customer.name && !s.isArchived).reduce((sum, s) => sum + s.total, 0)
+                - data.saleReturns.filter((sr: SaleReturn) => sr.customer === customer.name && !sr.isArchived).reduce((sum, sr) => sum + sr.total, 0)
+                - data.treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === customer.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0)
+                + data.treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === customer.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+            customer.balance = update.balance + sumOfTransactions;
+        });
+
+        supplierUpdates.forEach(update => {
+            const supplier = newSuppliers.find((s: Supplier) => s.id === update.supplierId);
+            if (!supplier) return;
+            const sumOfTransactions = data.purchases.filter((p: Purchase) => p.supplier === supplier.name && !p.isArchived).reduce((sum, p) => sum + p.total, 0)
+                - data.purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === supplier.name && !pr.isArchived).reduce((sum, pr) => sum + pr.total, 0)
+                - data.treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === supplier.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0)
+                + data.treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === supplier.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
+            supplier.balance = update.balance + sumOfTransactions;
+        });
 
         dispatch({ type: 'UPDATE_OPENING_BALANCES', payload: {
             customers: newCustomers,
             suppliers: newSuppliers,
             chartOfAccounts: newChart,
-            log: createActivityLog('تحديث الأرصدة الافتتاحية', `تم تحديث الأرصدة الافتتاحية للنظام.`)
+            journal: newJournal,
+            log: createActivityLog('تحديث الأرصدة الافتتاحية', `تم تحديث الأرصدة وإنشاء قيد افتتاحي.`)
         }});
-        showToast('تم تحديث الأرصدة الافتتاحية بنجاح.');
-    }, [data.customers, data.suppliers, data.chartOfAccounts, createActivityLog, showToast, findAccountById]);
+        showToast('تم تحديث الأرصدة الافتتاحية بنجاح وإنشاء قيد محاسبي.');
+    }, [data, createActivityLog, showToast, findAccountById]);
 
     const addUnitDefinition = useCallback((name: string): UnitDefinition => {
         if (data.unitDefinitions.some(u => u.name === name)) {
@@ -1192,7 +1280,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const amountToReverse = line.credit - line.debit;
                 updateBalancesRecursively(updatedChart, line.accountId, amountToReverse);
             });
-            updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalPurchase.journalEntryId ? { ...j, isArchived: true, description: `[ملغي] ${j.description}` } : j);
+            updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalJournalEntry.id ? { ...j, isArchived: true, description: `[ملغي] ${j.description}` } : j);
         }
         
         // --- 3. تطبيق المعاملة الجديدة ---
@@ -1390,6 +1478,98 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...(treasuryRoot.children || [])
         ];
     }, [data.chartOfAccounts]);
+
+    const updateTreasuryTransaction = useCallback((originalId: string, updatedData: Omit<TreasuryTransaction, 'id' | 'balance' | 'journalEntryId'>): TreasuryTransaction | undefined => {
+        // --- 0. Find Originals ---
+        const originalTransaction = data.treasury.find((t: TreasuryTransaction) => t.id === originalId);
+        if (!originalTransaction) { showToast('السند الأصلي غير موجود.', 'error'); return; }
+        const originalJournal = data.journal.find((j: JournalEntry) => j.id === originalTransaction.journalEntryId);
+        if (!originalJournal) { showToast('القيد المحاسبي الأصلي غير موجود.', 'error'); return; }
+
+        // --- 1. Create State Copies ---
+        const tempChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        let tempCustomers = JSON.parse(JSON.stringify(data.customers));
+        let tempSuppliers = JSON.parse(JSON.stringify(data.suppliers));
+
+        // --- 2. Reversal Phase ---
+        originalJournal.lines.forEach(line => {
+            const amountToReverse = line.credit - line.debit;
+            updateBalancesRecursively(tempChart, line.accountId, amountToReverse);
+        });
+        
+        if (originalTransaction.partyType === 'customer' && originalTransaction.partyId) {
+            tempCustomers = tempCustomers.map(c => c.id === originalTransaction.partyId ? { ...c, balance: c.balance - (originalTransaction.type === 'سند صرف' ? Math.abs(originalTransaction.amount) : -Math.abs(originalTransaction.amount)) } : c);
+        } else if (originalTransaction.partyType === 'supplier' && originalTransaction.partyId) {
+            tempSuppliers = tempSuppliers.map(s => s.id === originalTransaction.partyId ? { ...s, balance: s.balance - (originalTransaction.type === 'سند صرف' ? -Math.abs(originalTransaction.amount) : Math.abs(originalTransaction.amount)) } : s);
+        }
+
+        // --- 3. Creation Phase ---
+        const newTransactionId = `TRN-${String(data.sequences.treasury).padStart(3, '0')}`;
+        const newJournalId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        const customerAccount = findAccountByCode(tempChart, '1103');
+        const supplierAccount = findAccountByCode(tempChart, '2101');
+        
+        let contraAccountId: string, contraAccountName: string;
+
+        if (updatedData.partyType === 'customer') {
+            if (!customerAccount) { throw new Error("حساب العملاء (1103) مفقود."); }
+            contraAccountId = customerAccount.id; contraAccountName = customerAccount.name;
+            tempCustomers = tempCustomers.map(c => c.id === updatedData.partyId ? { ...c, balance: c.balance + (updatedData.type === 'سند صرف' ? Math.abs(updatedData.amount) : -Math.abs(updatedData.amount)) } : c);
+        } else if (updatedData.partyType === 'supplier') {
+            if (!supplierAccount) { throw new Error("حساب الموردين (2101) مفقود."); }
+            contraAccountId = supplierAccount.id; contraAccountName = supplierAccount.name;
+            tempSuppliers = tempSuppliers.map(s => s.id === updatedData.partyId ? { ...s, balance: s.balance + (updatedData.type === 'سند صرف' ? -Math.abs(updatedData.amount) : Math.abs(updatedData.amount)) } : s);
+        } else {
+             const account = findAccountById(tempChart, updatedData.partyId!);
+             if (!account) { throw new Error(`الحساب المحدد ${updatedData.partyId} غير موجود.`); }
+             contraAccountId = account.id; contraAccountName = account.name;
+        }
+
+        const selectedTreasury = treasuriesList.find(t => t.id === updatedData.treasuryAccountId);
+        if(!selectedTreasury) { throw new Error("الخزينة المحددة غير صالحة."); }
+
+        const journalEntryLines: JournalLine[] = updatedData.type === 'سند قبض' ? [
+            { accountId: updatedData.treasuryAccountId, accountName: selectedTreasury.name, debit: Math.abs(updatedData.amount), credit: 0 },
+            { accountId: contraAccountId, accountName: contraAccountName, debit: 0, credit: Math.abs(updatedData.amount) },
+        ] : [
+            { accountId: contraAccountId, accountName: contraAccountName, debit: Math.abs(updatedData.amount), credit: 0 },
+            { accountId: updatedData.treasuryAccountId, accountName: selectedTreasury.name, debit: 0, credit: Math.abs(updatedData.amount) },
+        ];
+    
+        journalEntryLines.forEach(line => {
+            updateBalancesRecursively(tempChart, line.accountId, line.debit - line.credit);
+        });
+    
+        const newJournalEntry: JournalEntry = {
+            id: newJournalId, date: updatedData.date, description: updatedData.description, status: 'مرحل',
+            debit: Math.abs(updatedData.amount), credit: Math.abs(updatedData.amount), lines: journalEntryLines,
+        };
+        
+        const amountForTreasury = updatedData.type === 'سند صرف' ? -Math.abs(updatedData.amount) : Math.abs(updatedData.amount);
+        const newTransaction: TreasuryTransaction = { 
+            ...updatedData, id: newTransactionId, balance: 0, amount: amountForTreasury, journalEntryId: newJournalId,
+            treasuryAccountName: selectedTreasury.name,
+        };
+        
+        const newTreasuryState = [...data.treasury.map(t => t.id === originalId ? { ...t, isArchived: true } : t), newTransaction];
+        const newJournalState = [...data.journal.map(j => j.id === originalJournal.id ? { ...j, isArchived: true } : j), newJournalEntry];
+
+        // --- 4. Dispatch Phase ---
+        dispatch({
+            type: 'UPDATE_TREASURY_TRANSACTION',
+            payload: {
+                treasury: newTreasuryState,
+                journal: newJournalState,
+                chartOfAccounts: tempChart,
+                customers: tempCustomers,
+                suppliers: tempSuppliers,
+                sequences: { ...data.sequences, treasury: data.sequences.treasury + 1, journal: data.sequences.journal + 1 },
+                log: createActivityLog('تعديل سند خزينة', `تم تعديل السند الأصلي ${originalId} إلى السند الجديد ${newTransactionId}`)
+            }
+        });
+        return newTransaction;
+    }, [data, treasuriesList, createActivityLog, showToast, findAccountById]);
 
     const transferTreasuryFunds = useCallback((fromTreasuryId: string, toTreasuryId: string, amount: number, notes?: string) => {
         const fromTreasury = treasuriesList.find((t: any) => t.id === fromTreasuryId);
@@ -1678,7 +1858,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         dispatch({ type: 'ADD_SUPPLIER', payload: { suppliers: [...data.suppliers, newSupplier], newSequence: newIdNumber + 1, log: createActivityLog('إضافة مورد', `تمت إضافة المورد ${supplier.name}`) } });
         return newSupplier;
     };
-    const updateSupplier = useCallback((supplier: Supplier) => {}, []);
+    const updateSupplier = useCallback((updatedSupplier: Supplier) => {
+        dispatch({
+            type: 'UPDATE_SUPPLIER',
+            payload: {
+                suppliers: data.suppliers.map((s: Supplier) => s.id === updatedSupplier.id ? updatedSupplier : s),
+                log: createActivityLog('تعديل مورد', `تم تعديل بيانات المورد ${updatedSupplier.name}`)
+            }
+        });
+    }, [data.suppliers, createActivityLog]);
     const archiveSupplier = (id: string) => {
         const supplier = data.suppliers.find(c => c.id === id);
         if (!supplier) return { success: false, message: 'المورد غير موجود.' };
@@ -2139,6 +2327,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         users: data.users.filter(u => !u.isArchived),
         fixedAssets: data.fixedAssets.filter(fa => !fa.isArchived),
         journal: data.journal.filter(j => !j.isArchived),
+        treasury: data.treasury.filter(t => !t.isArchived),
     }), [data]);
     
     const archivedData = useMemo(() => ({
@@ -2155,6 +2344,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         users: data.users.filter(u => u.isArchived),
         fixedAssets: data.fixedAssets.filter(fa => fa.isArchived),
         journal: data.journal.filter(j => j.isArchived),
+        treasury: data.treasury.filter(t => t.isArchived),
     }), [data]);
 
     const updateCompanyInfo = (info: any) => dispatch({ type: 'UPDATE_COMPANY_INFO', payload: info });
@@ -2195,9 +2385,160 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [data.inventory, data.customers, data.suppliers, data.fixedAssets, data.chartOfAccounts, createActivityLog, showToast]);
 
 
-    // Placeholder for other functions
-    const updateAccount = (data: any) => {};
-    const archiveAccount = (id: string) => ({ success: true });
+    const updateAccount = useCallback((accountData: { id: string; name: string; code: string; parentId: string | null; }) => {
+        let chartCopy = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        
+        let nodeToMove: AccountNode | null = null;
+        let originalParent: AccountNode | null = null;
+        let originalParentId: string | null = null;
+        
+        const findNodeAndParent = (nodes: AccountNode[], parent: AccountNode | null): boolean => {
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                if (node.id === accountData.id) {
+                    nodeToMove = node;
+                    originalParent = parent;
+                    originalParentId = parent ? parent.id : null;
+                    return true;
+                }
+                if (node.children && findNodeAndParent(node.children, node)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        
+        findNodeAndParent(chartCopy, null);
+    
+        if (!nodeToMove) {
+            showToast('لم يتم العثور على الحساب لتعديله.', 'error');
+            return;
+        }
+        
+        const hasInfoChanged = nodeToMove.name !== accountData.name || nodeToMove.code !== accountData.code;
+        const hasParentChanged = originalParentId !== accountData.parentId;
+    
+        if (!hasInfoChanged && !hasParentChanged) {
+            showToast('لم يتم إجراء أي تغييرات.', 'info');
+            return;
+        }
+        
+        nodeToMove.name = accountData.name;
+        nodeToMove.code = accountData.code;
+    
+        if (hasParentChanged) {
+            const nodeBalance = nodeToMove.balance || 0;
+            
+            if (originalParent) {
+                originalParent.children = originalParent.children?.filter(child => child.id !== accountData.id);
+                if (nodeBalance !== 0) {
+                     updateBalancesRecursively(chartCopy, originalParent.id, -nodeBalance);
+                }
+            } else {
+                chartCopy = chartCopy.filter((node: AccountNode) => node.id !== accountData.id);
+            }
+    
+            const newParent = accountData.parentId ? findNodeRecursive(chartCopy, 'id', accountData.parentId) : null;
+            if (newParent) {
+                if (!newParent.children) newParent.children = [];
+                newParent.children.push(nodeToMove);
+                if (nodeBalance !== 0) {
+                    updateBalancesRecursively(chartCopy, newParent.id, nodeBalance);
+                }
+            } else {
+                chartCopy.push(nodeToMove);
+            }
+        }
+    
+        dispatch({
+            type: 'UPDATE_CHART_OF_ACCOUNTS',
+            payload: {
+                chartOfAccounts: chartCopy,
+                log: createActivityLog('تعديل حساب', `تم تعديل الحساب ${accountData.name} (${accountData.code})`)
+            }
+        });
+        showToast('تم تعديل الحساب بنجاح.');
+    
+    }, [data.chartOfAccounts, createActivityLog, showToast]);
+    
+    const archiveAccount = useCallback((id: string) => {
+        const accountToArchive = findNodeRecursive(data.chartOfAccounts, 'id', id);
+        if (!accountToArchive) {
+            return { success: false, message: 'الحساب غير موجود.' };
+        }
+    
+        // Recursive function to check if a node and its descendants can be archived.
+        const checkArchivable = (node: AccountNode): { canArchive: true } | { canArchive: false, message: string } => {
+            // 1. Check current node's balance
+            if (node.balance !== 0) {
+                return { canArchive: false, message: `لا يمكن الأرشفة لوجود رصيد في الحساب "${node.name}" (${node.code}).` };
+            }
+    
+            // 2. Check for transactions on the current node
+            const hasTransactions = data.journal.some((entry: JournalEntry) =>
+                !entry.isArchived && entry.lines.some((line: JournalLine) => line.accountId === node.id)
+            );
+            if (hasTransactions) {
+                return { canArchive: false, message: `لا يمكن الأرشفة لوجود حركات على الحساب "${node.name}" (${node.code}).` };
+            }
+    
+            // 3. Recursively check children that are not already archived
+            if (node.children) {
+                for (const child of node.children.filter(c => !c.isArchived)) {
+                    const childCheck = checkArchivable(child);
+                    if (!childCheck.canArchive) {
+                        return childCheck; // Bubble up the first error found
+                    }
+                }
+            }
+    
+            return { canArchive: true };
+        };
+    
+        const archivableCheck = checkArchivable(accountToArchive);
+        // FIX: Use an explicit boolean check to help the TypeScript compiler with type narrowing.
+        if (archivableCheck.canArchive === false) {
+            return { success: false, message: archivableCheck.message };
+        }
+    
+        // Collect all IDs to be archived
+        const idsToArchive = new Set<string>();
+        const collectIds = (node: AccountNode) => {
+            if (node.isArchived) return; // Don't collect already archived children
+            idsToArchive.add(node.id);
+            if (node.children) {
+                node.children.forEach(collectIds);
+            }
+        };
+        collectIds(accountToArchive);
+    
+        // Recursively update the chart to mark accounts as archived
+        const updateArchivedStatus = (nodes: AccountNode[]): AccountNode[] => {
+            return nodes.map(node => {
+                let newNode = { ...node };
+                if (idsToArchive.has(node.id)) {
+                    newNode.isArchived = true;
+                }
+                if (node.children) {
+                    newNode.children = updateArchivedStatus(node.children);
+                }
+                return newNode;
+            });
+        };
+        
+        const newChart = updateArchivedStatus(data.chartOfAccounts);
+    
+        dispatch({
+            type: 'UPDATE_CHART_OF_ACCOUNTS',
+            payload: {
+                chartOfAccounts: newChart,
+                log: createActivityLog('أرشفة حساب', `تمت أرشفة الحساب ${accountToArchive.name} وكل حساباته الفرعية.`)
+            }
+        });
+    
+        return { success: true };
+    }, [data.chartOfAccounts, data.journal, createActivityLog]);
+
     const updateJournalEntry = (entry: any) => {};
     const updateSaleReturn = useCallback((saleReturn: SaleReturn) => { console.log('Update sale return called', saleReturn); return saleReturn; }, []);
     const updatePurchaseReturn = useCallback((purchaseReturn: PurchaseReturn) => { console.log('Update purchase return called', purchaseReturn); return purchaseReturn; }, []);
@@ -2270,7 +2611,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addSaleReturn, updateSaleReturn, archiveSaleReturn, unarchiveSaleReturn: () => {},
         purchaseReturns: activeData.purchaseReturns, archivedPurchaseReturns: archivedData.purchaseReturns,
         addPurchaseReturn, updatePurchaseReturn, archivePurchaseReturn, unarchivePurchaseReturn: () => {},
-        treasury: data.treasury, addTreasuryTransaction, treasuriesList, transferTreasuryFunds,
+        treasury: activeData.treasury, addTreasuryTransaction, updateTreasuryTransaction, treasuriesList, transferTreasuryFunds,
         customers: activeData.customers, archivedCustomers: archivedData.customers, addCustomer, updateCustomer, archiveCustomer, unarchiveCustomer,
         suppliers: activeData.suppliers, archivedSuppliers: archivedData.suppliers,
         addSupplier, updateSupplier, archiveSupplier, unarchiveSupplier,

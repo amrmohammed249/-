@@ -2,6 +2,7 @@ import React, { useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import ReportToolbar from './ReportToolbar';
 import DataTable from '../shared/DataTable';
+import { Sale, SaleReturn, Purchase, PurchaseReturn, TreasuryTransaction } from '../../types';
 
 interface ReportProps {
     partyType: 'customer' | 'supplier';
@@ -13,68 +14,69 @@ interface ReportProps {
 const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate, endDate }) => {
     const { customers, suppliers, sales, purchases, saleReturns, purchaseReturns, treasury } = useContext(DataContext);
 
-    const { party, openingBalance, transactions, closingBalance } = useMemo(() => {
+    const { party, openingBalanceForPeriod, transactions, closingBalance } = useMemo(() => {
         const party = partyType === 'customer'
-            ? customers.find(c => c.id === partyId)
-            : suppliers.find(s => s.id === partyId);
+            ? customers.find((c: any) => c.id === partyId)
+            : suppliers.find((s: any) => s.id === partyId);
 
-        if (!party) return { party: null, openingBalance: 0, transactions: [], closingBalance: 0 };
+        if (!party) return { party: null, openingBalanceForPeriod: 0, transactions: [], closingBalance: 0 };
 
         const start = new Date(startDate);
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
 
-        // Calculate opening balance
-        let ob = 0;
+        // 1. Get ALL transaction objects for the party
+        let allTxObjects: any[] = [];
         if (partyType === 'customer') {
-            sales.forEach(s => { if (s.customer === party.name && new Date(s.date) < start) ob += s.total; });
-            saleReturns.forEach(sr => { if (sr.customer === party.name && new Date(sr.date) < start) ob -= sr.total; });
-            treasury.forEach(t => { if (t.partyType === 'customer' && t.partyId === party.id && new Date(t.date) < start) ob -= t.amount; });
-        } else {
-            purchases.forEach(p => { if (p.supplier === party.name && new Date(p.date) < start) ob += p.total; });
-            purchaseReturns.forEach(pr => { if (pr.supplier === party.name && new Date(pr.date) < start) ob -= pr.total; });
-            treasury.forEach(t => { if (t.partyType === 'supplier' && t.partyId === party.id && new Date(t.date) < start) ob += t.amount; });
-        }
-
-        // Get transactions in range
-        let allTransactions: { date: string; description: string; debit: number; credit: number; }[] = [];
-        
-        if (partyType === 'customer') {
-            sales.forEach(s => { if (s.customer === party.name && new Date(s.date) >= start && new Date(s.date) <= end) allTransactions.push({ date: s.date, description: `فاتورة مبيعات رقم ${s.id}`, debit: s.total, credit: 0 }); });
-            saleReturns.forEach(sr => { if (sr.customer === party.name && new Date(sr.date) >= start && new Date(sr.date) <= end) allTransactions.push({ date: sr.date, description: `مرتجع مبيعات رقم ${sr.id}`, debit: 0, credit: sr.total }); });
-            treasury.forEach(t => { if (t.partyType === 'customer' && t.partyId === party.id && new Date(t.date) >= start && new Date(t.date) <= end) allTransactions.push({ date: t.date, description: t.description, debit: t.amount < 0 ? Math.abs(t.amount) : 0, credit: t.amount > 0 ? t.amount : 0 }); });
-        } else {
-            purchases.forEach(p => { if (p.supplier === party.name && new Date(p.date) >= start && new Date(p.date) <= end) allTransactions.push({ date: p.date, description: `فاتورة مشتريات رقم ${p.id}`, debit: 0, credit: p.total }); });
-            purchaseReturns.forEach(pr => { if (pr.supplier === party.name && new Date(pr.date) >= start && new Date(pr.date) <= end) allTransactions.push({ date: pr.date, description: `مرتجع مشتريات رقم ${pr.id}`, debit: pr.total, credit: 0 }); });
-            treasury.forEach(t => { 
-                if (t.partyType === 'supplier' && t.partyId === party.id && new Date(t.date) >= start && new Date(t.date) <= end) {
-                    // Payment to supplier (amount < 0) is a DEBIT.
-                    // Receipt from supplier (amount > 0) is a CREDIT.
-                    allTransactions.push({ 
-                        date: t.date, 
-                        description: t.description, 
-                        debit: t.amount < 0 ? Math.abs(t.amount) : 0, 
-                        credit: t.amount > 0 ? t.amount : 0 
-                    });
-                }
+            sales.filter((s: Sale) => s.customer === party.name && !s.isArchived).forEach((s: Sale) => allTxObjects.push({ date: s.date, description: `فاتورة مبيعات #${s.id}`, debit: s.total, credit: 0, original: s, type: 'sale' }));
+            saleReturns.filter((sr: SaleReturn) => sr.customer === party.name && !sr.isArchived).forEach((sr: SaleReturn) => allTxObjects.push({ date: sr.date, description: `مرتجع مبيعات #${sr.id}`, debit: 0, credit: sr.total, original: sr, type: 'saleReturn' }));
+            treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === party.id && !t.isArchived).forEach((t: TreasuryTransaction) => {
+                if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: t.amount > 0 ? t.amount : 0, original: t, type: 'treasury' });
+                if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: t.amount < 0 ? Math.abs(t.amount) : 0, credit: 0, original: t, type: 'treasury' });
+            });
+        } else { // Supplier
+            purchases.filter((p: Purchase) => p.supplier === party.name && !p.isArchived).forEach((p: Purchase) => allTxObjects.push({ date: p.date, description: `فاتورة مشتريات #${p.id}`, debit: 0, credit: p.total, original: p, type: 'purchase' }));
+            purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === party.name && !pr.isArchived).forEach((pr: PurchaseReturn) => allTxObjects.push({ date: pr.date, description: `مرتجع مشتريات #${pr.id}`, debit: pr.total, credit: 0, original: pr, type: 'purchaseReturn' }));
+            treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === party.id && !t.isArchived).forEach((t: TreasuryTransaction) => {
+                if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: t.amount < 0 ? Math.abs(t.amount) : 0, credit: 0, original: t, type: 'treasury' });
+                if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: t.amount > 0 ? t.amount : 0, original: t, type: 'treasury' });
             });
         }
 
-        allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-        let runningBalance = ob;
-        const transactionsWithBalance = allTransactions.map((t, index) => {
-            if (partyType === 'customer') {
-                runningBalance += (t.debit - t.credit);
-            } else { // Supplier is a liability account
-                runningBalance += (t.credit - t.debit);
+        // 2. Calculate Opening Balance for the Period by working backwards from current balance
+        let openingBalanceForPeriod = party.balance;
+        allTxObjects.forEach(tx => {
+            const txDate = new Date(tx.date);
+            if (txDate >= start) { // If transaction is in or after the period, reverse its effect from the current balance
+                const change = partyType === 'customer' ? (tx.debit - tx.credit) : (tx.credit - tx.debit);
+                openingBalanceForPeriod -= change;
             }
-            return { ...t, id: index, balance: runningBalance };
         });
 
-        return { party, openingBalance: ob, transactions: transactionsWithBalance, closingBalance: runningBalance };
+        // 3. Filter transactions for the period and calculate running balance
+        const periodTransactions = allTxObjects
+            .filter(tx => {
+                const txDate = new Date(tx.date);
+                return txDate >= start && txDate <= end;
+            })
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        let runningBalance = openingBalanceForPeriod;
+        const transactionsWithBalance = periodTransactions.map((t, index) => {
+            const change = partyType === 'customer' ? (t.debit - t.credit) : (t.credit - t.debit);
+            runningBalance += change;
+            return { ...t, id: `${t.original.id}-${index}`, balance: runningBalance };
+        });
+
+        return { 
+            party, 
+            openingBalanceForPeriod, 
+            transactions: transactionsWithBalance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()), // sort desc for display
+            closingBalance: runningBalance 
+        };
 
     }, [partyId, partyType, startDate, endDate, customers, suppliers, sales, purchases, saleReturns, purchaseReturns, treasury]);
+
 
     const columns = [
         { header: 'التاريخ', accessor: 'date' },
@@ -104,7 +106,7 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
 
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md mb-4 flex justify-between items-center">
                     <span className="font-semibold">الرصيد الافتتاحي في {startDate}:</span>
-                    <span className="font-bold font-mono">{openingBalance.toLocaleString()} جنيه</span>
+                    <span className="font-bold font-mono">{openingBalanceForPeriod.toLocaleString()} جنيه</span>
                 </div>
 
                 <DataTable columns={columns} data={transactions} searchableColumns={['description']} />

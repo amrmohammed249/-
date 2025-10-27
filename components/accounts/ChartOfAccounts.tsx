@@ -1,5 +1,4 @@
-
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import type { AccountNode } from '../../types';
 import Modal from '../shared/Modal';
@@ -79,6 +78,21 @@ const ChartOfAccounts: React.FC = () => {
   const [selectedAccount, setSelectedAccount] = useState<AccountNode | null>(null);
 
   const canModify = currentUser.role === 'مدير النظام' || currentUser.role === 'محاسب';
+  
+  const activeAccounts = useMemo(() => {
+    const filterArchived = (nodes: AccountNode[]): AccountNode[] => {
+        return nodes
+            .filter(node => !node.isArchived)
+            .map(node => {
+                if (node.children) {
+                    return { ...node, children: filterArchived(node.children) };
+                }
+                return node;
+            });
+    };
+    return filterArchived(chartOfAccounts);
+  }, [chartOfAccounts]);
+
 
   const handleAdd = (parentId: string | null) => {
     setSelectedParentId(parentId);
@@ -139,7 +153,7 @@ const ChartOfAccounts: React.FC = () => {
             </div>
             <div className="border-t pt-4 dark:border-gray-700">
                 <AccountTree 
-                    nodes={chartOfAccounts} 
+                    nodes={activeAccounts} 
                     onAdd={handleAdd} 
                     onEdit={handleEdit} 
                     onArchive={handleArchive} 
@@ -165,7 +179,11 @@ const ChartOfAccounts: React.FC = () => {
           onClose={() => setArchiveModalOpen(false)}
           onConfirm={confirmArchive}
           title="تأكيد الأرشفة"
-          message={`هل أنت متأكد من رغبتك في أرشفة الحساب "${selectedAccount.name}"؟ لا يمكن حذف الحسابات التي لها رصيد أو حركات.`}
+          message={
+            selectedAccount.children && selectedAccount.children.length > 0
+              ? `هل أنت متأكد من رغبتك في أرشفة الحساب الرئيسي "${selectedAccount.name}"؟ سيتم أرشفة هذا الحساب وجميع الحسابات الفرعية التابعة له. لا يمكن إتمام العملية إلا إذا كانت أرصدة جميع هذه الحسابات صفرًا ولا توجد عليها أي حركات.`
+              : `هل أنت متأكد من رغبتك في أرشفة الحساب "${selectedAccount.name}"؟ لا يمكن أرشفة الحسابات التي لها رصيد أو حركات.`
+          }
         />
       )}
       

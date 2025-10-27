@@ -6,6 +6,8 @@ export interface AccountNode {
   code: string;
   balance?: number;
   children?: AccountNode[];
+  // Fix: Add isArchived property to AccountNode type.
+  isArchived?: boolean;
 }
 
 export type Account = AccountNode;
@@ -57,6 +59,7 @@ export interface Sale {
   totalDiscount: number;
   total: number;
   status: 'مدفوعة' | 'مستحقة' | 'جزئية';
+  paidAmount?: number;
   journalEntryId?: string;
   isArchived?: boolean;
 }
@@ -81,7 +84,8 @@ export interface Purchase {
   subtotal: number;
   totalDiscount: number;
   total: number;
-  status: 'مدفوعة' | 'مستحقة';
+  status: 'مدفوعة' | 'مستحقة' | 'جزئية';
+  paidAmount?: number;
   journalEntryId?: string;
   isArchived?: boolean;
 }
@@ -158,7 +162,8 @@ export interface TreasuryTransaction {
   accountName?: string;
   treasuryAccountId: string;
   treasuryAccountName: string;
-  journalEntryId?: string;
+  journalEntryId: string;
+  isArchived?: boolean;
 }
 
 export interface Customer {

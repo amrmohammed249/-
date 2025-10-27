@@ -10,34 +10,52 @@ interface ReportProps {
 }
 
 const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAccountId, onDataReady }) => {
-    const { treasury, treasuriesList } = useContext(DataContext);
+    const { treasury, treasuriesList, totalCashBalance } = useContext(DataContext);
 
-    const { openingBalance, transactions, closingBalance, totalDebits, totalCredits } = useMemo(() => {
+    const { currentActualBalance, selectedTreasuryName } = useMemo(() => {
+        if (treasuryAccountId) {
+            const selectedTreasury = treasuriesList.find((t: any) => t.id === treasuryAccountId);
+            return {
+                currentActualBalance: selectedTreasury?.balance || 0,
+                selectedTreasuryName: selectedTreasury?.name || "خزينة محددة",
+            };
+        }
+        return {
+            currentActualBalance: totalCashBalance,
+            selectedTreasuryName: 'كل الخزائن',
+        };
+    }, [treasuryAccountId, treasuriesList, totalCashBalance]);
+
+    const { openingBalance, transactions, closingBalance, totalDebits, totalCredits, netChange } = useMemo(() => {
         const start = new Date(startDate);
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
 
-        // 1. Calculate Opening Balance
-        const ob = treasury
-            .filter((t: TreasuryTransaction) => {
-                const tDate = new Date(t.date);
-                const accountMatch = !treasuryAccountId || t.treasuryAccountId === treasuryAccountId;
-                return tDate < start && accountMatch;
-            })
-            .reduce((sum, t) => sum + t.amount, 0);
+        const allTxObjects = treasury.filter((t: TreasuryTransaction) => {
+            const accountMatch = !treasuryAccountId || t.treasuryAccountId === treasuryAccountId;
+            return accountMatch && !t.isArchived;
+        });
 
-        // 2. Get transactions within date range
-        const transactionsInRange = treasury
-            .filter((t: TreasuryTransaction) => {
-                const tDate = new Date(t.date);
-                const accountMatch = !treasuryAccountId || t.treasuryAccountId === treasuryAccountId;
-                return tDate >= start && tDate <= end && accountMatch;
+        // 1. Calculate Opening Balance by working backwards from current balance
+        let openingBalanceForPeriod = currentActualBalance;
+        allTxObjects.forEach((tx: TreasuryTransaction) => {
+            const txDate = new Date(tx.date);
+            // If transaction is in or after the report period starts, reverse its effect from the current balance
+            if (txDate >= start) {
+                openingBalanceForPeriod -= tx.amount;
+            }
+        });
+        
+        // 2. Filter transactions for the period and calculate running balance
+        const periodTransactions = allTxObjects
+            .filter(tx => {
+                const txDate = new Date(tx.date);
+                return txDate >= start && txDate <= end;
             })
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-        // 3. Process transactions to include running balance, debits, and credits
-        let runningBalance = ob;
-        const processedTransactions = transactionsInRange.map(t => {
+        let runningBalance = openingBalanceForPeriod;
+        const transactionsWithBalance = periodTransactions.map(t => {
             runningBalance += t.amount;
             return {
                 ...t,
@@ -47,21 +65,24 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
             };
         });
         
-        // 4. Calculate totals
-        const totals = processedTransactions.reduce((acc, t) => {
+        // 3. Calculate totals for the period
+        const totals = transactionsWithBalance.reduce((acc, t) => {
             acc.totalDebits += t.debit;
             acc.totalCredits += t.credit;
             return acc;
         }, { totalDebits: 0, totalCredits: 0 });
+        
+        const netChange = totals.totalCredits - totals.totalDebits;
 
         return {
-            openingBalance: ob,
-            transactions: processedTransactions,
+            openingBalance: openingBalanceForPeriod,
+            transactions: transactionsWithBalance,
             closingBalance: runningBalance,
             totalDebits: totals.totalDebits,
             totalCredits: totals.totalCredits,
+            netChange,
         };
-    }, [treasury, startDate, endDate, treasuryAccountId]);
+    }, [treasury, startDate, endDate, treasuryAccountId, currentActualBalance]);
     
     const columns = [
         { header: 'التاريخ', accessor: 'date' },
@@ -91,10 +112,24 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
                         </p>
                     </div>
                 </div>
+
+                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500 rounded-r-lg">
+                    <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">الرصيد الفعلي الحالي لـ "{selectedTreasuryName}"</p>
+                    <p className="text-2xl font-bold font-mono text-blue-900 dark:text-blue-100 mt-1">
+                        {currentActualBalance.toLocaleString()} جنيه
+                    </p>
+                </div>
                 
-                <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md mb-4 flex justify-between items-center">
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md mb-2 flex justify-between items-center">
                     <span className="font-semibold">الرصيد الافتتاحي في {startDate}:</span>
                     <span className="font-bold font-mono">{openingBalance.toLocaleString()} جنيه</span>
+                </div>
+                
+                <div className={`p-3 rounded-md mb-4 flex justify-between items-center ${netChange >= 0 ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'}`}>
+                    <span className={`font-semibold ${netChange >= 0 ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}`}>صافي الحركة خلال الفترة:</span>
+                    <span className={`font-bold font-mono ${netChange >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                        {netChange >= 0 ? '+' : ''}{netChange.toLocaleString()} جنيه
+                    </span>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -125,8 +160,8 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
                             <tfoot className="font-semibold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-700/50">
                                 <tr>
                                     <td colSpan={3} className="px-6 py-3 text-center">الإجماليات</td>
-                                    <td className="px-6 py-3 font-mono">{totalDebits.toLocaleString()}</td>
-                                    <td className="px-6 py-3 font-mono">{totalCredits.toLocaleString()}</td>
+                                    <td className="px-6 py-3 font-mono text-red-600 dark:text-red-400">{totalDebits.toLocaleString()}</td>
+                                    <td className="px-6 py-3 font-mono text-green-600 dark:text-green-400">{totalCredits.toLocaleString()}</td>
                                     <td className="px-6 py-3"></td>
                                 </tr>
                             </tfoot>

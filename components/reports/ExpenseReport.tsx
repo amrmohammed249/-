@@ -36,6 +36,12 @@ const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccou
     
     const expenseRootId = '4-2'; // ID for 'مصاريف تشغيل'
 
+    const expenseAccountName = useMemo(() => {
+        if (!expenseAccountId) return null;
+        const path = findAccountPath(chartOfAccounts, expenseAccountId);
+        return path ? path[path.length - 1].name : null;
+    }, [expenseAccountId, chartOfAccounts]);
+
     const { hierarchicalExpenses, totalExpenses } = useMemo(() => {
         const start = new Date(startDate);
         const end = new Date(endDate);
@@ -141,6 +147,7 @@ const ExpenseReport: React.FC<ReportProps> = ({ startDate, endDate, expenseAccou
                         <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير المصروفات</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                             الفترة من {startDate} إلى {endDate}
+                            {expenseAccountName && ` | الحساب: ${expenseAccountName}`}
                         </p>
                     </div>
                 </div>

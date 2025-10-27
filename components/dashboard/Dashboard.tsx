@@ -134,7 +134,7 @@ const Dashboard: React.FC = () => {
                 activeInvoice: {
                     id: `INV-${String(sequences.sale).padStart(3, '0')}`,
                     date: new Date().toISOString().slice(0, 10),
-                    status: 'مدفوعة',
+                    status: 'مستحقة',
                 },
                 items: [],
                 customer: null,
@@ -151,7 +151,7 @@ const Dashboard: React.FC = () => {
                 activeBill: {
                     id: `BILL-${String(sequences.purchase).padStart(3, '0')}`,
                     date: new Date().toISOString().slice(0, 10),
-                    status: 'مدفوعة',
+                    status: 'مستحقة',
                 },
                  items: [],
                  supplier: null,

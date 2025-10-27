@@ -2,77 +2,67 @@ import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { Customer, Supplier, AccountNode, TreasuryTransaction } from '../../types';
 
-interface AddTreasuryTransactionFormProps {
+interface EditTreasuryTransactionFormProps {
   onClose: () => void;
-  onSuccess: (newTransaction: TreasuryTransaction) => void;
-  defaultType: 'سند قبض' | 'سند صرف';
+  onSuccess: () => void;
+  transaction: TreasuryTransaction;
 }
 
-const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({ onClose, onSuccess, defaultType }) => {
+const EditTreasuryTransactionForm: React.FC<EditTreasuryTransactionFormProps> = ({ onClose, onSuccess, transaction }) => {
   const { 
     customers, 
     suppliers, 
     chartOfAccounts, 
     treasuriesList, 
-    addTreasuryTransaction,
+    updateTreasuryTransaction,
     showToast 
   } = useContext(DataContext);
   
   const treasuries = useMemo(() => treasuriesList.filter((t: any) => !t.isTotal), [treasuriesList]);
-  const mainTreasury = useMemo(() => treasuries.find((t: any) => t.name === 'الخزينة الرئيسية'), [treasuries]);
 
-  const defaultPartyType = useMemo(() => {
-    if (defaultType === 'سند صرف') return 'supplier';
-    if (defaultType === 'سند قبض') return 'customer';
-    return '';
-  }, [defaultType]);
-
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [treasuryId, setTreasuryId] = useState('');
-  const [partyType, setPartyType] = useState<'customer' | 'supplier' | 'account' | ''>(defaultPartyType as any);
-  const [partyId, setPartyId] = useState('');
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const [date, setDate] = useState(transaction.date);
+  const [treasuryId, setTreasuryId] = useState(transaction.treasuryAccountId);
+  const [partyType, setPartyType] = useState(transaction.partyType || '');
+  const [partyId, setPartyId] = useState(transaction.partyId || '');
+  const [amount, setAmount] = useState(String(Math.abs(transaction.amount)));
+  const [description, setDescription] = useState(transaction.description);
 
   const [currentBalance, setCurrentBalance] = useState<number | null>(null);
   const [newBalance, setNewBalance] = useState<number | null>(null);
-
-  // Effect to set the default treasury once data is loaded
-  useEffect(() => {
-    if (!treasuryId) {
-        if (mainTreasury?.id) {
-            setTreasuryId(mainTreasury.id);
-        } else if (treasuries.length > 0) {
-            setTreasuryId(treasuries[0].id);
-        }
-    }
-  }, [treasuries, mainTreasury, treasuryId]);
-
+  
   // Effect to reset party selection when type changes
   useEffect(() => {
-    setPartyId('');
-  }, [partyType]);
+    // Only reset if it's a true type change from what was originally passed
+    if (partyType !== transaction.partyType) {
+        setPartyId('');
+    }
+  }, [partyType, transaction.partyType]);
 
   // Effect to get the current balance when party is selected
   useEffect(() => {
     if ((partyType === 'customer' || partyType === 'supplier') && partyId) {
       let party;
-      if (partyType === 'customer') {
-        party = customers.find((c: Customer) => c.id === partyId);
-      } else {
-        party = suppliers.find((s: Supplier) => s.id === partyId);
-      }
+      if (partyType === 'customer') party = customers.find((c: Customer) => c.id === partyId);
+      else party = suppliers.find((s: Supplier) => s.id === partyId);
       
       if (party) {
-        setCurrentBalance(party.balance);
+        // Calculate the balance *before* this transaction
+        let originalEffect = 0;
+        if (partyId === transaction.partyId) { // if it's the same party, calculate the balance before this specific TX
+            if (transaction.partyType === 'customer') { // A receipt from customer decreases their balance
+                originalEffect = transaction.type === 'سند قبض' ? Math.abs(transaction.amount) : -Math.abs(transaction.amount);
+            } else { // A payment to supplier decreases their balance
+                originalEffect = transaction.type === 'سند صرف' ? Math.abs(transaction.amount) : -Math.abs(transaction.amount);
+            }
+        }
+        setCurrentBalance(party.balance + originalEffect);
       } else {
         setCurrentBalance(null);
       }
     } else {
       setCurrentBalance(null);
     }
-    setNewBalance(null); // Also reset newBalance when party changes
-  }, [partyId, partyType, customers, suppliers]);
+  }, [partyId, partyType, customers, suppliers, transaction]);
 
   // Effect to calculate the new balance when amount or party changes
   useEffect(() => {
@@ -81,25 +71,17 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
       let calculatedNewBalance = currentBalance;
       if (numAmount > 0) {
           if (partyType === 'customer') {
-            if (defaultType === 'سند قبض') { // Receipt from customer
-              calculatedNewBalance = currentBalance - numAmount;
-            } else { // Payment to customer (refund)
-              calculatedNewBalance = currentBalance + numAmount;
-            }
+            calculatedNewBalance += (transaction.type === 'سند قبض' ? -numAmount : numAmount);
           } else if (partyType === 'supplier') {
-            if (defaultType === 'سند صرف') { // Payment to supplier
-              calculatedNewBalance = currentBalance - numAmount;
-            } else { // Receipt from supplier (refund)
-              calculatedNewBalance = currentBalance + numAmount;
-            }
+            calculatedNewBalance += (transaction.type === 'سند صرف' ? -numAmount : numAmount);
           }
       }
       setNewBalance(calculatedNewBalance);
     } else {
       setNewBalance(null);
     }
-  }, [amount, currentBalance, partyType, defaultType]);
-
+  }, [amount, currentBalance, partyType, transaction.type]);
+  
   const accountOptionsForSelect = useMemo(() => {
     const options: { account: AccountNode; level: number }[] = [];
     const traverse = (nodes: AccountNode[], level: number) => {
@@ -114,14 +96,11 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
     return options;
   }, [chartOfAccounts]);
 
-  const partyTypeOptions = useMemo(() => {
-    // Make options consistent and flexible for both forms.
-    return [
-      { value: 'customer', label: 'عميل' },
-      { value: 'supplier', label: 'مورد' },
-      { value: 'account', label: 'حساب' },
-    ];
-  }, []);
+  const partyTypeOptions = useMemo(() => [
+    { value: 'customer', label: 'عميل' },
+    { value: 'supplier', label: 'مورد' },
+    { value: 'account', label: 'حساب' },
+  ], []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,24 +109,17 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
       return;
     }
     
-    const selectedTreasury = treasuries.find((t: any) => t.id === treasuryId);
-    if (!selectedTreasury) {
-      showToast('الرجاء اختيار خزينة صالحة.', 'error');
-      return;
-    }
-
-    const newTransaction = addTreasuryTransaction({
+    updateTreasuryTransaction(transaction.id, {
       date,
-      type: defaultType,
+      type: transaction.type,
       treasuryAccountId: treasuryId,
-      treasuryAccountName: selectedTreasury.name,
       description,
       amount: parseFloat(amount),
-      partyType: partyType as 'customer' | 'supplier' | 'account',
+      partyType: partyType as any,
       partyId
     });
 
-    onSuccess(newTransaction);
+    onSuccess();
   };
   
   return (
@@ -196,11 +168,11 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
         {currentBalance !== null && (
             <div className="md:col-span-2 -mt-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border dark:border-gray-600 grid grid-cols-2 gap-4 text-sm">
                 <div>
-                    <span className="text-gray-500 dark:text-gray-400">الرصيد الحالي:</span>
+                    <span className="text-gray-500 dark:text-gray-400">الرصيد قبل الحركة:</span>
                     <p className="font-semibold font-mono text-lg">{currentBalance.toLocaleString()} جنيه</p>
                 </div>
                 <div>
-                    <span className="text-gray-500 dark:text-gray-400">الرصيد المتبقي:</span>
+                    <span className="text-gray-500 dark:text-gray-400">الرصيد بعد التعديل:</span>
                     <p className={`font-semibold font-mono text-lg ${newBalance !== null ? 'text-blue-600 dark:text-blue-400' : ''}`}>
                         {newBalance !== null ? newBalance.toLocaleString() + ' جنيه' : '-'}
                     </p>
@@ -219,10 +191,10 @@ const AddTreasuryTransactionForm: React.FC<AddTreasuryTransactionFormProps> = ({
       </div>
       <div className="mt-6 flex justify-end space-x-2 space-x-reverse">
         <button type="button" onClick={onClose} className="btn-secondary">إلغاء</button>
-        <button type="submit" className="btn-primary">حفظ السند</button>
+        <button type="submit" className="btn-primary">حفظ التعديلات</button>
       </div>
     </form>
   );
 };
 
-export default AddTreasuryTransactionForm;
+export default EditTreasuryTransactionForm;

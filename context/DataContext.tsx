@@ -7,7 +7,6 @@ import type {
     CompanyInfo,
     Customer,
     FinancialYear,
-    FixedAsset,
     GeneralSettings,
     InventoryAdjustment,
     InventoryItem,
@@ -156,7 +155,6 @@ const initialState = {
     customers: seedData.customersData,
     suppliers: seedData.suppliersData,
     users: seedData.usersData,
-    fixedAssets: seedData.fixedAssetsData,
     activityLog: seedData.activityLogData,
     notifications: seedData.notificationsData,
 };
@@ -218,6 +216,15 @@ function dataReducer(state: AppState, action: Action): AppState {
                 chartOfAccounts: action.payload.chartOfAccounts,
                 activityLog: [action.payload.log, ...state.activityLog]
             };
+        
+        case 'FORCE_BALANCE_RECALCULATION':
+            return {
+                ...state,
+                customers: action.payload.customers,
+                suppliers: action.payload.suppliers,
+                chartOfAccounts: action.payload.chartOfAccounts,
+                activityLog: [action.payload.log, ...state.activityLog]
+            }
 
         case 'UPDATE_OPENING_BALANCES':
             return {
@@ -454,6 +461,17 @@ function dataReducer(state: AppState, action: Action): AppState {
             };
         }
 
+        case 'APPLY_TREASURY_MIGRATION':
+            return {
+                ...state,
+                treasury: action.payload.treasury,
+                chartOfAccounts: action.payload.chartOfAccounts,
+                customers: action.payload.customers,
+                suppliers: action.payload.suppliers,
+                activityLog: [action.payload.log, ...state.activityLog],
+                notifications: [action.payload.notification, ...state.notifications].slice(0, 50),
+            };
+
         case 'ADD_INVENTORY_ADJUSTMENT': {
             const { newAdjustment, updatedInventory, journalEntry, updatedChartOfAccounts, log } = action.payload;
             return {
@@ -611,7 +629,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             finalState.customers = loadedData.customers || [];
             finalState.suppliers = loadedData.suppliers || [];
             finalState.users = loadedData.users || seedData.usersData;
-            finalState.fixedAssets = loadedData.fixedAssets || [];
             finalState.activityLog = loadedData.activityLog || [];
             finalState.notifications = loadedData.notifications || [];
         }
@@ -2255,13 +2272,89 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [data.sales, data.purchases]);
     const topCustomers = useMemo(() => [...data.customers].sort((a,b) => b.balance - a.balance).slice(0, 5), [data.customers]);
     
+    // One-time data correction for incorrect treasury transaction signs
+    useEffect(() => {
+        if (!isDataLoaded || !dataManager.activeDatasetKey) return;
+    
+        const migrationKey = `migration_treasury_sign_fix_v2_applied_for_${dataManager.activeDatasetKey}`;
+        if (localStorage.getItem(migrationKey)) {
+            return; // Migration already applied for this dataset
+        }
+    
+        // Check if migration is needed
+        const needsMigration = data.treasury.some((tx: TreasuryTransaction) => (tx.type === 'سند صرف' && tx.amount > 0) || (tx.type === 'سند قبض' && tx.amount < 0));
+    
+        if (needsMigration) {
+            console.log("MIGRATION: Incorrect treasury transaction signs detected. Applying fix and recalculating balances...");
+    
+            // 1. Correct the signs in the treasury data
+            const correctedTreasury = data.treasury.map((tx: TreasuryTransaction) => {
+                if (tx.type === 'سند صرف' && tx.amount > 0) {
+                    return { ...tx, amount: -tx.amount };
+                }
+                if (tx.type === 'سند قبض' && tx.amount < 0) {
+                    return { ...tx, amount: Math.abs(tx.amount) };
+                }
+                return tx;
+            });
+    
+            // 2. Recalculate all balances from scratch
+            const tempChart = resetAccountBalances(JSON.parse(JSON.stringify(data.chartOfAccounts)));
+            const tempCustomers = data.customers.map((c: Customer) => ({ ...c, balance: 0 }));
+            const tempSuppliers = data.suppliers.map((s: Supplier) => ({ ...s, balance: 0 }));
+            
+            // Re-apply all journal entries chronologically to rebuild Chart of Account balances
+            const sortedJournal = [...data.journal].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            sortedJournal.forEach((entry: JournalEntry) => {
+                if (!entry.isArchived) {
+                    entry.lines.forEach((line: JournalLine) => {
+                        updateBalancesRecursively(tempChart, line.accountId, line.debit - line.credit);
+                    });
+                }
+            });
+    
+            // Re-calculate customer balances using corrected treasury data
+            tempCustomers.forEach(customer => {
+                const totalSales = data.sales.filter((s: Sale) => s.customer === customer.name && !s.isArchived).reduce((sum, s) => sum + s.total, 0);
+                const totalReturns = data.saleReturns.filter((sr: SaleReturn) => sr.customer === customer.name && !sr.isArchived).reduce((sum, sr) => sum + sr.total, 0);
+                const netPayments = correctedTreasury.filter(t => t.partyType === 'customer' && t.partyId === customer.id && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
+                customer.balance = totalSales - totalReturns - netPayments;
+            });
+            
+            // Re-calculate supplier balances using corrected treasury data
+            tempSuppliers.forEach(supplier => {
+                const totalPurchases = data.purchases.filter((p: Purchase) => p.supplier === supplier.name && !p.isArchived).reduce((sum, p) => sum + p.total, 0);
+                const totalReturns = data.purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === supplier.name && !pr.isArchived).reduce((sum, pr) => sum + pr.total, 0);
+                const netPayments = correctedTreasury.filter(t => t.partyType === 'supplier' && t.partyId === supplier.id && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
+                supplier.balance = totalPurchases - totalReturns + netPayments;
+            });
+    
+            // Dispatch everything at once
+            dispatch({ type: 'APPLY_TREASURY_MIGRATION', payload: {
+                treasury: correctedTreasury,
+                chartOfAccounts: tempChart,
+                customers: tempCustomers,
+                suppliers: tempSuppliers,
+                log: createActivityLog('تصحيح تلقائي للبيانات', 'تم تصحيح بيانات الخزينة القديمة وإعادة حساب الأرصدة.'),
+                notification: createNotification('تم إجراء تصحيح تلقائي لبيانات الخزينة القديمة لضمان دقة الأرصدة.', 'info')
+            }});
+    
+            showToast('تم تصحيح بيانات قديمة وإعادة حساب الأرصدة بنجاح.', 'success');
+            localStorage.setItem(migrationKey, 'true');
+        } else {
+            // If no migration is needed, still set the flag to avoid checking again.
+            localStorage.setItem(migrationKey, 'true');
+        }
+    
+    }, [isDataLoaded, dataManager.activeDatasetKey, data, createActivityLog, showToast, createNotification]);
+
+
     // One-time data correction for specific inventory items with fractional stock
     useEffect(() => {
         // Use a unique flag for this specific correction to ensure it only runs once per dataset.
         const correctionFlag = `correction_applied_for_${dataManager.activeDatasetKey}_stock_fix_2024_07_28`;
         
         if (isDataLoaded && !localStorage.getItem(correctionFlag)) {
-            // Find items by name or ID that have the specific incorrect stock value.
             const itemToFix = data.inventory.find(
                 (item: InventoryItem) => 
                 (item.name === 'بهارات غاليه' || item.id === 'ITM-028') &&
@@ -2271,7 +2364,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (itemToFix) {
                 console.log("Applying one-time stock correction for item:", itemToFix.name);
                 
-                // Find the expense account for inventory write-offs ('Damaged Goods Expense').
                 const expenseAccount = findAccountByCode(data.chartOfAccounts, '4203');
                 if (!expenseAccount) {
                     showToast('لم يتم العثور على حساب مصروف البضاعة التالفة (4203) اللازم لإتمام التصحيح.', 'error');
@@ -2280,7 +2372,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
 
                 try {
-                    // Create a formal, auditable inventory adjustment to correct the stock.
                     addInventoryAdjustment({
                         date: new Date().toISOString().slice(0, 10),
                         type: 'صرف',
@@ -2301,16 +2392,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 } catch (e: any) {
                      showToast(`فشل تصحيح الرصيد: ${e.message}`, 'error');
                 } finally {
-                    // Set the flag regardless of success to prevent re-running.
                     localStorage.setItem(correctionFlag, 'true');
                 }
             } else {
-                // If the item isn't found or the stock is already correct, set the flag so we don't check again.
                 localStorage.setItem(correctionFlag, 'true');
             }
         }
     }, [isDataLoaded, data.inventory, data.chartOfAccounts, dataManager.activeDatasetKey, addInventoryAdjustment, showToast]);
-
+    
 
     // Memoize all filtered data to prevent unnecessary re-renders
     const activeData = useMemo(() => ({
@@ -2325,7 +2414,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saleReturns: data.saleReturns.filter(sr => !sr.isArchived),
         purchaseReturns: data.purchaseReturns.filter(pr => !pr.isArchived),
         users: data.users.filter(u => !u.isArchived),
-        fixedAssets: data.fixedAssets.filter(fa => !fa.isArchived),
         journal: data.journal.filter(j => !j.isArchived),
         treasury: data.treasury.filter(t => !t.isArchived),
     }), [data]);
@@ -2342,7 +2430,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saleReturns: data.saleReturns.filter(sr => sr.isArchived),
         purchaseReturns: data.purchaseReturns.filter(pr => pr.isArchived),
         users: data.users.filter(u => u.isArchived),
-        fixedAssets: data.fixedAssets.filter(fa => fa.isArchived),
         journal: data.journal.filter(j => j.isArchived),
         treasury: data.treasury.filter(t => t.isArchived),
     }), [data]);
@@ -2366,7 +2453,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             treasury: [],
             customers: data.customers.map((c: Customer) => ({ ...c, balance: 0 })),
             suppliers: data.suppliers.map((s: Supplier) => ({ ...s, balance: 0 })),
-            fixedAssets: data.fixedAssets.map((fa: FixedAsset) => ({ ...fa, accumulatedDepreciation: 0, bookValue: fa.cost })),
             activityLog: [],
             notifications: [],
             chartOfAccounts: resetAccountBalances(data.chartOfAccounts),
@@ -2382,7 +2468,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         showToast('تمت إعادة ضبط جميع البيانات بنجاح.');
-    }, [data.inventory, data.customers, data.suppliers, data.fixedAssets, data.chartOfAccounts, createActivityLog, showToast]);
+    }, [data.inventory, data.customers, data.suppliers, data.chartOfAccounts, createActivityLog, showToast]);
 
 
     const updateAccount = useCallback((accountData: { id: string; name: string; code: string; parentId: string | null; }) => {
@@ -2545,10 +2631,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatePriceQuote = useCallback((quote: PriceQuote) => { console.log('Update price quote called', quote); return quote; }, []);
     const updatePurchaseQuote = useCallback((quote: PurchaseQuote) => { console.log('Update purchase quote called', quote); return quote; }, []);
 
-    const addFixedAsset = (asset: any) => {};
-    const updateFixedAsset = (asset: any) => {};
-    const archiveFixedAsset = (id: string) => ({ success: true });
-    const unarchiveFixedAsset = (id: string) => {};
     const addSaleReturn = useCallback((sr: Omit<SaleReturn, 'id'>) => ({...sr, id:'1'}), []);
     const archiveSaleReturn = useCallback((id: string) => ({ success: true }), []);
     const addPurchaseReturn = useCallback((pr: Omit<PurchaseReturn, 'id'>) => ({...pr, id:'1'}), []);
@@ -2617,8 +2699,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addSupplier, updateSupplier, archiveSupplier, unarchiveSupplier,
         users: activeData.users, archivedUsers: archivedData.users,
         addUser, updateUser, archiveUser, unarchiveUser,
-        fixedAssets: activeData.fixedAssets, archivedFixedAssets: archivedData.fixedAssets,
-        addFixedAsset, updateFixedAsset, archiveFixedAsset, unarchiveFixedAsset,
         activityLog: data.activityLog,
         notifications: data.notifications, markNotificationAsRead, markAllNotificationsAsRead,
         sequences: data.sequences,

@@ -1,5 +1,3 @@
-
-
 import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import Modal from '../shared/Modal';

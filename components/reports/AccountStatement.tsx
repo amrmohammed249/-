@@ -105,7 +105,7 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
                 </div>
 
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md mb-4 flex justify-between items-center">
-                    <span className="font-semibold">الرصيد الافتتاحي في {startDate}:</span>
+                    <span className="font-semibold">الرصيد السابق في {startDate}:</span>
                     <span className="font-bold font-mono">{openingBalanceForPeriod.toLocaleString()} جنيه</span>
                 </div>
 

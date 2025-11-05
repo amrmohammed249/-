@@ -1,6 +1,6 @@
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
-import type { AccountNode, FixedAsset } from '../../types';
+import type { AccountNode } from '../../types';
 import Modal from '../shared/Modal';
 import AddAccountForm from './AddAccountForm';
 import EditAccountForm from './EditAccountForm';
@@ -14,18 +14,16 @@ import { FolderOpenIcon } from '../icons/FolderOpenIcon';
 import { ChevronRightIcon } from '../icons/ChevronRightIcon';
 import OpeningBalancesModal from './OpeningBalancesModal';
 import AccessDenied from '../shared/AccessDenied';
-import { OfficeBuildingIcon } from '../icons/OfficeBuildingIcon';
 
 interface AccountTreeProps {
   nodes: AccountNode[];
-  allFixedAssets: FixedAsset[];
   onAdd: (parentId: string | null) => void;
   onEdit: (account: AccountNode) => void;
   onArchive: (account: AccountNode) => void;
   level?: number;
 }
 
-const AccountTree: React.FC<AccountTreeProps> = ({ nodes, allFixedAssets, onAdd, onEdit, onArchive, level = 0 }) => {
+const AccountTree: React.FC<AccountTreeProps> = ({ nodes, onAdd, onEdit, onArchive, level = 0 }) => {
   const [openNodes, setOpenNodes] = useState<Record<string, boolean>>({});
   const { currentUser } = useContext(DataContext);
   const canModify = currentUser.role === 'مدير النظام' || currentUser.role === 'محاسب';
@@ -37,8 +35,7 @@ const AccountTree: React.FC<AccountTreeProps> = ({ nodes, allFixedAssets, onAdd,
   return (
     <div>
       {nodes.map(node => {
-        const assetsForThisNode = allFixedAssets.filter(asset => !asset.isArchived && asset.assetAccountId === node.id);
-        const hasChildren = (node.children && node.children.length > 0) || assetsForThisNode.length > 0;
+        const hasChildren = node.children && node.children.length > 0;
 
         return (
           <div key={node.id} style={{ paddingRight: `${level * 20}px` }}>
@@ -65,20 +62,7 @@ const AccountTree: React.FC<AccountTreeProps> = ({ nodes, allFixedAssets, onAdd,
               </div>
             </div>
             {node.children && openNodes[node.id] && (
-              <AccountTree nodes={node.children} allFixedAssets={allFixedAssets} onAdd={onAdd} onEdit={onEdit} onArchive={onArchive} level={level + 1} />
-            )}
-            {assetsForThisNode.length > 0 && openNodes[node.id] && (
-                <div style={{ paddingRight: `${(level + 1) * 20}px` }}>
-                    {assetsForThisNode.map(asset => (
-                        <div key={asset.id} className="flex items-center justify-between p-2 my-1 rounded-lg">
-                           <div className="flex items-center">
-                               <OfficeBuildingIcon className="w-5 h-5 text-gray-400 ml-2" />
-                               <span className="text-gray-700 dark:text-gray-300">{asset.name}</span>
-                           </div>
-                           <span className="text-sm font-mono text-gray-600 dark:text-gray-400">{asset.bookValue.toLocaleString()}</span>
-                        </div>
-                    ))}
-                </div>
+              <AccountTree nodes={node.children} onAdd={onAdd} onEdit={onEdit} onArchive={onArchive} level={level + 1} />
             )}
           </div>
         )
@@ -88,7 +72,7 @@ const AccountTree: React.FC<AccountTreeProps> = ({ nodes, allFixedAssets, onAdd,
 };
 
 const ChartOfAccounts: React.FC = () => {
-  const { chartOfAccounts, archiveAccount, showToast, currentUser, fixedAssets } = useContext(DataContext);
+  const { chartOfAccounts, archiveAccount, showToast, currentUser } = useContext(DataContext);
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
@@ -174,7 +158,6 @@ const ChartOfAccounts: React.FC = () => {
             <div className="border-t pt-4 dark:border-gray-700">
                 <AccountTree 
                     nodes={activeAccounts}
-                    allFixedAssets={fixedAssets}
                     onAdd={handleAdd} 
                     onEdit={handleEdit} 
                     onArchive={handleArchive} 

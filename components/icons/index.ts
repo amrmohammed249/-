@@ -44,7 +44,6 @@ export * from './LockClosedIcon';
 export * from './MagnifyingGlassIcon';
 export * from './MapPinIcon';
 export * from './MinusIcon';
-export * from './OfficeBuildingIcon';
 export * from './PencilIcon';
 export * from './PencilSquareIcon';
 export * from './PhoneIcon';

@@ -1,4 +1,4 @@
-import type { AccountNode, Sale, ActivityLogEntry, Purchase, FixedAsset, InventoryItem } from '../types';
+import type { AccountNode, Sale, ActivityLogEntry, Purchase, InventoryItem } from '../types';
 
 export const chartOfAccountsData: AccountNode[] = [
   {
@@ -84,9 +84,6 @@ export const suppliersData = [];
 export const usersData = [
   { id: 'U01', name: 'مدير النظام', username: 'admin', password: 'admin', role: 'مدير النظام' },
 ];
-
-export const fixedAssetsData: FixedAsset[] = [];
-
 
 export const financialYearData = {
   startDate: `${new Date().getFullYear()}-01-01`,

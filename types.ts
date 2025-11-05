@@ -213,18 +213,6 @@ export interface JournalEntry {
   isArchived?: boolean;
 }
 
-export interface FixedAsset {
-  id: string;
-  name: string;
-  acquisitionDate: string;
-  cost: number;
-  depreciationRate: number;
-  accumulatedDepreciation: number;
-  bookValue: number;
-  assetAccountId: string; // ID of the account in chart of accounts (e.g., '1-2-2' for Cars)
-  isArchived?: boolean;
-}
-
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;

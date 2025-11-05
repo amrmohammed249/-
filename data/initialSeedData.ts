@@ -1,4 +1,4 @@
-import type { AccountNode, Sale, ActivityLogEntry, Purchase, FixedAsset, User, Customer, Supplier, InventoryItem, JournalEntry, TreasuryTransaction, CompanyInfo, FinancialYear, PrintSettings, Notification, SaleReturn, PurchaseReturn, UnitDefinition, InventoryAdjustment, GeneralSettings } from '../types';
+import type { AccountNode, Sale, ActivityLogEntry, Purchase, User, Customer, Supplier, InventoryItem, JournalEntry, TreasuryTransaction, CompanyInfo, FinancialYear, PrintSettings, Notification, SaleReturn, PurchaseReturn, UnitDefinition, InventoryAdjustment, GeneralSettings } from '../types';
 
 export const companyInfo: CompanyInfo = {
   name: "اسم الشركة",
@@ -96,7 +96,6 @@ export const sequencesData = {
     supplier: 1,
     journal: 1,
     treasury: 1,
-    fixedAsset: 1,
     inventoryAdjustment: 1,
     account: 1,
     unit: 7,
@@ -125,9 +124,6 @@ export const suppliersData: Supplier[] = [];
 export const usersData: User[] = [
   { id: 'U01', name: 'مدير النظام', username: 'admin', password: 'admin', role: 'مدير النظام' },
 ];
-
-export const fixedAssetsData: FixedAsset[] = [];
-
 
 export const financialYearData: FinancialYear = {
   startDate: `${new Date().getFullYear()}-01-01`,

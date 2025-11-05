@@ -1,5 +1,3 @@
-
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -119,182 +117,151 @@ const Settings: React.FC = () => {
     ], []);
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-6">
+            <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">الإعدادات</h1>
+            
+            <form onSubmit={handleSaveAllSettings} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-8">
+                {/* Section: Company Info */}
+                <div className="border-b dark:border-gray-700 pb-6">
+                    <h2 className="text-lg font-semibold mb-4">معلومات الشركة</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label htmlFor="companyName" className="block text-sm font-medium">اسم الشركة</label>
+                            <input type="text" id="companyName" value={companyData.name} onChange={e => setCompanyData({...companyData, name: e.target.value})} className="input-style w-full mt-1" />
+                        </div>
+                         <div>
+                            <label htmlFor="companyPhone" className="block text-sm font-medium">الهاتف</label>
+                            <input type="text" id="companyPhone" value={companyData.phone} onChange={e => setCompanyData({...companyData, phone: e.target.value})} className="input-style w-full mt-1" />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label htmlFor="companyAddress" className="block text-sm font-medium">العنوان</label>
+                            <input type="text" id="companyAddress" value={companyData.address} onChange={e => setCompanyData({...companyData, address: e.target.value})} className="input-style w-full mt-1" />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Section: Financial Year */}
+                <div className="border-b dark:border-gray-700 pb-6">
+                    <h2 className="text-lg font-semibold mb-4">السنة المالية</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label htmlFor="startDate" className="block text-sm font-medium">تاريخ البدء</label>
+                            <input type="date" id="startDate" value={yearData.startDate} onChange={e => setYearData({...yearData, startDate: e.target.value})} className="input-style w-full mt-1" />
+                        </div>
+                        <div>
+                            <label htmlFor="endDate" className="block text-sm font-medium">تاريخ الانتهاء</label>
+                            <input type="date" id="endDate" value={yearData.endDate} onChange={e => setYearData({...yearData, endDate: e.target.value})} className="input-style w-full mt-1" />
+                        </div>
+                    </div>
+                </div>
+
+                 {/* Section: General Settings */}
+                 <div className="border-b dark:border-gray-700 pb-6">
+                    <h2 className="text-lg font-semibold mb-4">إعدادات عامة</h2>
+                     <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            id="allowNegativeStock"
+                            checked={genSettings.allowNegativeStock}
+                            onChange={(e) => setGenSettings(p => ({...p, allowNegativeStock: e.target.checked}))}
+                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <label htmlFor="allowNegativeStock" className="mr-2 block text-sm text-gray-900 dark:text-gray-200">
+                            السماح بالبيع من رصيد سالب
+                        </label>
+                    </div>
+                </div>
+
+                {/* Section: Invoice Settings */}
+                <div className="border-b dark:border-gray-700 pb-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg font-semibold">إعدادات الفاتورة</h2>
+                        <div className="flex gap-2">
+                             <button type="button" onClick={() => setIsCustomizerOpen(true)} className="flex items-center gap-2 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-200 dark:hover:bg-blue-900">
+                                <PencilSquareIcon className="w-4 h-4" />
+                                تخصيص تصميم الفاتورة
+                            </button>
+                             <button type="button" onClick={() => setIsPreviewOpen(true)} className="flex items-center gap-2 px-3 py-1 text-sm bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+                                <EyeIcon className="w-4 h-4" />
+                                معاينة
+                            </button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-sm font-medium">شعار الشركة</label>
+                           <div className="mt-1 flex items-center gap-4">
+                               <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center overflow-hidden">
+                                   {printSettingsData.logo ? <img src={printSettingsData.logo} alt="logo" className="max-w-full max-h-full object-contain" /> : <span className="text-xs text-gray-500">لا يوجد شعار</span>}
+                               </div>
+                               <div className="space-y-2">
+                                    <label htmlFor="logoUpload" className="cursor-pointer flex items-center gap-2 px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500">
+                                       <UploadIcon className="w-4 h-4" />
+                                       رفع شعار
+                                   </label>
+                                   <input type="file" id="logoUpload" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                                   {printSettingsData.logo && (
+                                       <button type="button" onClick={handleRemoveLogo} className="flex items-center gap-2 px-3 py-1 text-sm bg-red-100 text-red-800 rounded-md hover:bg-red-200 dark:bg-red-900/50 dark:text-red-200 dark:hover:bg-red-900">
+                                            <TrashIcon className="w-4 h-4" />
+                                            إزالة
+                                       </button>
+                                   )}
+                               </div>
+                           </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex justify-end">
+                    <button type="submit" className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">
+                        حفظ الإعدادات العامة
+                    </button>
+                </div>
+            </form>
+            
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">إدارة المستخدمين</h2>
-                    <button type="button" onClick={() => setAddUserModalOpen(true)} className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">إضافة مستخدم</button>
+                    <h2 className="text-lg font-semibold">إدارة المستخدمين</h2>
+                    <button onClick={() => setAddUserModalOpen(true)} className="btn-primary-small">إضافة مستخدم</button>
                 </div>
-                <DataTable columns={userColumns} data={users} actions={['edit', 'archive']} onEdit={handleEditUser} onArchive={handleArchiveUser} searchableColumns={['name', 'username', 'role']} />
+                <DataTable 
+                    columns={userColumns}
+                    data={users}
+                    actions={['edit', 'archive']}
+                    onEdit={handleEditUser}
+                    onArchive={handleArchiveUser}
+                />
             </div>
 
             <BackupAndRestore />
-            
-            <form onSubmit={handleSaveAllSettings}>
-                <div className="space-y-8">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">إعدادات المخزون</h2>
-                        <div className="pt-4">
-                            <div className="flex items-center">
-                                <input
-                                    type="checkbox"
-                                    id="allowNegativeStock"
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                    checked={genSettings.allowNegativeStock}
-                                    onChange={(e) => setGenSettings(p => ({ ...p, allowNegativeStock: e.target.checked }))}
-                                />
-                                <label htmlFor="allowNegativeStock" className="mr-3 block text-sm font-medium text-gray-900 dark:text-gray-100">
-                                    السماح بالبيع من رصيد سالب
-                                </label>
-                            </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                                تحذير: تفعيل هذا الخيار قد يؤدي إلى عدم دقة في تقارير المخزون والتكلفة، لكنه قد يكون مفيداً في حال بيع البضاعة قبل تسجيل فواتير شرائها.
-                            </p>
-                        </div>
-                    </div>
-
-                    <PrintSettingsPage />
-
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                        <div className="flex justify-between items-center mb-4">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">إعدادات تصميم الفواتير</h2>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                    قم بتصميم شكل الفاتورة ليعكس هوية علامتك التجارية.
-                                </p>
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsPreviewOpen(true)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
-                                    >
-                                    <EyeIcon className="w-5 h-5" />
-                                    <span>معاينة الفاتورة</span>
-                                </button>
-                                <button
-                                type="button"
-                                onClick={() => setIsCustomizerOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold"
-                                >
-                                <PencilSquareIcon className="w-5 h-5" />
-                                <span>تخصيص قالب الفاتورة</span>
-                                </button>
-                            </div>
-                        </div>
-                        <div className="border-t dark:border-gray-700 mt-4 pt-4">
-                            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">شعار الشركة</h3>
-                            <div className="flex items-start gap-4 mt-2">
-                                <div className="w-full">
-                                    <input type="file" id="logoUpload" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                                    <label htmlFor="logoUpload" className="cursor-pointer flex items-center justify-center w-full h-32 border-2 border-dashed rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                        {printSettingsData.logo ? (
-                                            <div className="flex items-center justify-center gap-4 h-full w-full p-2">
-                                                <div className="flex-shrink-0 h-full flex items-center justify-center">
-                                                    <img 
-                                                        src={printSettingsData.logo} 
-                                                        alt="شعار الشركة" 
-                                                        style={{ height: `${printSettingsData.logoSize}px`, width: 'auto', maxHeight: '100%' }}
-                                                        className="object-contain" 
-                                                    />
-                                                </div>
-                                                <span className="text-gray-500 hidden sm:block flex-grow text-center">لتغيير الشعار، انقر هنا أو اسحب صورة جديدة</span>
-                                            </div>
-                                        ) : (
-                                            <div className="text-center">
-                                                <UploadIcon className="w-8 h-8 text-gray-400 mx-auto" />
-                                                <span className="mt-2 text-sm text-gray-500">انقر لرفع شعار الشركة</span>
-                                                <p className="text-xs text-gray-400">PNG, JPG, SVG</p>
-                                            </div>
-                                        )}
-                                    </label>
-                                    {printSettingsData.logo && (
-                                        <div className="mt-4">
-                                            <label htmlFor="logoSize" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                حجم الشعار: <span className="font-mono">{printSettingsData.logoSize}px</span>
-                                            </label>
-                                            <input 
-                                                id="logoSize"
-                                                type="range" 
-                                                min="30" 
-                                                max="200" 
-                                                value={printSettingsData.logoSize} 
-                                                onChange={e => setPrintSettingsData(p => ({...p, logoSize: Number(e.target.value)}))} 
-                                                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700" 
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                                {printSettingsData.logo && (
-                                    <button type="button" onClick={handleRemoveLogo} className="flex flex-col items-center text-red-500 hover:text-red-700 pt-1">
-                                        <TrashIcon className="w-6 h-6" />
-                                        <span className="text-xs">إزالة</span>
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">معلومات الشركة</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">اسم الشركة</label>
-                                <input type="text" id="companyName" value={companyData.name} onChange={e => setCompanyData({...companyData, name: e.target.value})} className="mt-1 block w-full input-style" />
-                            </div>
-                            <div>
-                                <label htmlFor="companyPhone" className="block text-sm font-medium text-gray-700 dark:text-gray-300">رقم الهاتف</label>
-                                <input type="text" id="companyPhone" value={companyData.phone} onChange={e => setCompanyData({...companyData, phone: e.target.value})} className="mt-1 block w-full input-style" />
-                            </div>
-                            <div className="md:col-span-2">
-                                <label htmlFor="companyAddress" className="block text-sm font-medium text-gray-700 dark:text-gray-300">العنوان</label>
-                                <input type="text" id="companyAddress" value={companyData.address} onChange={e => setCompanyData({...companyData, address: e.target.value})} className="mt-1 block w-full input-style" />
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">السنة المالية</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300">تاريخ البدء</label>
-                                <input type="date" id="startDate" value={yearData.startDate} onChange={e => setYearData({...yearData, startDate: e.target.value})} className="mt-1 block w-full input-style" />
-                            </div>
-                            <div>
-                                <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300">تاريخ الانتهاء</label>
-                                <input type="date" id="endDate" value={yearData.endDate} onChange={e => setYearData({...yearData, endDate: e.target.value})} className="mt-1 block w-full input-style" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex justify-end sticky bottom-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm p-4 rounded-t-lg shadow-top">
-                        <button type="submit" className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-semibold">حفظ الإعدادات العامة</button>
-                    </div>
-                </div>
-            </form>
+            <PrintSettingsPage />
 
             <Modal isOpen={isAddUserModalOpen} onClose={() => setAddUserModalOpen(false)} title="إضافة مستخدم جديد">
                 <AddUserForm onClose={() => setAddUserModalOpen(false)} />
             </Modal>
+
             {selectedUser && (
                 <Modal isOpen={isEditUserModalOpen} onClose={() => setEditUserModalOpen(false)} title={`تعديل المستخدم: ${selectedUser.name}`}>
                     <EditUserForm user={selectedUser} onClose={() => setEditUserModalOpen(false)} />
                 </Modal>
             )}
+
             {selectedUser && (
-                <ConfirmationModal isOpen={isArchiveUserModalOpen} onClose={() => setArchiveUserModalOpen(false)} onConfirm={confirmArchiveUser} title="تأكيد الأرشفة" message={`هل أنت متأكد من رغبتك في أرشفة المستخدم "${selectedUser.name}"؟ لا يمكنك أرشفة المستخدم الحالي.`}/>
+                <ConfirmationModal
+                  isOpen={isArchiveUserModalOpen}
+                  onClose={() => setArchiveUserModalOpen(false)}
+                  onConfirm={confirmArchiveUser}
+                  title="تأكيد الأرشفة"
+                  message={`هل أنت متأكد من رغبتك في أرشفة المستخدم "${selectedUser.name}"؟`}
+                />
             )}
             
-            <Modal isOpen={isCustomizerOpen} onClose={() => setIsCustomizerOpen(false)} title="تخصيص قالب الفاتورة" size="4xl">
-              <InvoiceCustomizer onClose={() => setIsCustomizerOpen(false)} />
+            <Modal isOpen={isCustomizerOpen} onClose={() => setIsCustomizerOpen(false)} title="تخصيص تصميم الفاتورة" size="4xl">
+                <InvoiceCustomizer onClose={() => setIsCustomizerOpen(false)} />
             </Modal>
             
             {isPreviewOpen && (
-              <InvoiceView 
-                isOpen={isPreviewOpen}
-                onClose={() => setIsPreviewOpen(false)}
-                sale={sampleSaleForPreview}
-              />
+                 <InvoiceView isOpen={isPreviewOpen} onClose={() => setIsPreviewOpen(false)} sale={sampleSaleForPreview} />
             )}
         </div>
     );

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useContext } from 'react';
+import React, { useState, useMemo, useContext, useEffect, useCallback } from 'react';
 import Modal from '../shared/Modal';
 import { DataContext } from '../../context/DataContext';
 import type { Account, TreasuryTransaction } from '../../types';
@@ -7,16 +7,10 @@ import AddTreasuryTransactionForm from './AddTreasuryTransactionForm';
 import TransferFundsForm from './TransferFundsForm';
 import TreasuryVoucherView from './TreasuryVoucherView';
 import ConfirmationModal from '../shared/ConfirmationModal';
-import { PencilIcon } from '../icons/PencilIcon';
+import { PencilIcon, BanknotesIcon, ArrowTrendingDownIcon, ArrowTrendingUpIcon } from '../icons';
 import EditTreasuryTransactionForm from './EditTreasuryTransactionForm';
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(amount);
-};
-
-const AddIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 me-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>;
-const TransferIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 me-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>;
-
+import Card from '../shared/Card';
+import DataTable from '../shared/DataTable';
 
 const findAccountById = (accounts: Account[], id: string): Account | null => {
     for (const account of accounts) {
@@ -29,216 +23,234 @@ const findAccountById = (accounts: Account[], id: string): Account | null => {
     return null;
 }
 
+const DateFilterButton: React.FC<{ label: string; filter: string | null; activeFilter: string | null; onClick: (f: string | null) => void }> = ({ label, filter, activeFilter, onClick }) => {
+    const isActive = filter === activeFilter;
+    return (
+        <button
+            onClick={() => onClick(filter)}
+            className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                isActive
+                    ? 'bg-blue-500 text-white font-semibold shadow'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+            }`}
+        >
+            {label}
+        </button>
+    );
+};
+
 const Treasury: React.FC = () => {
-    const { treasuriesList, treasury: treasuryTransactions, chartOfAccounts, customers, suppliers, showToast, updateTreasuryTransaction } = useContext(DataContext);
+    const { treasuriesList, treasury: treasuryTransactions, chartOfAccounts, customers, suppliers, showToast, financialYear } = useContext(DataContext);
     const treasuries = useMemo(() => treasuriesList.filter((t: any) => !t.isTotal), [treasuriesList]);
-    const [selectedTreasuryId, setSelectedTreasuryId] = useState<string | null>(treasuries[0]?.id || null);
+
     const [isAddTreasuryModalOpen, setAddTreasuryModalOpen] = useState(false);
-    const [modalType, setModalType] = useState<'deposit' | 'withdrawal' | 'transfer' | null>(null);
+    const [isAddTransactionModalOpen, setAddTransactionModalOpen] = useState(false);
+    const [isTransferModalOpen, setTransferModalOpen] = useState(false);
+    const [isEditTransactionModalOpen, setEditTransactionModalOpen] = useState(false);
+    const [transactionType, setTransactionType] = useState<'سند قبض' | 'سند صرف'>('سند قبض');
+    
     const [transactionToView, setTransactionToView] = useState<TreasuryTransaction | null>(null);
     const [transactionToEdit, setTransactionToEdit] = useState<TreasuryTransaction | null>(null);
-    
-    const treasuryBalances: { [key: string]: number } = useMemo(() => {
-        const balances: { [key: string]: number } = {};
-        treasuries.forEach((t: Account) => {
-            balances[t.id] = t.balance || 0
-        });
-        return balances;
-    }, [treasuries]);
 
-    const totalBalance = Object.values(treasuryBalances).reduce((sum, bal) => sum + bal, 0);
+    const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>('');
+    const [activeDateFilter, setActiveDateFilter] = useState<string | null>('today');
+    const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+    const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
 
-    const selectedTreasuryTransactions = useMemo(() => {
-        if (!selectedTreasuryId) return [];
-
-        const treasuryNode = treasuriesList.find((t: any) => t.id === selectedTreasuryId);
-        if (!treasuryNode) return [];
-        let currentBalance = treasuryNode.balance || 0;
-
-        const filteredAndSortedTxsDesc = treasuryTransactions
-            .filter((tx: any) => tx.treasuryAccountId === selectedTreasuryId && !tx.isArchived)
-            .sort((a: any,b: any) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id));
-
-        return filteredAndSortedTxsDesc.map((tx: any) => {
-            const txWithDetails = {
-                ...tx,
-                balance: currentBalance,
-                debit: tx.type === 'سند صرف' ? Math.abs(tx.amount) : 0,
-                credit: tx.type === 'سند قبض' ? Math.abs(tx.amount) : 0,
-            };
-            currentBalance -= tx.amount; // work backwards to get previous balance
-            return txWithDetails;
-        });
-    }, [treasuryTransactions, selectedTreasuryId, treasuriesList]);
-
-
-    const getContraAccountName = (tx: TreasuryTransaction): string => {
-        if (tx.partyType === 'account' && tx.partyId) {
-            const account = findAccountById(chartOfAccounts, tx.partyId);
-            return account ? account.name : tx.accountName || 'حساب محذوف';
-        }
-        if (tx.partyType === 'customer' && tx.partyId) {
-            const customer = customers.find((c: any) => c.id === tx.partyId);
-            return customer ? customer.name : 'عميل محذوف';
-        }
-        if (tx.partyType === 'supplier' && tx.partyId) {
-            const supplier = suppliers.find((s: any) => s.id === tx.partyId);
-            return supplier ? supplier.name : 'مورد محذوف';
-        }
-        if (tx.description.includes('تحويل')) return 'تحويل داخلي';
-        return 'غير محدد';
+    const handleAddTransaction = (type: 'سند قبض' | 'سند صرف') => {
+        setTransactionType(type);
+        setAddTransactionModalOpen(true);
     };
-
-    const handleEditSuccess = () => {
+    
+    const handleTransactionAdded = (newTransaction: TreasuryTransaction) => {
+        setAddTransactionModalOpen(false);
+        setTransactionToView(newTransaction);
+    };
+    
+    const handleTransactionEdited = () => {
+        setEditTransactionModalOpen(false);
         setTransactionToEdit(null);
         showToast('تم تعديل السند بنجاح.');
     };
-
-    const handleTransactionAdded = (newTransaction: TreasuryTransaction) => {
-        setModalType(null);
-        setTransactionToView(newTransaction);
+    
+    const handleEdit = (transaction: TreasuryTransaction) => {
+        setTransactionToEdit(transaction);
+        setEditTransactionModalOpen(true);
     };
 
+    const setDateRange = useCallback((filter: string | null) => {
+        const today = new Date();
+        const isoString = (d: Date) => d.toISOString().split('T')[0];
+        
+        let start = '';
+        let end = isoString(today);
+    
+        switch(filter) {
+            case 'today':
+                start = isoString(today);
+                break;
+            case 'yesterday':
+                const yesterday = new Date(today);
+                yesterday.setDate(today.getDate() - 1);
+                start = isoString(yesterday);
+                end = isoString(yesterday);
+                break;
+            case 'last7':
+                const last7 = new Date(today);
+                last7.setDate(today.getDate() - 6);
+                start = isoString(last7);
+                break;
+            case 'thisMonth':
+                const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                start = isoString(firstDayOfMonth);
+                end = isoString(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+                break;
+            case 'all':
+            default:
+                start = financialYear.startDate;
+                end = financialYear.endDate;
+                break;
+        }
+        setStartDate(start);
+        setEndDate(end);
+        setActiveDateFilter(filter);
+    }, [financialYear]);
+
+    useEffect(() => {
+        setDateRange('today');
+    }, [setDateRange]);
+    
+    const handleManualDateChange = (type: 'start' | 'end', value: string) => {
+      if (type === 'start') setStartDate(value);
+      if (type === 'end') setEndDate(value);
+      setActiveDateFilter(null); // Clear quick filter when manual date is set
+    };
+
+    const { openingBalance, transactionsForPeriod, closingBalance, totalIn, totalOut } = useMemo(() => {
+        // Filter all relevant transactions once
+        const allTxForTreasury = treasuryTransactions.filter((t: TreasuryTransaction) => 
+            !t.isArchived && (!selectedTreasuryId || t.treasuryAccountId === selectedTreasuryId)
+        );
+    
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+    
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+    
+        // 1. Calculate opening balance by summing all transactions *before* the start date.
+        const openingBalanceForPeriod = allTxForTreasury
+            .filter((tx: TreasuryTransaction) => new Date(tx.date) < start)
+            .reduce((sum, tx) => sum + tx.amount, 0);
+    
+        // 2. Filter transactions for the selected period.
+        const transactionsForPeriod = allTxForTreasury
+            .filter((t: TreasuryTransaction) => {
+                const txDate = new Date(t.date);
+                return txDate >= start && txDate <= end;
+            })
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+        // 3. Calculate running balance and totals by iterating forward.
+        let runningBalance = openingBalanceForPeriod;
+        let totalIn = 0;
+        let totalOut = 0;
+    
+        const processedTransactions = transactionsForPeriod.map(tx => {
+            runningBalance += tx.amount;
+            const credit = tx.amount > 0 ? tx.amount : 0;
+            const debit = tx.amount < 0 ? Math.abs(tx.amount) : 0;
+            totalIn += credit;
+            totalOut += debit;
+            return { ...tx, credit, debit, balance: runningBalance };
+        });
+    
+        return {
+            openingBalance: openingBalanceForPeriod,
+            transactionsForPeriod: processedTransactions.reverse(), // Show most recent first for display
+            closingBalance: runningBalance,
+            totalIn,
+            totalOut
+        };
+    }, [treasuryTransactions, selectedTreasuryId, startDate, endDate]);
+    
+    const columns = useMemo(() => [
+        { header: 'التاريخ', accessor: 'date', sortable: true },
+        { header: 'رقم السند', accessor: 'id', sortable: true },
+        { header: 'الخزينة', accessor: 'treasuryAccountName', sortable: true },
+        { header: 'البيان', accessor: 'description' },
+        { header: 'وارد', accessor: 'credit', render: (row: any) => row.credit > 0 ? row.credit.toLocaleString() : '-' },
+        { header: 'صادر', accessor: 'debit', render: (row: any) => row.debit > 0 ? row.debit.toLocaleString() : '-' },
+        { header: 'الرصيد', accessor: 'balance', render: (row: any) => row.balance.toLocaleString() },
+    ], []);
+    
     return (
-        <div className="flex flex-col h-full">
-             <Modal isOpen={isAddTreasuryModalOpen} onClose={() => setAddTreasuryModalOpen(false)} title="إضافة خزينة جديدة">
-                <AddTreasuryForm onClose={() => setAddTreasuryModalOpen(false)} />
-            </Modal>
-
-            {modalType && (modalType === 'deposit' || modalType === 'withdrawal') && (
-                <Modal 
-                    isOpen={!!modalType} 
-                    onClose={() => setModalType(null)} 
-                    title={modalType === 'deposit' ? 'إضافة نقدية (سند قبض عام)' : 'صرف نقدية (سند صرف عام)'}
-                >
-                    <AddTreasuryTransactionForm 
-                        defaultType={modalType === 'deposit' ? 'سند قبض' : 'سند صرف'}
-                        onClose={() => setModalType(null)}
-                        onSuccess={handleTransactionAdded}
-                    />
-                </Modal>
-            )}
-
-            {modalType === 'transfer' && selectedTreasuryId && (
-                <Modal 
-                    isOpen={modalType === 'transfer'} 
-                    onClose={() => setModalType(null)} 
-                    title="تحويل أموال بين الخزائن"
-                >
-                    <TransferFundsForm 
-                        fromTreasuryId={selectedTreasuryId}
-                        onClose={() => setModalType(null)}
-                    />
-                </Modal>
-            )}
-
-            {transactionToView && (
-                <TreasuryVoucherView 
-                    isOpen={!!transactionToView}
-                    onClose={() => setTransactionToView(null)}
-                    transaction={transactionToView}
-                />
-            )}
-            
-            {transactionToEdit && (
-                <Modal 
-                    isOpen={!!transactionToEdit}
-                    onClose={() => setTransactionToEdit(null)}
-                    title={`تعديل السند رقم: ${transactionToEdit.id}`}
-                >
-                   <EditTreasuryTransactionForm
-                        transaction={transactionToEdit}
-                        onClose={() => setTransactionToEdit(null)}
-                        onSuccess={handleEditSuccess}
-                   />
-                </Modal>
-            )}
-            
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">إدارة الخزينة</h2>
-                <div className="text-lg text-left bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg">
-                    <span className="font-semibold text-gray-600 dark:text-gray-300">إجمالي الرصيد: </span>
-                    <span className="font-bold text-blue-700 dark:text-blue-300">{formatCurrency(totalBalance)}</span>
+        <div className="space-y-6">
+             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div className="flex-1">
+                        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">كشف حساب الخزينة</h2>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">تتبع جميع الحركات المالية في خزائنك.</p>
+                    </div>
+                    <div className="flex-shrink-0 flex flex-wrap gap-2">
+                         <button onClick={() => handleAddTransaction('سند قبض')} className="btn-primary-small">سند قبض</button>
+                         <button onClick={() => handleAddTransaction('سند صرف')} className="btn-secondary-small">سند صرف</button>
+                         <button onClick={() => setAddTreasuryModalOpen(true)} className="btn-secondary-small">إضافة خزينة</button>
+                    </div>
                 </div>
             </div>
 
-            <div className="flex flex-col gap-6 flex-1 overflow-hidden">
-                <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg flex-shrink-0">
-                    <div className="flex justify-between items-center mb-4">
-                         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">قائمة الخزائن</h3>
-                         <button onClick={() => setAddTreasuryModalOpen(true)} className="flex items-center text-sm bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600">
-                           <AddIcon /> <span>جديدة</span>
-                        </button>
-                    </div>
-                    <div className="flex flex-wrap gap-4">
-                        {treasuries.map((treasury: Account) => (
-                             <div
-                                key={treasury.id}
-                                onClick={() => setSelectedTreasuryId(treasury.id)}
-                                className={`p-4 rounded-lg cursor-pointer transition-all duration-200 border-2 w-64 flex-shrink-0 ${selectedTreasuryId === treasury.id ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-500 shadow-sm' : 'bg-white dark:bg-gray-800 border-transparent hover:bg-gray-100 dark:hover:bg-gray-700 hover:shadow-md'}`}
-                            >
-                                <p className={`font-semibold text-lg ${selectedTreasuryId === treasury.id ? 'text-blue-800 dark:text-blue-200' : 'text-gray-800 dark:text-gray-200'}`}>{treasury.name}</p>
-                                <p className="font-bold text-2xl text-gray-900 dark:text-white text-left mt-2">{formatCurrency(treasuryBalances[treasury.id] || 0)}</p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card title="رصيد أول المدة" value={openingBalance.toLocaleString()} icon={<BanknotesIcon className="text-gray-500"/>} />
+                <Card title="إجمالي الوارد" value={totalIn.toLocaleString()} icon={<ArrowTrendingUpIcon className="text-green-500"/>} />
+                <Card title="إجمالي الصادر" value={totalOut.toLocaleString()} icon={<ArrowTrendingDownIcon className="text-red-500"/>} />
+                <Card title="الرصيد الختامي" value={closingBalance.toLocaleString()} icon={<BanknotesIcon className="text-blue-500"/>} />
+            </div>
 
-                <div className="flex-1 overflow-hidden bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col">
-                    {selectedTreasuryId ? (
-                        <>
-                            <div className="flex justify-between items-center mb-4 pb-3 border-b dark:border-gray-700 flex-wrap gap-2">
-                                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">
-                                    حركات: {treasuries.find((t: Account) => t.id === selectedTreasuryId)?.name}
-                                </h3>
-                                <div className="flex space-x-2 space-x-reverse">
-                                    <button onClick={() => setModalType('deposit')} className="flex items-center bg-green-500 text-white px-3 py-2 rounded-lg hover:bg-green-600 text-sm font-semibold">
-                                        <AddIcon /> إضافة نقدية
-                                    </button>
-                                     <button onClick={() => setModalType('transfer')} className="flex items-center bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 text-sm font-semibold">
-                                        <TransferIcon /> تحويل أموال
-                                    </button>
-                                    <button onClick={() => setModalType('withdrawal')} className="flex items-center bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 text-sm font-semibold">
-                                        <AddIcon /> صرف نقدية
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="flex-1 overflow-y-auto">
-                                <table className="w-full text-sm text-right text-gray-500 dark:text-gray-400">
-                                  <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300 sticky top-0">
-                                      <tr>
-                                        {['التاريخ', 'الوصف', 'الحساب المقابل', 'منصرف', 'وارد', 'الرصيد', 'إجراء'].map(h => <th key={h} className="px-6 py-3">{h}</th>)}
-                                      </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedTreasuryTransactions.map((tx) => (
-                                        <tr key={tx.id} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400" onClick={() => setTransactionToView(tx)}>{tx.date}</td>
-                                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100" onClick={() => setTransactionToView(tx)}>{tx.description}</td>
-                                            <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium" onClick={() => setTransactionToView(tx)}>{getContraAccountName(tx)}</td>
-                                            <td className="px-6 py-4 text-sm text-red-600 dark:text-red-400 font-semibold" onClick={() => setTransactionToView(tx)}>{tx.debit > 0 ? formatCurrency(tx.debit) : '-'}</td>
-                                            <td className="px-6 py-4 text-sm text-green-600 dark:text-green-400 font-semibold" onClick={() => setTransactionToView(tx)}>{tx.credit > 0 ? formatCurrency(tx.credit) : '-'}</td>
-                                            <td className="px-6 py-4 text-sm font-bold text-gray-800 dark:text-gray-200" onClick={() => setTransactionToView(tx)}>{formatCurrency(tx.balance)}</td>
-                                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                                                <button onClick={() => setTransactionToEdit(tx)} className="text-gray-400 hover:text-green-500" title="تعديل">
-                                                    <PencilIcon className="w-5 h-5"/>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                            <h3 className="mt-4 text-xl font-semibold text-gray-700">اختر خزينة</h3>
-                            <p className="mt-1 text-gray-500">اختر خزينة من القائمة لعرض حركاتها.</p>
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
+                 <div className="space-y-4 p-4 border rounded-lg dark:border-gray-700 bg-gray-50 dark:bg-gray-700/20">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label htmlFor="treasuryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">فلترة حسب الخزينة</label>
+                            <select id="treasuryFilter" value={selectedTreasuryId} onChange={e => setSelectedTreasuryId(e.target.value)} className="input-style w-full">
+                                <option value="">جميع الخزائن</option>
+                                {treasuries.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
                         </div>
-                    )}
+                        <div>
+                            <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">من تاريخ</label>
+                            <input type="date" id="startDate" value={startDate} onChange={e => handleManualDateChange('start', e.target.value)} className="input-style w-full" />
+                        </div>
+                        <div>
+                            <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">إلى تاريخ</label>
+                            <input type="date" id="endDate" value={endDate} onChange={e => handleManualDateChange('end', e.target.value)} className="input-style w-full" />
+                        </div>
+                    </div>
+                     <div className="flex flex-wrap items-center gap-2 pt-2">
+                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-2">نطاقات سريعة:</span>
+                         <DateFilterButton label="اليوم" filter="today" activeFilter={activeDateFilter} onClick={setDateRange} />
+                         <DateFilterButton label="الأمس" filter="yesterday" activeFilter={activeDateFilter} onClick={setDateRange} />
+                         <DateFilterButton label="آخر 7 أيام" filter="last7" activeFilter={activeDateFilter} onClick={setDateRange} />
+                         <DateFilterButton label="هذا الشهر" filter="thisMonth" activeFilter={activeDateFilter} onClick={setDateRange} />
+                         <DateFilterButton label="عرض الكل" filter="all" activeFilter={activeDateFilter} onClick={setDateRange} />
+                     </div>
                 </div>
             </div>
+
+            <DataTable 
+                columns={columns} 
+                data={transactionsForPeriod}
+                actions={['view', 'edit']}
+                onView={(row) => setTransactionToView(row)}
+                onEdit={handleEdit}
+                searchableColumns={['id', 'description', 'treasuryAccountName']}
+            />
+    
+            {isAddTreasuryModalOpen && <Modal isOpen={isAddTreasuryModalOpen} onClose={() => setAddTreasuryModalOpen(false)} title="إضافة خزينة جديدة"><AddTreasuryForm onClose={() => setAddTreasuryModalOpen(false)} /></Modal>}
+            {isAddTransactionModalOpen && <Modal isOpen={isAddTransactionModalOpen} onClose={() => setAddTransactionModalOpen(false)} title={`إضافة ${transactionType}`}><AddTreasuryTransactionForm onClose={() => setAddTransactionModalOpen(false)} onSuccess={handleTransactionAdded} defaultType={transactionType} /></Modal>}
+            {isTransferModalOpen && <Modal isOpen={isTransferModalOpen} onClose={() => setTransferModalOpen(false)} title="تحويل أموال بين الخزائن"><TransferFundsForm fromTreasuryId={selectedTreasuryId} onClose={() => setTransferModalOpen(false)} /></Modal>}
+            {transactionToView && <TreasuryVoucherView isOpen={!!transactionToView} onClose={() => setTransactionToView(null)} transaction={transactionToView} />}
+            {transactionToEdit && isEditTransactionModalOpen && <Modal isOpen={isEditTransactionModalOpen} onClose={() => setEditTransactionModalOpen(false)} title="تعديل سند"><EditTreasuryTransactionForm transaction={transactionToEdit} onClose={() => setEditTransactionModalOpen(false)} onSuccess={handleTransactionEdited} /></Modal>}
         </div>
     );
 };

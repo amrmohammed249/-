@@ -109,7 +109,7 @@ const SupplierProfile: React.FC = () => {
                 </tr>
               ))}
               <tr className="bg-gray-100 dark:bg-gray-700 font-semibold">
-                  <td colSpan={2} className="px-4 py-2">الرصيد الافتتاحي</td>
+                  <td colSpan={2} className="px-4 py-2">الرصيد الافتتاحي الأولي</td>
                   <td colSpan={3} className="px-4 py-2 font-mono">{openingBalance.toLocaleString()}</td>
                   <td></td>
               </tr>

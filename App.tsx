@@ -29,7 +29,6 @@ import { DataContext } from './context/DataContext';
 import Toast from './components/shared/Toast';
 import ActivityLog from './components/activity/ActivityLog';
 import Archive from './components/archive/Archive';
-import FixedAssets from './components/fixedassets/FixedAssets';
 import { WindowContext } from './context/WindowContext';
 import ActiveWindowsBar from './components/layout/ActiveWindowsBar';
 import { ActiveWindow } from './types';

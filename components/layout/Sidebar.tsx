@@ -15,7 +15,6 @@ import { ClipboardDocumentListIcon } from '../icons/ClipboardDocumentListIcon';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
 import { CircleStackIcon } from '../icons/CircleStackIcon';
-import { OfficeBuildingIcon } from '../icons/OfficeBuildingIcon';
 import { ArrowUturnLeftIcon } from '../icons/ArrowUturnLeftIcon';
 import { XIcon } from '../icons/XIcon';
 import { ClipboardDocumentCheckIcon } from '../icons/ClipboardDocumentCheckIcon';

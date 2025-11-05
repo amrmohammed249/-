@@ -18,37 +18,45 @@ const CustomerProfile: React.FC = () => {
     const party = customers.find((c: any) => c.id === id);
     if (!party) return { statementData: [], party: null, openingBalance: 0 };
 
-    const salesTx = sales.filter((t: Sale) => t.customer === party.name).map((t: Sale) => ({
-        date: t.date, id: t.id, description: `فاتورة مبيعات #${t.id}`,
-        debit: t.total, credit: 0, type: 'sale', original: t
-    }));
+    const allTx = [
+        ...sales.filter((t: Sale) => t.customer === party.name && !t.isArchived).map((t: Sale) => ({
+            date: t.date, id: t.id, description: `فاتورة مبيعات #${t.id}`,
+            debit: t.total, credit: 0, type: 'sale', original: t
+        })),
+        ...saleReturns.filter((t: SaleReturn) => t.customer === party.name && !t.isArchived).map((t: SaleReturn) => ({
+            date: t.date, id: t.id, description: `مرتجع مبيعات #${t.id}`,
+            debit: 0, credit: t.total, type: 'saleReturn', original: t
+        })),
+        ...treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === party.id && !t.isArchived).map((t: TreasuryTransaction) => ({
+            date: t.date, id: t.id, description: t.description,
+            debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0,
+            credit: t.type === 'سند قبض' ? Math.abs(t.amount) : 0,
+            type: 'treasury', original: t
+        }))
+    ];
 
-    const returnsTx = saleReturns.filter((t: SaleReturn) => t.customer === party.name).map((t: SaleReturn) => ({
-        date: t.date, id: t.id, description: `مرتجع مبيعات #${t.id}`,
-        debit: 0, credit: t.total, type: 'saleReturn', original: t
-    }));
-
-    const treasuryTx = treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === party.id).map((t: TreasuryTransaction) => ({
-        date: t.date, id: t.id, description: t.description,
-        debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0,
-        credit: t.type === 'سند قبض' ? t.amount : 0,
-        type: 'treasury', original: t
-    }));
-
-    const allTx = [...salesTx, ...returnsTx, ...treasuryTx].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    const totalDebit = allTx.reduce((sum, tx) => sum + tx.debit, 0);
-    const totalCredit = allTx.reduce((sum, tx) => sum + tx.credit, 0);
-    const openingBalance = party.balance - (totalDebit - totalCredit);
+    // 1. Calculate the initial opening balance (at time zero) by working backwards from the current balance.
+    const totalChange = allTx.reduce((sum, tx) => sum + (tx.debit - tx.credit), 0);
+    const openingBalance = party.balance - totalChange;
     
-    let runningBalance = openingBalance;
-    const statementData = allTx.map(tx => {
-        runningBalance += (tx.debit - tx.credit);
-        return { ...tx, balance: runningBalance };
-    }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // 2. Sort all transactions chronologically.
+    const sortedTx = allTx.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    return { statementData, party, openingBalance };
+    // 3. Calculate running balance starting from the true opening balance.
+    let runningBalance = openingBalance;
+    const statementWithBalance = sortedTx.map(tx => {
+        const change = tx.debit - tx.credit;
+        runningBalance += change;
+        return { ...tx, balance: runningBalance };
+    });
+
+    // 4. Sort for display (latest first)
+    const finalStatementData = statementWithBalance.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+
+    return { statementData: finalStatementData, party, openingBalance };
   }, [id, customers, sales, saleReturns, treasury]);
+
 
   if (!party) {
     return <div className="p-8 text-center">لم يتم العثور على العميل.</div>;

@@ -40,7 +40,7 @@ const DateFilterButton: React.FC<{ label: string; filter: string | null; activeF
 };
 
 const Treasury: React.FC = () => {
-    const { treasuriesList, treasury: treasuryTransactions, chartOfAccounts, customers, suppliers, showToast, financialYear } = useContext(DataContext);
+    const { treasuriesList, treasury: treasuryTransactions, chartOfAccounts, customers, suppliers, showToast, financialYear, totalCashBalance } = useContext(DataContext);
     const treasuries = useMemo(() => treasuriesList.filter((t: any) => !t.isTotal), [treasuriesList]);
 
     const [isAddTreasuryModalOpen, setAddTreasuryModalOpen] = useState(false);
@@ -126,32 +126,52 @@ const Treasury: React.FC = () => {
       setActiveDateFilter(null); // Clear quick filter when manual date is set
     };
 
+    const { currentActualBalance } = useMemo(() => {
+        if (selectedTreasuryId) {
+            const selectedTreasury = treasuriesList.find((t: any) => t.id === selectedTreasuryId);
+            return {
+                currentActualBalance: selectedTreasury?.balance || 0,
+            };
+        }
+        return {
+            currentActualBalance: totalCashBalance,
+        };
+    }, [selectedTreasuryId, treasuriesList, totalCashBalance]);
+
     const { openingBalance, transactionsForPeriod, closingBalance, totalIn, totalOut } = useMemo(() => {
-        // Filter all relevant transactions once
-        const allTxForTreasury = treasuryTransactions.filter((t: TreasuryTransaction) => 
-            !t.isArchived && (!selectedTreasuryId || t.treasuryAccountId === selectedTreasuryId)
-        );
-    
         const start = new Date(startDate);
         start.setHours(0, 0, 0, 0);
-    
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-    
-        // 1. Calculate opening balance by summing all transactions *before* the start date.
-        const openingBalanceForPeriod = allTxForTreasury
-            .filter((tx: TreasuryTransaction) => new Date(tx.date) < start)
+
+        const allTxForTreasury = treasuryTransactions.filter((t: TreasuryTransaction) => {
+            const accountMatch = !selectedTreasuryId || t.treasuryAccountId === selectedTreasuryId;
+            return accountMatch && !t.isArchived;
+        });
+
+        // 1. Calculate the change that occurred *after* the report's end date.
+        const postPeriodChange = allTxForTreasury
+            .filter((tx: TreasuryTransaction) => new Date(tx.date) > end)
             .reduce((sum, tx) => sum + tx.amount, 0);
-    
-        // 2. Filter transactions for the selected period.
+
+        // 2. The true closing balance for the report period is the current balance minus future changes.
+        const trueClosingBalance = currentActualBalance - postPeriodChange;
+
+        // 3. Filter transactions for the selected period.
         const transactionsForPeriod = allTxForTreasury
             .filter((t: TreasuryTransaction) => {
                 const txDate = new Date(t.date);
                 return txDate >= start && txDate <= end;
             })
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-        // 3. Calculate running balance and totals by iterating forward.
+
+        // 4. Calculate the net change within the period.
+        const periodNetChange = transactionsForPeriod.reduce((sum, tx) => sum + tx.amount, 0);
+
+        // 5. Calculate the opening balance by working backwards from the true closing balance.
+        const openingBalanceForPeriod = trueClosingBalance - periodNetChange;
+
+        // 6. Now, build the transaction list for display with correct running balances.
         let runningBalance = openingBalanceForPeriod;
         let totalIn = 0;
         let totalOut = 0;
@@ -168,11 +188,11 @@ const Treasury: React.FC = () => {
         return {
             openingBalance: openingBalanceForPeriod,
             transactionsForPeriod: processedTransactions.reverse(), // Show most recent first for display
-            closingBalance: runningBalance,
+            closingBalance: trueClosingBalance,
             totalIn,
             totalOut
         };
-    }, [treasuryTransactions, selectedTreasuryId, startDate, endDate]);
+    }, [treasuryTransactions, selectedTreasuryId, startDate, endDate, currentActualBalance]);
     
     const columns = useMemo(() => [
         { header: 'التاريخ', accessor: 'date', sortable: true },

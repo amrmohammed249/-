@@ -583,6 +583,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setToast({ show: true, message, type });
         setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
     }, []);
+
     
     // --- Data Persistence ---
 
@@ -609,11 +610,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             finalState.printSettings = { ...seedData.printSettingsData, ...loadedPrintSettings };
             finalState.financialYear = loadedData.financialYear || seedData.financialYearData;
             finalState.generalSettings = { ...seedData.generalSettingsData, ...(loadedData.generalSettings || {}) };
-            
-            // Migrate Chart of Accounts to ensure all required accounts exist
             const chart = loadedData.chartOfAccounts || [];
             finalState.chartOfAccounts = migrateChartOfAccounts(chart);
-
             finalState.sequences = { ...seedData.sequencesData, ...loadedData.sequences };
             finalState.unitDefinitions = loadedData.unitDefinitions || seedData.unitDefinitionsData;
             finalState.journal = loadedData.journal || [];
@@ -632,6 +630,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             finalState.activityLog = loadedData.activityLog || [];
             finalState.notifications = loadedData.notifications || [];
         }
+        
         dispatch({ type: 'SET_STATE', payload: finalState });
     }, []);
     
@@ -2272,135 +2271,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [data.sales, data.purchases]);
     const topCustomers = useMemo(() => [...data.customers].sort((a,b) => b.balance - a.balance).slice(0, 5), [data.customers]);
     
-    // One-time data correction for incorrect treasury transaction signs
-    useEffect(() => {
-        if (!isDataLoaded || !dataManager.activeDatasetKey) return;
-    
-        const migrationKey = `migration_treasury_sign_fix_v2_applied_for_${dataManager.activeDatasetKey}`;
-        if (localStorage.getItem(migrationKey)) {
-            return; // Migration already applied for this dataset
-        }
-    
-        // Check if migration is needed
-        const needsMigration = data.treasury.some((tx: TreasuryTransaction) => (tx.type === 'سند صرف' && tx.amount > 0) || (tx.type === 'سند قبض' && tx.amount < 0));
-    
-        if (needsMigration) {
-            console.log("MIGRATION: Incorrect treasury transaction signs detected. Applying fix and recalculating balances...");
-    
-            // 1. Correct the signs in the treasury data
-            const correctedTreasury = data.treasury.map((tx: TreasuryTransaction) => {
-                if (tx.type === 'سند صرف' && tx.amount > 0) {
-                    return { ...tx, amount: -tx.amount };
-                }
-                if (tx.type === 'سند قبض' && tx.amount < 0) {
-                    return { ...tx, amount: Math.abs(tx.amount) };
-                }
-                return tx;
-            });
-    
-            // 2. Recalculate all balances from scratch
-            const tempChart = resetAccountBalances(JSON.parse(JSON.stringify(data.chartOfAccounts)));
-            const tempCustomers = data.customers.map((c: Customer) => ({ ...c, balance: 0 }));
-            const tempSuppliers = data.suppliers.map((s: Supplier) => ({ ...s, balance: 0 }));
-            
-            // Re-apply all journal entries chronologically to rebuild Chart of Account balances
-            const sortedJournal = [...data.journal].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-            sortedJournal.forEach((entry: JournalEntry) => {
-                if (!entry.isArchived) {
-                    entry.lines.forEach((line: JournalLine) => {
-                        updateBalancesRecursively(tempChart, line.accountId, line.debit - line.credit);
-                    });
-                }
-            });
-    
-            // Re-calculate customer balances using corrected treasury data
-            tempCustomers.forEach(customer => {
-                const totalSales = data.sales.filter((s: Sale) => s.customer === customer.name && !s.isArchived).reduce((sum, s) => sum + s.total, 0);
-                const totalReturns = data.saleReturns.filter((sr: SaleReturn) => sr.customer === customer.name && !sr.isArchived).reduce((sum, sr) => sum + sr.total, 0);
-                const netPayments = correctedTreasury.filter(t => t.partyType === 'customer' && t.partyId === customer.id && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
-                customer.balance = totalSales - totalReturns - netPayments;
-            });
-            
-            // Re-calculate supplier balances using corrected treasury data
-            tempSuppliers.forEach(supplier => {
-                const totalPurchases = data.purchases.filter((p: Purchase) => p.supplier === supplier.name && !p.isArchived).reduce((sum, p) => sum + p.total, 0);
-                const totalReturns = data.purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === supplier.name && !pr.isArchived).reduce((sum, pr) => sum + pr.total, 0);
-                const netPayments = correctedTreasury.filter(t => t.partyType === 'supplier' && t.partyId === supplier.id && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
-                supplier.balance = totalPurchases - totalReturns + netPayments;
-            });
-    
-            // Dispatch everything at once
-            dispatch({ type: 'APPLY_TREASURY_MIGRATION', payload: {
-                treasury: correctedTreasury,
-                chartOfAccounts: tempChart,
-                customers: tempCustomers,
-                suppliers: tempSuppliers,
-                log: createActivityLog('تصحيح تلقائي للبيانات', 'تم تصحيح بيانات الخزينة القديمة وإعادة حساب الأرصدة.'),
-                notification: createNotification('تم إجراء تصحيح تلقائي لبيانات الخزينة القديمة لضمان دقة الأرصدة.', 'info')
-            }});
-    
-            showToast('تم تصحيح بيانات قديمة وإعادة حساب الأرصدة بنجاح.', 'success');
-            localStorage.setItem(migrationKey, 'true');
-        } else {
-            // If no migration is needed, still set the flag to avoid checking again.
-            localStorage.setItem(migrationKey, 'true');
-        }
-    
-    }, [isDataLoaded, dataManager.activeDatasetKey, data, createActivityLog, showToast, createNotification]);
-
-
-    // One-time data correction for specific inventory items with fractional stock
-    useEffect(() => {
-        // Use a unique flag for this specific correction to ensure it only runs once per dataset.
-        const correctionFlag = `correction_applied_for_${dataManager.activeDatasetKey}_stock_fix_2024_07_28`;
-        
-        if (isDataLoaded && !localStorage.getItem(correctionFlag)) {
-            const itemToFix = data.inventory.find(
-                (item: InventoryItem) => 
-                (item.name === 'بهارات غاليه' || item.id === 'ITM-028') &&
-                Math.abs(item.stock - 0.5) < 0.001 // Use tolerance for float comparison
-            );
-
-            if (itemToFix) {
-                console.log("Applying one-time stock correction for item:", itemToFix.name);
-                
-                const expenseAccount = findAccountByCode(data.chartOfAccounts, '4203');
-                if (!expenseAccount) {
-                    showToast('لم يتم العثور على حساب مصروف البضاعة التالفة (4203) اللازم لإتمام التصحيح.', 'error');
-                    localStorage.setItem(correctionFlag, 'true'); // Set flag even on error to avoid loops.
-                    return;
-                }
-
-                try {
-                    addInventoryAdjustment({
-                        date: new Date().toISOString().slice(0, 10),
-                        type: 'صرف',
-                        contraAccountId: expenseAccount.id,
-                        contraAccountName: expenseAccount.name,
-                        description: `تصحيح تلقائي للرصيد الخاطئ للصنف ${itemToFix.name}`,
-                        items: [{
-                            itemId: itemToFix.id,
-                            itemName: itemToFix.name,
-                            quantity: 0.5,
-                            cost: itemToFix.purchasePrice,
-                            total: 0.5 * itemToFix.purchasePrice,
-                        }],
-                        totalValue: 0.5 * itemToFix.purchasePrice,
-                    });
-    
-                    showToast(`تم تصحيح رصيد '${itemToFix.name}' إلى صفر بنجاح.`, 'success');
-                } catch (e: any) {
-                     showToast(`فشل تصحيح الرصيد: ${e.message}`, 'error');
-                } finally {
-                    localStorage.setItem(correctionFlag, 'true');
-                }
-            } else {
-                localStorage.setItem(correctionFlag, 'true');
-            }
-        }
-    }, [isDataLoaded, data.inventory, data.chartOfAccounts, dataManager.activeDatasetKey, addInventoryAdjustment, showToast]);
-    
-
     // Memoize all filtered data to prevent unnecessary re-renders
     const activeData = useMemo(() => ({
         customers: data.customers.filter(c => !c.isArchived),

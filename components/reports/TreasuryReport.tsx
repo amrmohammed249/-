@@ -28,6 +28,7 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
 
     const { openingBalance, transactions, closingBalance, totalDebits, totalCredits, netChange } = useMemo(() => {
         const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
 
@@ -36,36 +37,36 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
             return accountMatch && !t.isArchived;
         });
 
-        // 1. Calculate Opening Balance by working backwards from current balance
-        let openingBalanceForPeriod = currentActualBalance;
-        allTxObjects.forEach((tx: TreasuryTransaction) => {
-            const txDate = new Date(tx.date);
-            // If transaction is in or after the report period starts, reverse its effect from the current balance
-            if (txDate >= start) {
-                openingBalanceForPeriod -= tx.amount;
-            }
-        });
+        // 1. Calculate initial opening balance (at time zero) by working backwards from the true current balance
+        const totalChangeAllTime = allTxObjects.reduce((sum, tx) => sum + tx.amount, 0);
+        const initialOpeningBalance = currentActualBalance - totalChangeAllTime;
+
+        // 2. Calculate opening balance for the period by applying pre-period transactions
+        const openingBalanceForPeriod = allTxObjects
+            .filter(tx => new Date(tx.date) < start)
+            .reduce((balance, tx) => balance + tx.amount, initialOpeningBalance);
         
-        // 2. Filter transactions for the period and calculate running balance
-        const periodTransactions = allTxObjects
+        // 3. Filter for transactions within the period and sort them
+        const periodTransactionsRaw = allTxObjects
             .filter(tx => {
                 const txDate = new Date(tx.date);
                 return txDate >= start && txDate <= end;
             })
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+        // 4. Calculate running balance for the period
         let runningBalance = openingBalanceForPeriod;
-        const transactionsWithBalance = periodTransactions.map(t => {
-            runningBalance += t.amount;
+        const transactionsWithBalance = periodTransactionsRaw.map(tx => {
+            runningBalance += tx.amount;
             return {
-                ...t,
-                debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0,
-                credit: t.type === 'سند قبض' ? t.amount : 0,
+                ...tx,
+                debit: tx.type === 'سند صرف' ? Math.abs(tx.amount) : 0,
+                credit: tx.type === 'سند قبض' ? Math.abs(tx.amount) : 0,
                 balance: runningBalance
             };
         });
         
-        // 3. Calculate totals for the period
+        // 5. Calculate totals for the period
         const totals = transactionsWithBalance.reduce((acc, t) => {
             acc.totalDebits += t.debit;
             acc.totalCredits += t.credit;
@@ -121,7 +122,7 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
                 </div>
                 
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md mb-2 flex justify-between items-center">
-                    <span className="font-semibold">الرصيد السابق في {startDate}:</span>
+                    <span className="font-semibold">رصيد أول المدة في {startDate}:</span>
                     <span className="font-bold font-mono">{openingBalance.toLocaleString()} جنيه</span>
                 </div>
                 

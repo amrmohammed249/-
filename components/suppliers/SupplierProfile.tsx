@@ -18,36 +18,43 @@ const SupplierProfile: React.FC = () => {
     const party = suppliers.find((s: any) => s.id === id);
     if (!party) return { statementData: [], party: null, openingBalance: 0 };
 
-    const purchasesTx = purchases.filter((t: Purchase) => t.supplier === party.name).map((t: Purchase) => ({
-        date: t.date, id: t.id, description: `فاتورة مشتريات #${t.id}`,
-        debit: 0, credit: t.total, type: 'purchase', original: t
-    }));
-
-    const returnsTx = purchaseReturns.filter((t: PurchaseReturn) => t.supplier === party.name).map((t: PurchaseReturn) => ({
-        date: t.date, id: t.id, description: `مرتجع مشتريات #${t.id}`,
-        debit: t.total, credit: 0, type: 'purchaseReturn', original: t
-    }));
-
-    const treasuryTx = treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === party.id).map((t: TreasuryTransaction) => ({
-        date: t.date, id: t.id, description: t.description,
-        debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0,
-        credit: t.type === 'سند قبض' ? t.amount : 0,
-        type: 'treasury', original: t
-    }));
-
-    const allTx = [...purchasesTx, ...returnsTx, ...treasuryTx].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    const totalDebit = allTx.reduce((sum, tx) => sum + tx.debit, 0);
-    const totalCredit = allTx.reduce((sum, tx) => sum + tx.credit, 0);
-    const openingBalance = party.balance - (totalCredit - totalDebit);
+    const allTx = [
+        ...purchases.filter((t: Purchase) => t.supplier === party.name && !t.isArchived).map((t: Purchase) => ({
+            date: t.date, id: t.id, description: `فاتورة مشتريات #${t.id}`,
+            debit: 0, credit: t.total, type: 'purchase', original: t
+        })),
+        ...purchaseReturns.filter((t: PurchaseReturn) => t.supplier === party.name && !t.isArchived).map((t: PurchaseReturn) => ({
+            date: t.date, id: t.id, description: `مرتجع مشتريات #${t.id}`,
+            debit: t.total, credit: 0, type: 'purchaseReturn', original: t
+        })),
+        ...treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === party.id && !t.isArchived).map((t: TreasuryTransaction) => ({
+            date: t.date, id: t.id, description: t.description,
+            debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0,
+            credit: t.type === 'سند قبض' ? Math.abs(t.amount) : 0,
+            type: 'treasury', original: t
+        }))
+    ];
     
-    let runningBalance = openingBalance;
-    const statementData = allTx.map(tx => {
-        runningBalance += (tx.credit - tx.debit);
-        return { ...tx, balance: runningBalance };
-    }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // 1. Calculate initial opening balance by working backwards from the current final balance
+    const totalChange = allTx.reduce((sum, tx) => sum + (tx.credit - tx.debit), 0);
+    const openingBalance = party.balance - totalChange;
 
-    return { statementData, party, openingBalance };
+    // 2. Sort all transactions chronologically.
+    const sortedTx = allTx.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // 3. Calculate running balance starting from the true opening balance.
+    let runningBalance = openingBalance;
+    const statementWithBalance = sortedTx.map(tx => {
+        const change = tx.credit - tx.debit;
+        runningBalance += change;
+        return { ...tx, balance: runningBalance };
+    });
+
+    // 4. Sort for display (latest first)
+    const finalStatementData = statementWithBalance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+
+    return { statementData: finalStatementData, party, openingBalance };
   }, [id, suppliers, purchases, purchaseReturns, treasury]);
 
   if (!party) {
@@ -71,7 +78,7 @@ const SupplierProfile: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 md:mt-0 text-right">
-            <p className="text-sm text-gray-500 dark:text-gray-400">الرصيد الحالي (لنا)</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">الرصيد الحالي (لهم)</p>
             <p className={`text-3xl font-bold font-mono ${party.balance > 0 ? 'text-green-600' : 'text-red-500'}`}>
               {party.balance.toLocaleString()} جنيه
             </p>

@@ -141,7 +141,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           }), label: 'إنشاء فاتورة مبيعات', icon: <DocumentPlusIcon /> },
         { to: '/sales', label: 'قائمة فواتير المبيعات', icon: <DocumentTextIcon /> },
         { to: '/price-quotes/list', label: 'قائمة بيانات الأسعار', icon: <ClipboardDocumentListIcon /> },
-        { to: '/sales-returns', label: 'مردودات المبيعات', icon: <ArrowUturnLeftIcon /> },
+        { onClick: () => openWindow({
+            path: '/sales-returns/new',
+            title: 'مرتجع مبيعات',
+            icon: <ArrowUturnLeftIcon />,
+            state: {
+                activeReturn: {
+                    id: `SRET-${String(sequences.saleReturn).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                },
+                items: [],
+                customer: null,
+                productSearchTerm: '',
+                customerSearchTerm: '',
+                isProcessing: false,
+            }
+        }), label: 'إنشاء مرتجع مبيعات', icon: <ArrowUturnLeftIcon /> },
+        { to: '/sales-returns', label: 'قائمة مردودات المبيعات', icon: <DocumentTextIcon /> },
     ]
   };
 
@@ -168,7 +184,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           }), label: 'إنشاء فاتورة مشتريات', icon: <DocumentPlusIcon /> },
         { to: '/purchases', label: 'قائمة فواتير المشتريات', icon: <DocumentTextIcon /> },
         { to: '/purchase-quotes/list', label: 'قائمة طلبات الشراء', icon: <ClipboardDocumentListIcon /> },
-        { to: '/purchases-returns', label: 'مردودات المشتريات', icon: <ArrowUturnLeftIcon /> },
+        { onClick: () => openWindow({
+            path: '/purchases-returns/new',
+            title: 'مرتجع مشتريات',
+            icon: <ArrowUturnLeftIcon />,
+            state: {
+                activeReturn: {
+                    id: `PRET-${String(sequences.purchaseReturn).padStart(3, '0')}`,
+                    date: new Date().toISOString().slice(0, 10),
+                },
+                items: [],
+                supplier: null,
+                productSearchTerm: '',
+                supplierSearchTerm: '',
+                isProcessing: false,
+                itemErrors: {},
+            }
+        }), label: 'إنشاء مرتجع مشتريات', icon: <ArrowUturnLeftIcon /> },
+        { to: '/purchases-returns', label: 'قائمة مردودات المشتريات', icon: <DocumentTextIcon /> },
     ]
   };
 

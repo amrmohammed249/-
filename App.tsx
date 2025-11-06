@@ -36,6 +36,8 @@ import BarcodeTools from './components/barcode/BarcodeTools';
 import BarcodeLabelPrint from './components/printing/BarcodeLabelPrint';
 import InvoiceTestPrintPage from './components/printing/InvoiceTestPrintPage';
 import BarcodeLabelBatchPrint from './components/printing/BarcodeLabelBatchPrint';
+import SaleReturnsForm from './components/sales/SaleReturnsForm';
+import PurchaseReturnsForm from './components/purchases/PurchaseReturnsForm';
 
 
 const App: React.FC = () => {
@@ -113,6 +115,10 @@ const App: React.FC = () => {
         return <Sales windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
       case '/purchases/new':
         return <Purchases windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
+      case '/sales-returns/new':
+        return <SaleReturnsForm windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
+      case '/purchases-returns/new':
+        return <PurchaseReturnsForm windowId={window.id} windowState={window.state} onStateChange={onStateChange} />;
       default:
         return null;
     }

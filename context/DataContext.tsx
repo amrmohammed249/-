@@ -25,7 +25,8 @@ import type {
     TreasuryTransaction,
     User,
     UnitDefinition,
-    PackingUnit
+    PackingUnit,
+    LineItem
 } from '../types';
 
 // This is a simplified debounce function
@@ -104,6 +105,7 @@ const migrateChartOfAccounts = (chart: AccountNode[]): AccountNode[] => {
         { id: '1-1-4', name: 'المخزون', code: '1104', parentCode: '1100' },
         { id: '2-1', name: 'الموردين', code: '2101', parentCode: '2000' },
         { id: '4-1', name: 'مبيعات محلية', code: '4101', parentCode: '4000' },
+        { id: '4-4', name: 'مردودات المبيعات', code: '4104', parentCode: '4000' },
         { id: '4-5', name: 'خصومات المبيعات', code: '4102', parentCode: '4000' },
         { id: '4-6', name: 'خصومات المشتريات', code: '4103', parentCode: '4000' },
         { id: '4-2-3', name: 'مصروف بضاعة تالفة', code: '4203', parentCode: '4200' },
@@ -421,6 +423,60 @@ function dataReducer(state: AppState, action: Action): AppState {
             return {
                 ...state,
                 purchases: updatedPurchases,
+                inventory: updatedInventory,
+                suppliers: updatedSuppliers,
+                journal: updatedJournal,
+                chartOfAccounts,
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ADD_SALE_RETURN': {
+            const { newSaleReturn, updatedInventory, updatedCustomers, journalEntry, updatedChartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                saleReturns: [newSaleReturn, ...state.saleReturns],
+                inventory: updatedInventory,
+                customers: updatedCustomers,
+                journal: [journalEntry, ...state.journal],
+                chartOfAccounts: updatedChartOfAccounts,
+                sequences: { ...state.sequences, saleReturn: state.sequences.saleReturn + 1, journal: state.sequences.journal + 1 },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ARCHIVE_SALE_RETURN': {
+            const { updatedSaleReturns, updatedInventory, updatedCustomers, updatedJournal, chartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                saleReturns: updatedSaleReturns,
+                inventory: updatedInventory,
+                customers: updatedCustomers,
+                journal: updatedJournal,
+                chartOfAccounts,
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ADD_PURCHASE_RETURN': {
+            const { newPurchaseReturn, updatedInventory, updatedSuppliers, journalEntry, updatedChartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                purchaseReturns: [newPurchaseReturn, ...state.purchaseReturns],
+                inventory: updatedInventory,
+                suppliers: updatedSuppliers,
+                journal: [journalEntry, ...state.journal],
+                chartOfAccounts: updatedChartOfAccounts,
+                sequences: { ...state.sequences, purchaseReturn: state.sequences.purchaseReturn + 1, journal: state.sequences.journal + 1 },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+
+        case 'ARCHIVE_PURCHASE_RETURN': {
+            const { updatedPurchaseReturns, updatedInventory, updatedSuppliers, updatedJournal, chartOfAccounts, log } = action.payload;
+            return {
+                ...state,
+                purchaseReturns: updatedPurchaseReturns,
                 inventory: updatedInventory,
                 suppliers: updatedSuppliers,
                 journal: updatedJournal,
@@ -1688,7 +1744,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const amountToReverse = line.credit - line.debit;
                 updateBalancesRecursively(updatedChart, line.accountId, amountToReverse);
             });
-            updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalAdjustment.journalEntryId ? { ...j, isArchived: true, description: `[ملغي بسبب التعديل] ${j.description}` } : j);
+            updatedJournal = updatedJournal.map((j: JournalEntry) => j.id === originalJournalEntry.id ? { ...j, isArchived: true, description: `[ملغي بسبب التعديل] ${j.description}` } : j);
         }
 
         if (updatedAdjustment.type === 'صرف' && !data.generalSettings.allowNegativeStock) {
@@ -2252,6 +2308,270 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [data.inventory, data.sequences, createActivityLog, showToast]);
 
+    const addSaleReturn = useCallback((sr: Omit<SaleReturn, 'id' | 'journalEntryId'>): SaleReturn => {
+        // 1. Calculate COGS and update inventory
+        let costOfGoodsReturned = 0;
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        sr.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock = parseFloat((item.stock + quantityInBaseUnit).toPrecision(15));
+                costOfGoodsReturned += quantityInBaseUnit * item.purchasePrice;
+            }
+        });
+
+        // 2. Update customer balance
+        const updatedCustomers = data.customers.map(c => 
+            c.name === sr.customer ? {...c, balance: c.balance - sr.total} : c
+        );
+
+        // 3. Create Journal Entry
+        const newReturnId = `SRET-${String(data.sequences.saleReturn).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        const salesReturnAccount = findAccountByCode(data.chartOfAccounts, '4104'); // مردودات المبيعات
+        const cogsAccount = findAccountByCode(data.chartOfAccounts, '4204'); // تكلفة البضاعة المباعة
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104'); // المخزون
+        const customerAccount = findAccountByCode(data.chartOfAccounts, '1103'); // العملاء
+        
+        if (!salesReturnAccount || !cogsAccount || !inventoryAccount || !customerAccount) {
+            throw new Error("حسابات نظام أساسية (مردودات مبيعات, تكلفة بضاعة, مخزون, عملاء) مفقودة.");
+        }
+        
+        const journalEntryLines: JournalLine[] = [
+            { accountId: salesReturnAccount.id, accountName: salesReturnAccount.name, debit: sr.total, credit: 0 },
+            { accountId: customerAccount.id, accountName: customerAccount.name, debit: 0, credit: sr.total },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: costOfGoodsReturned, credit: 0 },
+            { accountId: cogsAccount.id, accountName: cogsAccount.name, debit: 0, credit: costOfGoodsReturned },
+        ];
+
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalEntryLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: sr.date,
+            description: `مرتجع مبيعات رقم ${newReturnId}`,
+            debit: sr.total + costOfGoodsReturned,
+            credit: sr.total + costOfGoodsReturned,
+            status: 'مرحل',
+            lines: journalEntryLines,
+        };
+        
+        const newSaleReturn: SaleReturn = { ...sr, id: newReturnId, journalEntryId: newJournalEntryId };
+        
+        // 4. Dispatch
+        dispatch({
+            type: 'ADD_SALE_RETURN',
+            payload: {
+                newSaleReturn,
+                updatedInventory,
+                updatedCustomers,
+                journalEntry: newJournalEntry,
+                updatedChartOfAccounts,
+                log: createActivityLog('إضافة مرتجع مبيعات', `مرتجع رقم ${newReturnId} من العميل ${sr.customer}`)
+            }
+        });
+
+        return newSaleReturn;
+    }, [data, createActivityLog]);
+    
+    const archiveSaleReturn = useCallback((id: string) => {
+        const saleReturn = data.saleReturns.find((sr: SaleReturn) => sr.id === id);
+        if (!saleReturn || saleReturn.isArchived) return { success: false, message: 'المرتجع غير موجود أو مؤرشف بالفعل.' };
+    
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        let canArchive = true;
+        
+        saleReturn.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                if (!data.generalSettings.allowNegativeStock && item.stock < quantityInBaseUnit) {
+                    canArchive = false;
+                }
+            }
+        });
+
+        if (!canArchive) {
+             return { success: false, message: `لا يمكن أرشفة المرتجع، سيؤدي ذلك إلى رصيد سالب في المخزون.` };
+        }
+    
+        saleReturn.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock = parseFloat((item.stock - quantityInBaseUnit).toPrecision(15));
+            }
+        });
+        
+        const updatedCustomers = data.customers.map(c => c.name === saleReturn.customer ? {...c, balance: c.balance + saleReturn.total} : c);
+        const updatedSaleReturns = data.saleReturns.map(sr => sr.id === id ? {...sr, isArchived: true} : sr);
+        
+        const entryToReverse = data.journal.find(j => j.id === saleReturn.journalEntryId);
+        let updatedJournal = data.journal;
+        let reversedChartOfAccounts = data.chartOfAccounts;
+        if (entryToReverse) {
+            const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+            entryToReverse.lines.forEach(line => {
+                updateBalancesRecursively(newChart, line.accountId, line.credit - line.debit);
+            });
+            reversedChartOfAccounts = newChart;
+            updatedJournal = data.journal.map(j => j.id === saleReturn.journalEntryId ? {...j, isArchived: true} : j);
+        }
+
+        dispatch({ type: 'ARCHIVE_SALE_RETURN', payload: {
+            updatedSaleReturns, updatedInventory, updatedCustomers,
+            updatedJournal, chartOfAccounts: reversedChartOfAccounts,
+            log: createActivityLog('أرشفة مرتجع مبيعات', `تمت أرشفة المرتجع رقم ${id}`),
+        }});
+        return { success: true };
+    }, [data, createActivityLog]);
+
+    const addPurchaseReturn = useCallback((pr: Omit<PurchaseReturn, 'id' | 'journalEntryId'>): PurchaseReturn => {
+        // 1. Validate stock and update inventory
+        if (!data.generalSettings.allowNegativeStock) {
+            for (const line of pr.items) {
+                const item = data.inventory.find((i: InventoryItem) => i.id === line.itemId);
+                if (item) {
+                    let quantityInBaseUnit = line.quantity;
+                    if (line.unitId !== 'base') {
+                        const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                        if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                    }
+                    if (quantityInBaseUnit > item.stock) {
+                        throw new Error(`لا يمكن إتمام المرتجع، المخزون غير كافٍ للصنف "${line.itemName}". المتاح: ${item.stock}`);
+                    }
+                }
+            }
+        }
+
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        pr.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock = parseFloat((item.stock - quantityInBaseUnit).toPrecision(15));
+            }
+        });
+
+        // 2. Update supplier balance
+        const updatedSuppliers = data.suppliers.map(s => 
+            s.name === pr.supplier ? {...s, balance: s.balance - pr.total} : s
+        );
+
+        // 3. Create Journal Entry
+        const newReturnId = `PRET-${String(data.sequences.purchaseReturn).padStart(3, '0')}`;
+        const newJournalEntryId = `JV-${String(data.sequences.journal).padStart(3, '0')}`;
+        
+        const supplierAccount = findAccountByCode(data.chartOfAccounts, '2101'); // الموردين
+        const inventoryAccount = findAccountByCode(data.chartOfAccounts, '1104'); // المخزون
+        
+        if (!supplierAccount || !inventoryAccount) {
+            throw new Error("حسابات نظام أساسية (موردين, مخزون) مفقودة.");
+        }
+        
+        const journalEntryLines: JournalLine[] = [
+            { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: pr.total, credit: 0 },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: pr.total },
+        ];
+        
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(data.chartOfAccounts));
+        journalEntryLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+
+        const newJournalEntry: JournalEntry = {
+            id: newJournalEntryId,
+            date: pr.date,
+            description: `مرتجع مشتريات رقم ${newReturnId}`,
+            debit: pr.total,
+            credit: pr.total,
+            status: 'مرحل',
+            lines: journalEntryLines,
+        };
+        
+        const newPurchaseReturn: PurchaseReturn = { ...pr, id: newReturnId, journalEntryId: newJournalEntryId };
+        
+        // 4. Dispatch
+        dispatch({
+            type: 'ADD_PURCHASE_RETURN',
+            payload: {
+                newPurchaseReturn,
+                updatedInventory,
+                updatedSuppliers,
+                journalEntry: newJournalEntry,
+                updatedChartOfAccounts,
+                log: createActivityLog('إضافة مرتجع مشتريات', `مرتجع رقم ${newReturnId} للمورد ${pr.supplier}`)
+            }
+        });
+
+        return newPurchaseReturn;
+    }, [data, createActivityLog]);
+
+    const archivePurchaseReturn = useCallback((id: string) => {
+        const purchaseReturn = data.purchaseReturns.find((pr: PurchaseReturn) => pr.id === id);
+        if (!purchaseReturn || purchaseReturn.isArchived) return { success: false, message: 'المرتجع غير موجود أو مؤرشف بالفعل.' };
+        
+        // Reverse inventory update
+        const updatedInventory = JSON.parse(JSON.stringify(data.inventory));
+        purchaseReturn.items.forEach(line => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (item) {
+                let quantityInBaseUnit = line.quantity;
+                if (line.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                    if (packingUnit) quantityInBaseUnit = line.quantity * packingUnit.factor;
+                }
+                item.stock = parseFloat((item.stock + quantityInBaseUnit).toPrecision(15));
+            }
+        });
+        
+        // Reverse supplier balance
+        const updatedSuppliers = data.suppliers.map(s => s.name === purchaseReturn.supplier ? {...s, balance: s.balance + purchaseReturn.total} : s);
+        
+        // Mark return as archived
+        const updatedPurchaseReturns = data.purchaseReturns.map(pr => pr.id === id ? {...pr, isArchived: true} : pr);
+
+        // Reverse journal entry
+        const entryToReverse = data.journal.find(j => j.id === purchaseReturn.journalEntryId);
+        let updatedJournal = data.journal;
+        let reversedChartOfAccounts = data.chartOfAccounts;
+        if (entryToReverse) {
+            const newChart = JSON.parse(JSON.stringify(data.chartOfAccounts));
+            entryToReverse.lines.forEach(line => {
+                updateBalancesRecursively(newChart, line.accountId, line.credit - line.debit);
+            });
+            reversedChartOfAccounts = newChart;
+            updatedJournal = data.journal.map(j => j.id === purchaseReturn.journalEntryId ? {...j, isArchived: true} : j);
+        }
+        
+        dispatch({ type: 'ARCHIVE_PURCHASE_RETURN', payload: {
+            updatedPurchaseReturns, updatedInventory, updatedSuppliers,
+            updatedJournal, chartOfAccounts: reversedChartOfAccounts,
+            log: createActivityLog('أرشفة مرتجع مشتريات', `تمت أرشفة المرتجع رقم ${id}`),
+        }});
+        return { success: true };
+    }, [data, createActivityLog]);
 
     // --- Derived Data ---
     const totalCashBalance = useMemo(() => {
@@ -2501,10 +2821,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatePriceQuote = useCallback((quote: PriceQuote) => { console.log('Update price quote called', quote); return quote; }, []);
     const updatePurchaseQuote = useCallback((quote: PurchaseQuote) => { console.log('Update purchase quote called', quote); return quote; }, []);
 
-    const addSaleReturn = useCallback((sr: Omit<SaleReturn, 'id'>) => ({...sr, id:'1'}), []);
-    const archiveSaleReturn = useCallback((id: string) => ({ success: true }), []);
-    const addPurchaseReturn = useCallback((pr: Omit<PurchaseReturn, 'id'>) => ({...pr, id:'1'}), []);
-    const archivePurchaseReturn = useCallback((id: string) => ({ success: true }), []);
+    const unarchiveSaleReturn = useCallback((id: string) => ({ success: true }), []);
+    const unarchivePurchaseReturn = useCallback((id: string) => ({ success: true }), []);
     const unarchiveInventoryAdjustment = useCallback((id:string) => ({ success: true }), []);
     
     const switchDataset = (key: string) => {
@@ -2560,9 +2878,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         purchases: activeData.purchases, archivedPurchases: archivedData.purchases,
         addPurchase, updatePurchase, archivePurchase, unarchivePurchase: () => {},
         saleReturns: activeData.saleReturns, archivedSaleReturns: archivedData.saleReturns,
-        addSaleReturn, updateSaleReturn, archiveSaleReturn, unarchiveSaleReturn: () => {},
+        addSaleReturn, updateSaleReturn, archiveSaleReturn, unarchiveSaleReturn,
         purchaseReturns: activeData.purchaseReturns, archivedPurchaseReturns: archivedData.purchaseReturns,
-        addPurchaseReturn, updatePurchaseReturn, archivePurchaseReturn, unarchivePurchaseReturn: () => {},
+        addPurchaseReturn, updatePurchaseReturn, archivePurchaseReturn, unarchivePurchaseReturn,
         treasury: activeData.treasury, addTreasuryTransaction, updateTreasuryTransaction, treasuriesList, transferTreasuryFunds,
         customers: activeData.customers, archivedCustomers: archivedData.customers, addCustomer, updateCustomer, archiveCustomer, unarchiveCustomer,
         suppliers: activeData.suppliers, archivedSuppliers: archivedData.suppliers,

@@ -1,9 +1,6 @@
-
-
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { PurchaseReturn, LineItem, InventoryItem, Supplier, PackingUnit } from '../../types';
-// FIX: Corrected import paths for PlusIcon and TrashIcon.
 import { PlusIcon, TrashIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddSupplierForm from '../suppliers/AddSupplierForm';
@@ -134,6 +131,10 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
     if (!supplierId || lineItems.length === 0) {
       showToast('الرجاء اختيار مورد وإضافة بند واحد على الأقل.', 'error');
       return;
+    }
+    if (Object.keys(itemErrors).length > 0) {
+        showToast('لا يمكن حفظ المرتجع لوجود أخطاء في الكميات.', 'error');
+        return;
     }
 
     try {

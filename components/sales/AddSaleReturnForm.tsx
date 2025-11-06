@@ -1,5 +1,3 @@
-
-
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import type { SaleReturn, LineItem, InventoryItem, Customer } from '../../types';
@@ -109,18 +107,22 @@ const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSucces
       return;
     }
     
-    const customerName = customers.find((c: any) => c.id === customerId)?.name || 'غير معروف';
-    const newReturn = addSaleReturn({
-        customer: customerName,
-        date,
-        originalSaleId,
-        items: lineItems,
-        subtotal: grandTotal,
-        totalDiscount: 0,
-        total: grandTotal,
-    });
-    onSuccess(newReturn);
-    onClose();
+    try {
+        const customerName = customers.find((c: any) => c.id === customerId)?.name || 'غير معروف';
+        const newReturn = addSaleReturn({
+            customer: customerName,
+            date,
+            originalSaleId,
+            items: lineItems,
+            subtotal: grandTotal,
+            totalDiscount: 0,
+            total: grandTotal,
+        });
+        onSuccess(newReturn);
+        onClose();
+    } catch (error: any) {
+        showToast(error.message, 'error');
+    }
   };
 
   return (

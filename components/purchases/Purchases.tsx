@@ -40,7 +40,10 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
 
     // Determine which state and setter to use
     const state = isWindowMode ? windowState : localState;
-    const setState = isWindowMode ? onStateChange! : (updater) => setLocalState(updater as any);
+    const setState = useCallback(
+        isWindowMode ? onStateChange! : (updater: any) => setLocalState(updater),
+        [isWindowMode, onStateChange]
+    );
     
     const { activeBill, items, supplier, productSearchTerm, supplierSearchTerm, paidAmount, isProcessing } = state || {};
 

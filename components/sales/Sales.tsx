@@ -41,7 +41,10 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
     
     // Determine which state and setter to use
     const state = isWindowMode ? windowState : localState;
-    const setState = isWindowMode ? onStateChange! : (updater) => setLocalState(updater as any);
+    const setState = useCallback(
+        isWindowMode ? onStateChange! : (updater: any) => setLocalState(updater),
+        [isWindowMode, onStateChange]
+    );
     
     const { activeInvoice, items, itemErrors, customer, productSearchTerm, customerSearchTerm, paidAmount, isProcessing } = state || {};
 

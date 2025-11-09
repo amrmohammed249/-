@@ -182,7 +182,25 @@ const Treasury: React.FC = () => {
             const debit = tx.amount < 0 ? Math.abs(tx.amount) : 0;
             totalIn += credit;
             totalOut += debit;
-            return { ...tx, credit, debit, balance: runningBalance };
+
+            let partyName = '-';
+            if (tx.partyType && tx.partyId) {
+                switch (tx.partyType) {
+                    case 'customer':
+                        partyName = customers.find((c: any) => c.id === tx.partyId)?.name || 'عميل غير معروف';
+                        break;
+                    case 'supplier':
+                        partyName = suppliers.find((s: any) => s.id === tx.partyId)?.name || 'مورد غير معروف';
+                        break;
+                    case 'account':
+                        partyName = findAccountById(chartOfAccounts, tx.partyId)?.name || 'حساب غير معروف';
+                        break;
+                    default:
+                        partyName = tx.partyId;
+                }
+            }
+
+            return { ...tx, credit, debit, balance: runningBalance, partyName };
         });
     
         return {
@@ -192,12 +210,13 @@ const Treasury: React.FC = () => {
             totalIn,
             totalOut
         };
-    }, [treasuryTransactions, selectedTreasuryId, startDate, endDate, currentActualBalance]);
+    }, [treasuryTransactions, selectedTreasuryId, startDate, endDate, currentActualBalance, customers, suppliers, chartOfAccounts]);
     
     const columns = useMemo(() => [
         { header: 'التاريخ', accessor: 'date', sortable: true },
         { header: 'رقم السند', accessor: 'id', sortable: true },
         { header: 'الخزينة', accessor: 'treasuryAccountName', sortable: true },
+        { header: 'الطرف المقابل', accessor: 'partyName', sortable: true },
         { header: 'البيان', accessor: 'description' },
         { header: 'وارد', accessor: 'credit', render: (row: any) => row.credit > 0 ? row.credit.toLocaleString() : '-' },
         { header: 'صادر', accessor: 'debit', render: (row: any) => row.debit > 0 ? row.debit.toLocaleString() : '-' },
@@ -263,7 +282,7 @@ const Treasury: React.FC = () => {
                 actions={['view', 'edit']}
                 onView={(row) => setTransactionToView(row)}
                 onEdit={handleEdit}
-                searchableColumns={['id', 'description', 'treasuryAccountName']}
+                searchableColumns={['id', 'description', 'treasuryAccountName', 'partyName']}
             />
     
             {isAddTreasuryModalOpen && <Modal isOpen={isAddTreasuryModalOpen} onClose={() => setAddTreasuryModalOpen(false)} title="إضافة خزينة جديدة"><AddTreasuryForm onClose={() => setAddTreasuryModalOpen(false)} /></Modal>}

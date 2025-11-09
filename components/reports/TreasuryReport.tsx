@@ -1,6 +1,6 @@
 import React, { useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
-import { TreasuryTransaction } from '../../types';
+import { TreasuryTransaction, AccountNode } from '../../types';
 
 interface ReportProps {
     startDate: string;
@@ -9,8 +9,19 @@ interface ReportProps {
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
 
+const findAccountById = (accounts: AccountNode[], id: string): AccountNode | null => {
+    for (const account of accounts) {
+        if (account.id === id) return account;
+        if (account.children) {
+            const found = findAccountById(account.children, id);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
 const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAccountId, onDataReady }) => {
-    const { treasury, treasuriesList, totalCashBalance } = useContext(DataContext);
+    const { treasury, treasuriesList, totalCashBalance, customers, suppliers, chartOfAccounts } = useContext(DataContext);
 
     const { currentActualBalance, selectedTreasuryName } = useMemo(() => {
         if (treasuryAccountId) {
@@ -37,16 +48,13 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
             return accountMatch && !t.isArchived;
         });
 
-        // 1. Calculate initial opening balance (at time zero) by working backwards from the true current balance
         const totalChangeAllTime = allTxObjects.reduce((sum, tx) => sum + tx.amount, 0);
         const initialOpeningBalance = currentActualBalance - totalChangeAllTime;
 
-        // 2. Calculate opening balance for the period by applying pre-period transactions
         const openingBalanceForPeriod = allTxObjects
             .filter(tx => new Date(tx.date) < start)
             .reduce((balance, tx) => balance + tx.amount, initialOpeningBalance);
         
-        // 3. Filter for transactions within the period and sort them
         const periodTransactionsRaw = allTxObjects
             .filter(tx => {
                 const txDate = new Date(tx.date);
@@ -54,19 +62,36 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
             })
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-        // 4. Calculate running balance for the period
         let runningBalance = openingBalanceForPeriod;
         const transactionsWithBalance = periodTransactionsRaw.map(tx => {
             runningBalance += tx.amount;
+            
+            let partyName = '-';
+            if (tx.partyType && tx.partyId) {
+                switch (tx.partyType) {
+                    case 'customer':
+                        partyName = customers.find((c: any) => c.id === tx.partyId)?.name || 'عميل غير معروف';
+                        break;
+                    case 'supplier':
+                        partyName = suppliers.find((s: any) => s.id === tx.partyId)?.name || 'مورد غير معروف';
+                        break;
+                    case 'account':
+                        partyName = findAccountById(chartOfAccounts, tx.partyId)?.name || 'حساب غير معروف';
+                        break;
+                    default:
+                        // partyName remains '-'
+                }
+            }
+
             return {
                 ...tx,
                 debit: tx.type === 'سند صرف' ? Math.abs(tx.amount) : 0,
                 credit: tx.type === 'سند قبض' ? Math.abs(tx.amount) : 0,
-                balance: runningBalance
+                balance: runningBalance,
+                partyName
             };
         });
         
-        // 5. Calculate totals for the period
         const totals = transactionsWithBalance.reduce((acc, t) => {
             acc.totalDebits += t.debit;
             acc.totalCredits += t.credit;
@@ -83,12 +108,13 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
             totalCredits: totals.totalCredits,
             netChange,
         };
-    }, [treasury, startDate, endDate, treasuryAccountId, currentActualBalance]);
+    }, [treasury, startDate, endDate, treasuryAccountId, currentActualBalance, customers, suppliers, chartOfAccounts]);
     
     const columns = [
         { header: 'التاريخ', accessor: 'date' },
         { header: 'البيان', accessor: 'description' },
         { header: 'الخزينة', accessor: 'treasuryAccountName' },
+        { header: 'الطرف المقابل', accessor: 'partyName' },
         { header: 'مدين (صرف)', accessor: 'debit', render: (row: any) => row.debit > 0 ? row.debit.toLocaleString() : '-' },
         { header: 'دائن (قبض)', accessor: 'credit', render: (row: any) => row.credit > 0 ? row.credit.toLocaleString() : '-' },
         { header: 'الرصيد', accessor: 'balance', render: (row: any) => row.balance.toLocaleString() },
@@ -160,7 +186,7 @@ const TreasuryReport: React.FC<ReportProps> = ({ startDate, endDate, treasuryAcc
                         {transactions.length > 0 && (
                             <tfoot className="font-semibold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-700/50">
                                 <tr>
-                                    <td colSpan={3} className="px-6 py-3 text-center">الإجماليات</td>
+                                    <td colSpan={4} className="px-6 py-3 text-center">الإجماليات</td>
                                     <td className="px-6 py-3 font-mono text-red-600 dark:text-red-400">{totalDebits.toLocaleString()}</td>
                                     <td className="px-6 py-3 font-mono text-green-600 dark:text-green-400">{totalCredits.toLocaleString()}</td>
                                     <td className="px-6 py-3"></td>

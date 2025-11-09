@@ -1,7 +1,9 @@
+
 import React, { useContext, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
+// FIX: Import 'Dashboard' as a default export.
 import Dashboard from './components/dashboard/Dashboard';
 import ChartOfAccounts from './components/accounts/ChartOfAccounts';
 import JournalEntries from './components/accounts/JournalEntries';

@@ -24,6 +24,7 @@ import PurchaseInvoiceView from '../purchases/PurchaseInvoiceView';
 import TreasuryVoucherView from '../treasury/TreasuryVoucherView';
 import { WindowContext } from '../../context/WindowContext';
 import { DocumentTextIcon } from '../icons/DocumentTextIcon';
+import { ArrowUturnLeftIcon } from '../icons/ArrowUturnLeftIcon';
 
 const QuickActionButton = ({ label, icon, onClick, className }: any) => (
     <button onClick={onClick} className={`flex items-center space-x-2 space-x-reverse px-4 py-2 text-sm font-medium rounded-lg transition-colors ${className}`}>
@@ -192,6 +193,39 @@ const Dashboard: React.FC = () => {
                 isProcessing: false,
               }
             })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
+          <QuickActionButton label="مرتجع مبيعات" icon={<ArrowUturnLeftIcon className="w-5 h-5"/>} onClick={() => openWindow({
+              path: '/sales-returns/new',
+              title: 'مرتجع مبيعات',
+              icon: <ArrowUturnLeftIcon />,
+              state: {
+                  activeReturn: {
+                      id: `SRET-${String(sequences.saleReturn).padStart(3, '0')}`,
+                      date: new Date().toISOString().slice(0, 10),
+                  },
+                  items: [],
+                  customer: null,
+                  productSearchTerm: '',
+                  customerSearchTerm: '',
+                  isProcessing: false,
+              }
+          })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
+          <QuickActionButton label="مرتجع مشتريات" icon={<ArrowUturnLeftIcon className="w-5 h-5"/>} onClick={() => openWindow({
+              path: '/purchases-returns/new',
+              title: 'مرتجع مشتريات',
+              icon: <ArrowUturnLeftIcon />,
+              state: {
+                  activeReturn: {
+                      id: `PRET-${String(sequences.purchaseReturn).padStart(3, '0')}`,
+                      date: new Date().toISOString().slice(0, 10),
+                  },
+                  items: [],
+                  supplier: null,
+                  productSearchTerm: '',
+                  supplierSearchTerm: '',
+                  isProcessing: false,
+                  itemErrors: {},
+              }
+          })} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
           <QuickActionButton label="سند قبض" icon={<ArrowDownOnSquareIcon className="w-5 h-5"/>} onClick={openReceiptModal} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
           <QuickActionButton label="سند صرف" icon={<ArrowUpOnSquareIcon className="w-5 h-5"/>} onClick={openPaymentModal} className="bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"/>
         </div>
@@ -251,92 +285,57 @@ const Dashboard: React.FC = () => {
             <h3 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">أحدث العمليات</h3>
             <div className="space-y-2">
               {recentTransactions.map(t => (
-                <div key={`${t.type}-${t.id}`} onClick={() => handleTransactionClick(t)} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
-                  <div className="flex items-center space-x-4 space-x-reverse">
-                    <span className={`p-2 rounded-full ${t.type === 'sale' ? 'bg-green-100 dark:bg-green-900/40 text-green-600' : 'bg-red-100 dark:bg-red-900/40 text-red-600'}`}>
-                      {t.type === 'sale' ? <ArrowTrendingUpIcon className="w-5 h-5" /> : <ArrowTrendingDownIcon className="w-5 h-5" />}
-                    </span>
+                <div key={`${t.type}-${t.id}`} onClick={() => handleTransactionClick(t)} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors">
+                  <div className="flex items-center gap-3">
+                     <span className={`p-2 rounded-full ${t.type === 'sale' ? 'bg-green-100 dark:bg-green-900/50' : 'bg-red-100 dark:bg-red-900/50'}`}>
+                        {t.type === 'sale' ? <ShoppingCartIcon className="w-5 h-5 text-green-600"/> : <TruckIcon className="w-5 h-5 text-red-600"/>}
+                     </span>
                     <div>
-                      <p className="font-semibold text-gray-800 dark:text-gray-100">{t.partyName}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{t.id} &middot; {t.date}</p>
+                        <p className="font-semibold text-gray-800 dark:text-gray-200">{t.type === 'sale' ? `فاتورة لـ ${t.partyName}` : `فاتورة من ${t.partyName}`}</p>
+                        <p className="text-xs text-gray-500">{t.date}</p>
                     </div>
                   </div>
-                  <div className="text-left">
-                    <p className="font-semibold font-mono text-gray-800 dark:text-gray-100">{t.total.toLocaleString()} جنيه</p>
-                  </div>
+                   <div className="text-left">
+                       <p className="font-semibold font-mono text-lg">{t.total.toLocaleString()}</p>
+                       <p className={`text-xs font-semibold ${t.status === 'مدفوعة' ? 'text-green-500' : 'text-red-500'}`}>{t.status}</p>
+                   </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
-        
+
         <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
-                <h3 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">لمحة مالية</h3>
-                <div className="space-y-4">
-                    <div className="flex items-center space-x-3 space-x-reverse">
-                        <BanknotesIcon className="w-8 h-8 text-blue-500"/>
-                        <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">النقدية بالخزينة</p>
-                            <p className="font-bold text-lg text-gray-800 dark:text-gray-100">{totalCashBalance.toLocaleString()} جنيه</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center space-x-3 space-x-reverse">
-                        <UsersIcon className="w-8 h-8 text-yellow-500"/>
-                        <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">ديون العملاء (الذمم المدينة)</p>
-                            <p className="font-bold text-lg text-gray-800 dark:text-gray-100">{totalReceivables.toLocaleString()} جنيه</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center space-x-3 space-x-reverse">
-                        <TruckIcon className="w-8 h-8 text-orange-500"/>
-                        <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">ديون للموردين (الذمم الدائنة)</p>
-                            <p className="font-bold text-lg text-gray-800 dark:text-gray-100">{totalPayables.toLocaleString()} جنيه</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center space-x-3 space-x-reverse">
-                        <BoxIcon className="w-8 h-8 text-indigo-500"/>
-                        <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">قيمة المخزون</p>
-                            <p className="font-bold text-lg text-gray-800 dark:text-gray-100">{inventoryValue.toLocaleString()} جنيه</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
-                <h3 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">أكبر ديون العملاء</h3>
-                 <div className="space-y-3">
-                    {topCustomers.filter(c => c.balance > 0).map(c => (
-                        <div key={c.id} className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3 space-x-reverse">
-                                <span className="flex items-center justify-center w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full font-semibold text-sm">{c.name.charAt(0)}</span>
-                                <p className="font-medium text-gray-800 dark:text-gray-200">{c.name}</p>
-                            </div>
-                            <p className="font-mono font-semibold text-sm text-red-500">{c.balance.toLocaleString()}</p>
-                        </div>
-                    ))}
-                 </div>
-            </div>
+          <div className="grid grid-cols-1 gap-6">
+              <Card title="الذمم المدينة" value={totalReceivables.toLocaleString()} icon={<UsersIcon className="text-red-500" />} footer={<div onClick={() => navigate('/customers')} className="cursor-pointer hover:underline">{customers.length} عملاء</div>}/>
+              <Card title="الذمم الدائنة" value={totalPayables.toLocaleString()} icon={<UsersIcon className="text-green-500" />} footer={<div onClick={() => navigate('/suppliers')} className="cursor-pointer hover:underline">{suppliers.length} موردين</div>} />
+              <Card title="قيمة المخزون" value={inventoryValue.toLocaleString()} icon={<BoxIcon className="text-purple-500" />} footer="بتكلفة الشراء"/>
+          </div>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
+            <h3 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">العملاء الأعلى مبيعاً</h3>
+            <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={topCustomers} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
+                    <Tooltip cursor={{ fill: 'rgba(239, 246, 255, 0.5)' }} contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', borderColor: '#4B5563', borderRadius: '0.5rem' }} labelStyle={{ color: '#F9FAFB' }} />
+                    <Bar dataKey="total" name="إجمالي المبيعات" fill="#3B82F6" background={{ fill: 'rgba(239, 246, 255, 0.1)' }} />
+                </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
       
-      <Modal isOpen={isReceiptModalOpen} onClose={closeReceiptModal} title="إضافة سند قبض جديد">
-        <AddTreasuryTransactionForm defaultType="سند قبض" onClose={closeReceiptModal} onSuccess={handleTreasuryTransactionAdded} />
-      </Modal>
-      <Modal isOpen={isPaymentModalOpen} onClose={closePaymentModal} title="إضافة سند صرف جديد">
-        <AddTreasuryTransactionForm defaultType="سند صرف" onClose={closePaymentModal} onSuccess={handleTreasuryTransactionAdded} />
-      </Modal>
-
-      <AccountStatementLauncherModal
-        config={statementModalConfig}
-        onClose={() => setStatementModalConfig({ isOpen: false, partyType: null })}
-      />
-
+      {isReceiptModalOpen && <Modal isOpen={isReceiptModalOpen} onClose={closeReceiptModal} title="إضافة سند قبض جديد"><AddTreasuryTransactionForm onClose={closeReceiptModal} onSuccess={handleTreasuryTransactionAdded} defaultType="سند قبض" /></Modal>}
+      {isPaymentModalOpen && <Modal isOpen={isPaymentModalOpen} onClose={closePaymentModal} title="إضافة سند صرف جديد"><AddTreasuryTransactionForm onClose={closePaymentModal} onSuccess={handleTreasuryTransactionAdded} defaultType="سند صرف" /></Modal>}
+      
       {saleToShow && <InvoiceView isOpen={!!saleToShow} onClose={() => setSaleToShow(null)} sale={saleToShow} />}
       {purchaseToShow && <PurchaseInvoiceView isOpen={!!purchaseToShow} onClose={() => setPurchaseToShow(null)} purchase={purchaseToShow} />}
       {treasuryTransactionToShow && <TreasuryVoucherView isOpen={!!treasuryTransactionToShow} onClose={() => setTreasuryTransactionToShow(null)} transaction={treasuryTransactionToShow} />}
 
+      {statementModalConfig.isOpen && (
+        <AccountStatementLauncherModal config={statementModalConfig} onClose={() => setStatementModalConfig({isOpen: false, partyType: null})} />
+      )}
     </div>
   );
 };

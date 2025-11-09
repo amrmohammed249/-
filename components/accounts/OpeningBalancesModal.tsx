@@ -70,7 +70,7 @@ const OpeningBalancesModal: React.FC<OpeningBalancesModalProps> = ({ isOpen, onC
             let sumOfTransactions = 0;
             journal.forEach((entry: JournalEntry) => {
                 if (!entry.isArchived) {
-                    entry.lines.forEach((line: JournalLine) => {
+                    (entry.lines || []).forEach((line: JournalLine) => {
                         if (line.accountId === account.id) {
                             sumOfTransactions += (line.debit - line.credit);
                         }

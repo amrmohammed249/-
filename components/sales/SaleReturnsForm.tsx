@@ -8,22 +8,22 @@ import AddCustomerForm from '../customers/AddCustomerForm';
 import SaleReturnView from './SaleReturnView';
 
 interface SaleReturnsFormProps {
-    windowId: string;
+    windowId?: string;
     windowState?: any;
     onStateChange?: (updater: (prevState: any) => any) => void;
 }
 
 const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState, onStateChange }) => {
     const { customers, inventory, addSaleReturn, showToast, sequences, scannedItem } = useContext(DataContext);
-    const { visibleWindowId, closeWindow } = useContext(WindowContext);
+    const { visibleWindowId } = useContext(WindowContext);
     
     const productSearchRef = useRef<HTMLInputElement>(null);
     const customerSearchRef = useRef<HTMLInputElement>(null);
     const itemInputRefs = useRef<Record<string, { quantity: HTMLInputElement | null; unit: HTMLSelectElement | null; price: HTMLInputElement | null }>>({});
-
+    
     const setState = onStateChange!;
-    const state = windowState || {};
-    const { activeReturn, items, customer, productSearchTerm, customerSearchTerm, isProcessing } = state;
+    const state = windowState;
+    const { activeReturn, items, customer, productSearchTerm, customerSearchTerm, isProcessing } = state || {};
 
     const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
     const [returnToView, setReturnToView] = useState<SaleReturn | null>(null);
@@ -47,6 +47,7 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
         setState(() => resetState);
         customerSearchRef.current?.focus();
     }, [sequences.saleReturn, setState]);
+
 
     const totals = useMemo(() => {
         const subtotal = (items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -101,16 +102,16 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
         }
         setState(p => ({...p, isProcessing: true}));
 
-        const newReturnData: Omit<SaleReturn, 'id' | 'journalEntryId'> = {
-            customer: customer?.name,
-            date: activeReturn.date!,
-            items: items,
-            subtotal: totals.subtotal,
-            totalDiscount: totals.totalDiscount,
-            total: totals.grandTotal,
-        };
-
         try {
+            const newReturnData: Omit<SaleReturn, 'id' | 'journalEntryId'> = {
+                customer: customer?.name,
+                date: activeReturn.date!,
+                items: items,
+                subtotal: totals.subtotal,
+                totalDiscount: totals.totalDiscount,
+                total: totals.grandTotal,
+            };
+
             const createdReturn = addSaleReturn(newReturnData);
             showToast(`تم إنشاء مرتجع المبيعات ${createdReturn.id} بنجاح.`);
             if (print) {
@@ -137,7 +138,7 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
                     item.unitName = inventoryItem.baseUnit;
                     item.price = inventoryItem.salePrice;
                 } else {
-                    const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === value);
+                    const packingUnit = inventoryItem.units.find(u => u.id === value);
                     if (packingUnit) {
                         item.unitName = packingUnit.name;
                         item.price = packingUnit.salePrice;
@@ -214,7 +215,7 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
         <div className="flex flex-col h-full bg-[--bg] text-[--text] font-sans">
             <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">مرتجع مبيعات جديد</h1>
+                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{'مرتجع مبيعات جديد'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeReturn.id}</span>
                     <input type="date" value={activeReturn.date || ''} onChange={e => setState(p => ({...p, activeReturn: {...p.activeReturn, date: e.target.value}}))} className="input-style w-36"/>
                 </div>
@@ -279,7 +280,7 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
                 <aside className="w-full md:w-1/3 flex flex-col gap-4">
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 flex-grow flex flex-col">
                         <h2 className="text-lg font-bold border-b dark:border-gray-700 pb-2 mb-4">ملخص المرتجع</h2>
-                        <div className="space-y-3 text-md flex-grow"></div>
+                        <div className="flex-grow"></div>
                         <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-4">
                             <div className="flex justify-between items-center text-3xl font-bold text-[--accent]">
                                 <span>الإجمالي</span><span className="font-mono">{totals.grandTotal.toLocaleString()}</span>

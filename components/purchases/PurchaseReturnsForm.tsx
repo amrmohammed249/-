@@ -8,7 +8,7 @@ import AddSupplierForm from '../suppliers/AddSupplierForm';
 import PurchaseReturnView from './PurchaseReturnView';
 
 interface PurchaseReturnsFormProps {
-    windowId: string;
+    windowId?: string;
     windowState?: any;
     onStateChange?: (updater: (prevState: any) => any) => void;
 }
@@ -22,8 +22,8 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
     const itemInputRefs = useRef<Record<string, { quantity: HTMLInputElement | null; unit: HTMLSelectElement | null; price: HTMLInputElement | null }>>({});
 
     const setState = onStateChange!;
-    const state = windowState || {};
-    const { activeReturn, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing, itemErrors } = state;
+    const state = windowState;
+    const { activeReturn, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing, itemErrors } = state || {};
 
     const [isAddSupplierModalOpen, setAddSupplierModalOpen] = useState(false);
     const [returnToView, setReturnToView] = useState<PurchaseReturn | null>(null);
@@ -61,7 +61,7 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
             const currentItems = prev.items || [];
             const existingItem = currentItems.find(item => item.itemId === product.id);
             if (existingItem) {
-                return prev; // Or increment quantity if desired
+                return prev;
             }
             const newItem: LineItem = {
                 itemId: product.id,
@@ -100,16 +100,16 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
 
         setState(p => ({...p, isProcessing: true}));
 
-        const newReturnData: Omit<PurchaseReturn, 'id' | 'journalEntryId'> = {
-            supplier: supplier?.name,
-            date: activeReturn.date!,
-            items: items,
-            subtotal: totals.subtotal,
-            totalDiscount: totals.totalDiscount,
-            total: totals.grandTotal,
-        };
-
         try {
+            const newReturnData: Omit<PurchaseReturn, 'id' | 'journalEntryId'> = {
+                supplier: supplier?.name,
+                date: activeReturn.date!,
+                items: items,
+                subtotal: totals.subtotal,
+                totalDiscount: totals.totalDiscount,
+                total: totals.grandTotal,
+            };
+            
             const createdReturn = addPurchaseReturn(newReturnData);
             showToast(`تم إنشاء مرتجع المشتريات ${createdReturn.id} بنجاح.`);
             if (print) {
@@ -154,8 +154,10 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
                     if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
                 }
         
-                if (!generalSettings.allowNegativeStock && quantityInBaseUnit > inventoryItem.stock) {
-                    newErrors[item.itemId] = `المخزون غير كافٍ (المتاح: ${inventoryItem.stock})`;
+                let availableStock = inventoryItem.stock;
+
+                if (!generalSettings.allowNegativeStock && quantityInBaseUnit > availableStock) {
+                    newErrors[item.itemId] = `المخزون غير كافٍ (المتاح: ${availableStock})`;
                 } else {
                     delete newErrors[item.itemId];
                 }
@@ -229,7 +231,7 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
         <div className="flex flex-col h-full bg-[--bg] text-[--text] font-sans">
             <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold">مرتجع مشتريات جديد</h1>
+                    <h1 className="text-xl font-bold">{'مرتجع مشتريات جديد'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeReturn.id}</span>
                     <input type="date" value={activeReturn.date || ''} onChange={e => setState(p => ({...p, activeReturn: {...p.activeReturn, date: e.target.value}}))} className="input-style w-36"/>
                 </div>

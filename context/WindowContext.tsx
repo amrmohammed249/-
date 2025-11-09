@@ -15,10 +15,11 @@ interface WindowContextType {
 export const WindowContext = createContext<WindowContextType>({} as WindowContextType);
 
 interface WindowProviderProps {
-    children: React.ReactNode;
+    // FIX: Make children prop optional to resolve type error.
+    children?: React.ReactNode;
 }
 
-export const WindowProvider: React.FC<WindowProviderProps> = ({ children }) => {
+export const WindowProvider = ({ children }: WindowProviderProps): React.ReactElement => {
     const [activeWindows, setActiveWindows] = useState<ActiveWindow[]>([]);
     const [visibleWindowId, setVisibleWindowId] = useState<string | null>(null);
 

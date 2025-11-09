@@ -1,4 +1,5 @@
 import React, { useState, useContext, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
 import PageHeader from '../shared/PageHeader';
@@ -12,6 +13,7 @@ import { ArrowUturnLeftIcon } from '../icons';
 const SaleReturns: React.FC = () => {
   const { saleReturns, archiveSaleReturn, showToast, sequences } = useContext(DataContext);
   const { openWindow } = useContext(WindowContext);
+  const navigate = useNavigate();
 
   const [isViewModalOpen, setViewModalOpen] = useState(false);
   const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);

@@ -17,13 +17,14 @@ import ItemMovementReport from './ItemMovementReport';
 import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon } from '../icons';
 import CustomerBalancesReport from './CustomerBalancesReport';
 import SupplierBalancesReport from './SupplierBalancesReport';
+import CustomerProfitabilityReport from './CustomerProfitabilityReport';
 
 
 declare var jspdf: any;
 declare var html2canvas: any;
 
 
-type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances';
+type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability';
 
 const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category: string }[] = [
     { key: 'profitAndLoss', label: 'قائمة الدخل', isTable: false, category: 'تقارير مالية' },
@@ -37,6 +38,7 @@ const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category
     { key: 'customerBalances', label: 'أرصدة العملاء (المدينون)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'supplierBalances', label: 'أرصدة الموردين (الدائنون)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'salesProfitability', label: 'ربحية المبيعات', isTable: true, category: 'تقارير تحليلية' },
+    { key: 'customerProfitability', label: 'ربحية العملاء', isTable: true, category: 'تقارير تحليلية' },
     { key: 'customerSummary', label: 'ملخص العملاء', isTable: true, category: 'تقارير تحليلية' },
     { key: 'inventory', label: 'أرصدة المخزون', isTable: true, category: 'تقارير المخزون' },
     { key: 'itemMovement', label: 'حركة صنف', isTable: true, category: 'تقارير المخزون' },
@@ -191,6 +193,7 @@ const Reports: React.FC = () => {
             case 'customerSummary': return <CustomerSummaryReport {...props} />;
             case 'inventory': return <InventoryReport asOfDate={endDate} onDataReady={handleDataReady} itemId={selectedInventoryId} reportType={inventoryReportType} />;
             case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
+            case 'customerProfitability': return <CustomerProfitabilityReport {...props} />;
             case 'expense': return <ExpenseReport {...props} expenseAccountId={selectedExpenseAccountId} />;
             case 'treasury': return <TreasuryReport {...props} treasuryAccountId={selectedTreasuryId} />;
             case 'itemMovement': return <ItemMovementReport {...props} itemId={selectedInventoryId} />;

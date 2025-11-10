@@ -29,18 +29,19 @@ const CustomerProfile: React.FC = () => {
         })),
         ...treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === party.id && !t.isArchived).map((t: TreasuryTransaction) => ({
             date: t.date, id: t.id, description: t.description,
-            debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0,
-            credit: t.type === 'سند قبض' ? Math.abs(t.amount) : 0,
+            debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0, // Refund to customer is a debit to their account
+            credit: t.type === 'سند قبض' ? Math.abs(t.amount) : 0, // Payment from customer is a credit
             type: 'treasury', original: t
         }))
     ];
 
-    // 1. Calculate the initial opening balance (at time zero) by working backwards from the current balance.
+    // 1. Calculate the "beginning of time" opening balance by working backwards from the current final balance.
+    // This accounts for any opening balance set in the opening balances modal.
     const totalChange = allTx.reduce((sum, tx) => sum + (tx.debit - tx.credit), 0);
     const openingBalance = party.balance - totalChange;
     
     // 2. Sort all transactions chronologically.
-    const sortedTx = allTx.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const sortedTx = allTx.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.id.localeCompare(b.id));
 
     // 3. Calculate running balance starting from the true opening balance.
     let runningBalance = openingBalance;
@@ -51,7 +52,7 @@ const CustomerProfile: React.FC = () => {
     });
 
     // 4. Sort for display (latest first)
-    const finalStatementData = statementWithBalance.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const finalStatementData = statementWithBalance.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id));
 
 
     return { statementData: finalStatementData, party, openingBalance };
@@ -80,7 +81,7 @@ const CustomerProfile: React.FC = () => {
           </div>
           <div className="mt-4 md:mt-0 text-right">
             <p className="text-sm text-gray-500 dark:text-gray-400">الرصيد الحالي</p>
-            <p className={`text-3xl font-bold font-mono ${party.balance > 0 ? 'text-red-500' : 'text-green-600'}`}>
+            <p className={`text-3xl font-bold font-mono ${party.balance >= 0.01 ? 'text-red-500' : 'text-green-600'}`}>
               {party.balance.toLocaleString()} جنيه
             </p>
           </div>

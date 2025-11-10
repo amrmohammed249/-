@@ -1,13 +1,14 @@
 import React, { useContext, useRef, useState } from 'react';
 import { DataContext } from '../../context/DataContext';
-import { ArrowDownTrayIcon, UploadIcon, ExclamationTriangleIcon } from '../icons';
+import { ArrowDownTrayIcon, UploadIcon, ExclamationTriangleIcon, ArrowPathIcon } from '../icons';
 import ConfirmationModal from '../shared/ConfirmationModal';
 
 const BackupAndRestore: React.FC = () => {
-    const { data: allData, importData, showToast, resetTransactionalData } = useContext(DataContext);
+    const { importData, showToast, resetTransactionalData, forceBalanceRecalculation, ...allData } = useContext(DataContext);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isConfirmOpen, setConfirmOpen] = useState(false);
     const [isResetConfirmOpen, setResetConfirmOpen] = useState(false);
+    const [isRecalculateConfirmOpen, setRecalculateConfirmOpen] = useState(false);
     const [dataToImport, setDataToImport] = useState<any | null>(null);
 
     const handleExport = () => {
@@ -73,6 +74,11 @@ const BackupAndRestore: React.FC = () => {
         setResetConfirmOpen(false);
     };
 
+    const confirmRecalculate = () => {
+        forceBalanceRecalculation();
+        setRecalculateConfirmOpen(false);
+    };
+
     return (
         <>
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
@@ -107,6 +113,18 @@ const BackupAndRestore: React.FC = () => {
                     </div>
                 </div>
 
+                 {/* Recalculate Balances */}
+                <div className="mt-8 bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-lg shadow-md border-l-4 border-yellow-500">
+                    <h2 className="text-xl font-bold text-yellow-800 dark:text-yellow-200 mb-2">صيانة البيانات</h2>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300 mb-6">
+                        استخدم هذا الخيار إذا لاحظت عدم تطابق في أرصدة العملاء، الموردين، أو الحسابات. سيقوم النظام بمراجعة جميع الحركات المسجلة وإعادة بناء الأرصدة من البداية لضمان دقتها.
+                    </p>
+                    <button onClick={() => setRecalculateConfirmOpen(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-semibold">
+                        <ArrowPathIcon className="w-5 h-5" />
+                        <span>إعادة حساب جميع الأرصدة</span>
+                    </button>
+                </div>
+
                  {/* Reset Data */}
                 <div className="mt-8 bg-red-50 dark:bg-red-900/20 p-6 rounded-lg shadow-md border-l-4 border-red-500">
                     <h2 className="text-xl font-bold text-red-800 dark:text-red-200 mb-2">إعادة ضبط بيانات الشركة</h2>
@@ -136,6 +154,13 @@ const BackupAndRestore: React.FC = () => {
                 onConfirm={confirmReset}
                 title="تأكيد إعادة ضبط البيانات"
                 message="هل أنت متأكد تمامًا؟ سيتم حذف جميع الفواتير، القيود، الحركات المالية، وأرصدة المخزون والعملاء والموردين بشكل نهائي. لا يمكن التراجع عن هذا الإجراء. يُنصح بشدة بأخذ نسخة احتياطية أولاً."
+            />
+            <ConfirmationModal
+                isOpen={isRecalculateConfirmOpen}
+                onClose={() => setRecalculateConfirmOpen(false)}
+                onConfirm={confirmRecalculate}
+                title="تأكيد إعادة حساب الأرصدة"
+                message="هل أنت متأكد؟ هذه العملية ستقوم بتصحيح أي أخطاء في الأرصدة الحالية بناءً على الحركات المسجلة. قد تستغرق بضع لحظات."
             />
         </>
     );

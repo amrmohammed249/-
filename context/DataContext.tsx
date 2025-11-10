@@ -1002,6 +1002,77 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         showToast('تمت إعادة ضبط جميع البيانات الحركية بنجاح.', 'success');
     }, [state.sequences, state.inventory, state.customers, state.suppliers, currentUser]);
 
+    const forceBalanceRecalculation = useCallback(() => {
+        const newCustomers = JSON.parse(JSON.stringify(state.allCustomers));
+        const newSuppliers = JSON.parse(JSON.stringify(state.allSuppliers));
+        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+    
+        // 1. Reset balances
+        newCustomers.forEach((c: Customer) => c.balance = 0);
+        newSuppliers.forEach((s: Supplier) => s.balance = 0);
+        const resetAccountBalances = (nodes: AccountNode[]) => { nodes.forEach(node => { node.balance = 0; if (node.children) resetAccountBalances(node.children); }); };
+        resetAccountBalances(newChart);
+    
+        // 2. Re-apply all journal entries to chart of accounts
+        const sortedJournal = [...state.allJournal].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        sortedJournal.forEach(entry => {
+            if (!entry.isArchived) {
+                entry.lines.forEach(line => {
+                    updateBalancesRecursively(newChart, line.accountId, line.debit - line.credit);
+                });
+            }
+        });
+    
+        // 3. Re-apply all specific transactions to customers/suppliers
+        const allTransactions = [
+            ...state.allSales, ...state.allPurchases, ...state.allSaleReturns, ...state.allPurchaseReturns,
+            ...state.allTreasury.filter(t => t.partyType === 'customer' || t.partyType === 'supplier')
+        ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+        allTransactions.forEach(tx => {
+            if (tx.isArchived) return;
+    
+            if ('customer' in tx) { // Sale or SaleReturn
+                const customer = newCustomers.find((c: Customer) => c.name === tx.customer);
+                if (customer) {
+                    if ('originalSaleId' in tx) { // It's a SaleReturn
+                        customer.balance -= tx.total;
+                    } else { // It's a Sale
+                        customer.balance += (tx.total - (tx.paidAmount || 0));
+                    }
+                }
+            } else if ('supplier' in tx) { // Purchase or PurchaseReturn
+                const supplier = newSuppliers.find((s: Supplier) => s.name === tx.supplier);
+                if (supplier) {
+                    if ('originalPurchaseId' in tx) { // It's a PurchaseReturn
+                        supplier.balance -= tx.total;
+                    } else { // It's a Purchase
+                        supplier.balance += (tx.total - (tx.paidAmount || 0));
+                    }
+                }
+            } else if ('partyType' in tx) { // TreasuryTransaction
+                const amount = Math.abs(tx.amount);
+                if (tx.partyType === 'customer') {
+                    const customer = newCustomers.find((c: Customer) => c.id === tx.partyId);
+                    if (customer) {
+                        if (tx.type === 'سند قبض') customer.balance -= amount; // Payment from customer
+                        else customer.balance += amount; // Refund to customer
+                    }
+                } else if (tx.partyType === 'supplier') {
+                    const supplier = newSuppliers.find((s: Supplier) => s.id === tx.partyId);
+                    if (supplier) {
+                        if (tx.type === 'سند صرف') supplier.balance -= amount; // Payment to supplier
+                        else supplier.balance += amount; // Refund from supplier
+                    }
+                }
+            }
+        });
+        
+        const log = { id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name, action: 'إعادة حساب الأرصدة', details: 'تمت إعادة حساب جميع الأرصدة في النظام.' };
+        dispatch({ type: 'FORCE_BALANCE_RECALCULATION', payload: { customers: newCustomers, suppliers: newSuppliers, chartOfAccounts: newChart, log } });
+        showToast("تمت إعادة حساب جميع الأرصدة بنجاح.", "success");
+    }, [state, currentUser, showToast]);
+
     const updateCompanyInfo = (info: CompanyInfo) => {
         dispatch({ type: 'UPDATE_COMPANY_INFO', payload: info });
         addLogAndNotification('تحديث الإعدادات', `تم تحديث معلومات الشركة إلى "${info.name}".`);
@@ -1260,55 +1331,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         });
 
         showToast("تم تحديث الأرصدة الافتتاحية بنجاح.", "success");
-    }, [state, currentUser, showToast]);
-
-
-    const forceBalanceRecalculation = useCallback(() => {
-        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
-        const newCustomers = JSON.parse(JSON.stringify(state.customers));
-        const newSuppliers = JSON.parse(JSON.stringify(state.suppliers));
-        
-        const resetBalances = (nodes: AccountNode[]) => {
-            nodes.forEach(node => {
-                node.balance = 0;
-                if(node.children) resetBalances(node.children);
-            });
-        };
-        resetBalances(newChart);
-        newCustomers.forEach((c: Customer) => c.balance = 0);
-        newSuppliers.forEach((s: Supplier) => s.balance = 0);
-
-        state.journal.forEach((entry: JournalEntry) => {
-            if (!entry.isArchived) {
-                entry.lines.forEach(line => {
-                    updateBalancesRecursively(newChart, line.accountId, line.debit - line.credit);
-                });
-            }
-        });
-
-        newCustomers.forEach((c: Customer) => {
-             const salesTotal = state.sales.filter(s => s.customer === c.name && !s.isArchived).reduce((sum, s) => sum + s.total, 0);
-            const returnsTotal = state.saleReturns.filter(sr => sr.customer === c.name && !sr.isArchived).reduce((sum, sr) => sum + sr.total, 0);
-            const paymentsTotal = state.treasury.filter(t => t.partyId === c.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
-            const refundsTotal = state.treasury.filter(t => t.partyId === c.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0);
-            c.balance = salesTotal + refundsTotal - returnsTotal - paymentsTotal;
-        });
-
-        newSuppliers.forEach((s: Supplier) => {
-            const purchasesTotal = state.purchases.filter(p => p.supplier === s.name && !p.isArchived).reduce((sum, p) => sum + p.total, 0);
-            const returnsTotal = state.purchaseReturns.filter(pr => pr.supplier === s.name && !pr.isArchived).reduce((sum, pr) => sum + pr.total, 0);
-            const paymentsTotal = state.treasury.filter(t => t.partyId === s.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0);
-            const refundsTotal = state.treasury.filter(t => t.partyId === s.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
-            s.balance = purchasesTotal + refundsTotal - returnsTotal - paymentsTotal;
-        });
-
-        const log = {
-            id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name,
-            action: 'إعادة حساب الأرصدة', details: 'تمت إعادة حساب جميع الأرصدة في النظام.'
-        };
-
-        dispatch({ type: 'FORCE_BALANCE_RECALCULATION', payload: { customers: newCustomers, suppliers: newSuppliers, chartOfAccounts: newChart, log }});
-        showToast("تمت إعادة حساب جميع الأرصدة بنجاح.", "success");
     }, [state, currentUser, showToast]);
     
     
@@ -1845,7 +1867,63 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             id: `BILL-${String(state.sequences.purchase).padStart(3, '0')}`,
             ...purchaseData,
         };
-
+    
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        purchaseData.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+    
+        const updatedSuppliers = state.suppliers.map(s => {
+            if (s.name === newPurchase.supplier) {
+                const balanceChange = newPurchase.total - (newPurchase.paidAmount || 0);
+                return { ...s, balance: s.balance + balanceChange };
+            }
+            return s;
+        });
+    
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const supplierAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '2101');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+        const cashAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '110101');
+    
+        if (!supplierAccount || !inventoryAccount || !cashAccount) {
+            showToast("خطأ: لم يتم العثور على الحسابات المحاسبية الأساسية.", "error");
+            throw new Error("Missing critical accounts");
+        }
+    
+        const journalLines: JournalLine[] = [
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: newPurchase.total, credit: 0 },
+            { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: 0, credit: newPurchase.total },
+        ];
+    
+        if (newPurchase.paidAmount && newPurchase.paidAmount > 0) {
+            journalLines.push({ accountId: supplierAccount.id, accountName: supplierAccount.name, debit: newPurchase.paidAmount, credit: 0 });
+            journalLines.push({ accountId: cashAccount.id, accountName: cashAccount.name, debit: 0, credit: newPurchase.paidAmount });
+        }
+    
+        const journalEntry: JournalEntry = {
+            id: `JE-${state.sequences.journal}`,
+            date: newPurchase.date,
+            description: `فاتورة مشتريات رقم ${newPurchase.id}`,
+            debit: journalLines.reduce((s, l) => s + l.debit, 0),
+            credit: journalLines.reduce((s, l) => s + l.credit, 0),
+            status: 'مرحل',
+            lines: journalLines,
+        };
+        newPurchase.journalEntryId = journalEntry.id;
+    
+        journalLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+    
         const log = {
             id: `log-${Date.now()}`,
             timestamp: new Date().toISOString(),
@@ -1854,8 +1932,8 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             action: 'إضافة فاتورة مشتريات',
             details: `فاتورة #${newPurchase.id} من ${newPurchase.supplier}.`
         };
-
-        dispatch({ type: 'ADD_PURCHASE', payload: { newPurchase, log, updatedInventory: state.inventory, updatedSuppliers: state.suppliers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
+    
+        dispatch({ type: 'ADD_PURCHASE', payload: { newPurchase, updatedInventory, updatedSuppliers, journalEntry, updatedChartOfAccounts, log } });
         showToast('تمت إضافة فاتورة المشتريات.');
         return newPurchase;
     };
@@ -1915,6 +1993,12 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             id: `SRET-${String(state.sequences.saleReturn).padStart(3, '0')}`,
             ...returnData
         };
+        const updatedCustomers = state.customers.map(c => {
+            if (c.name === newReturn.customer) {
+                return { ...c, balance: c.balance - newReturn.total };
+            }
+            return c;
+        });
         const log = {
             id: `log-${Date.now()}`,
             timestamp: new Date().toISOString(),
@@ -1923,7 +2007,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             action: 'إضافة مرتجع مبيعات',
             details: `تمت إضافة مرتجع مبيعات #${newReturn.id}.`
         };
-        dispatch({ type: 'ADD_SALE_RETURN', payload: { newSaleReturn: newReturn, log, updatedInventory: state.inventory, updatedCustomers: state.customers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
+        dispatch({ type: 'ADD_SALE_RETURN', payload: { newSaleReturn: newReturn, log, updatedInventory: state.inventory, updatedCustomers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
         return newReturn;
     };
     const archiveSaleReturn = (returnId: string): { success: boolean, message: string } => { return {success: false, message: 'Not implemented'} };
@@ -1934,6 +2018,12 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             id: `PRET-${String(state.sequences.purchaseReturn).padStart(3, '0')}`,
             ...returnData
         };
+        const updatedSuppliers = state.suppliers.map(s => {
+            if (s.name === newReturn.supplier) {
+                return { ...s, balance: s.balance - newReturn.total };
+            }
+            return s;
+        });
          const log = {
             id: `log-${Date.now()}`,
             timestamp: new Date().toISOString(),
@@ -1942,7 +2032,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             action: 'إضافة مرتجع مشتريات',
             details: `تمت إضافة مرتجع مشتريات #${newReturn.id}.`
         };
-        dispatch({ type: 'ADD_PURCHASE_RETURN', payload: { newPurchaseReturn: newReturn, log, updatedInventory: state.inventory, updatedSuppliers: state.suppliers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
+        dispatch({ type: 'ADD_PURCHASE_RETURN', payload: { newPurchaseReturn: newReturn, log, updatedInventory: state.inventory, updatedSuppliers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
         return newReturn;
     };
     const archivePurchaseReturn = (returnId: string): { success: boolean, message: string } => { return {success: false, message: 'Not implemented'} };

@@ -1,3 +1,4 @@
+
 import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -39,7 +40,7 @@ const CustomerProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate
                 customerData[sale.customer] = { totalSales: 0, totalCogs: 0 };
             }
             customerData[sale.customer].totalSales += sale.total;
-            sale.items.forEach((line: LineItem) => {
+            (sale.items || []).forEach((line: LineItem) => {
                 const inventoryItem = inventory.find((i: InventoryItem) => i.id === line.itemId);
                 if (!inventoryItem) return;
                 let quantityInBaseUnits = line.quantity;
@@ -69,7 +70,7 @@ const CustomerProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate
             customerData[sr.customer].totalSales -= sr.total;
             
             // Subtract COGS of returned items
-            sr.items.forEach((line: LineItem) => {
+            (sr.items || []).forEach((line: LineItem) => {
                  const inventoryItem = inventory.find((i: InventoryItem) => i.id === line.itemId);
                 if (!inventoryItem) return;
                 let quantityInBaseUnits = line.quantity;

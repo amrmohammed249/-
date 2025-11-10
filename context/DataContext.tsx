@@ -810,10 +810,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             } else {
                  setHasData(false);
             }
-            const loggedInUser = sessionStorage.getItem(`loggedInUser_${dataManager.activeDatasetKey}`);
-            if (loggedInUser) {
-                setCurrentUser(JSON.parse(loggedInUser));
-            }
             setIsDataLoaded(true);
         };
 
@@ -871,7 +867,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         const user = state.users.find(u => u.username === username && u.password === password && !u.isArchived);
         if (user) {
             setCurrentUser(user);
-            sessionStorage.setItem(`loggedInUser_${dataManager.activeDatasetKey}`, JSON.stringify(user));
             addLogAndNotification('تسجيل الدخول', `المستخدم ${user.name} قام بتسجيل الدخول.`);
             return true;
         }
@@ -883,7 +878,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             addLogAndNotification('تسجيل الخروج', `المستخدم ${currentUser.name} قام بتسجيل الخروج.`);
         }
         setCurrentUser(null);
-        sessionStorage.removeItem(`loggedInUser_${dataManager.activeDatasetKey}`);
     };
 
     const processBarcodeScan = useCallback((barcode: string) => {

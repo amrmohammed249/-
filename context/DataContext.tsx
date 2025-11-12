@@ -727,11 +727,11 @@ interface DataContextType {
     convertQuoteToPurchase: (quoteId: string) => void;
 
     addSaleReturn: (returnData: Omit<SaleReturn, 'id' | 'journalEntryId'>) => SaleReturn;
-    archiveSaleReturn: (returnId: string) => { success: boolean, message: string };
+    deleteSaleReturn: (returnId: string) => { success: boolean, message: string };
     unarchiveSaleReturn: (id: string) => void;
 
     addPurchaseReturn: (returnData: Omit<PurchaseReturn, 'id' | 'journalEntryId'>) => PurchaseReturn;
-    archivePurchaseReturn: (returnId: string) => { success: boolean, message: string };
+    deletePurchaseReturn: (returnId: string) => { success: boolean, message: string };
     unarchivePurchaseReturn: (id: string) => void;
 
     addTreasuryTransaction: (transactionData: Omit<TreasuryTransaction, 'id' | 'balance' | 'journalEntryId'>) => TreasuryTransaction;
@@ -2225,12 +2225,79 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             id: `SRET-${String(state.sequences.saleReturn).padStart(3, '0')}`,
             ...returnData
         };
+
+        // 1. Update Inventory
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        returnData.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) {
+                        quantityInBaseUnit *= packingUnit.factor;
+                    }
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+
+        // 2. Update Customer Balance
         const updatedCustomers = state.customers.map(c => {
             if (c.name === newReturn.customer) {
                 return { ...c, balance: c.balance - newReturn.total };
             }
             return c;
         });
+
+        // 3. Create Journal Entry
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const salesReturnAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '4104');
+        const customerAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1103');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+        const cogsAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '4204');
+
+        if (!salesReturnAccount || !customerAccount || !inventoryAccount || !cogsAccount) {
+            showToast("خطأ: لم يتم العثور على حسابات المرتجعات أو المخزون أو تكلفة البضاعة.", "error");
+            throw new Error("Missing critical accounts for sale return");
+        }
+
+        const cogsValue = returnData.items.reduce((sum, line) => {
+            const item = state.inventory.find(i => i.id === line.itemId);
+            if (!item) return sum;
+            let quantityInBaseUnit = line.quantity;
+            if (line.unitId !== 'base') {
+                const packingUnit = item.units.find(u => u.id === line.unitId);
+                if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+            }
+            return sum + (quantityInBaseUnit * item.purchasePrice);
+        }, 0);
+
+        const journalLines: JournalLine[] = [
+            // Debit Sales Returns (increase expense/contra-revenue), Credit Customer (decrease receivable)
+            { accountId: salesReturnAccount.id, accountName: salesReturnAccount.name, debit: newReturn.total, credit: 0 },
+            { accountId: customerAccount.id, accountName: customerAccount.name, debit: 0, credit: newReturn.total },
+            // Debit Inventory (increase asset), Credit COGS (decrease expense)
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: cogsValue, credit: 0 },
+            { accountId: cogsAccount.id, accountName: cogsAccount.name, debit: 0, credit: cogsValue },
+        ];
+
+        const journalEntry: JournalEntry = {
+            id: `JE-${state.sequences.journal}`,
+            date: newReturn.date,
+            description: `مرتجع مبيعات رقم ${newReturn.id}`,
+            debit: newReturn.total + cogsValue,
+            credit: newReturn.total + cogsValue,
+            status: 'مرحل',
+            lines: journalLines,
+        };
+        newReturn.journalEntryId = journalEntry.id;
+        
+        // 4. Update Account Balances
+        journalLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+
         const log = {
             id: `log-${Date.now()}`,
             timestamp: new Date().toISOString(),
@@ -2239,10 +2306,112 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             action: 'إضافة مرتجع مبيعات',
             details: `تمت إضافة مرتجع مبيعات #${newReturn.id}.`
         };
-        dispatch({ type: 'ADD_SALE_RETURN', payload: { newSaleReturn: newReturn, log, updatedInventory: state.inventory, updatedCustomers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
+        
+        // 5. Dispatch
+        dispatch({
+            type: 'ADD_SALE_RETURN',
+            payload: {
+                newSaleReturn: newReturn,
+                updatedInventory,
+                updatedCustomers,
+                journalEntry,
+                updatedChartOfAccounts,
+                log,
+            }
+        });
+
         return newReturn;
     };
-    const archiveSaleReturn = (returnId: string): { success: boolean, message: string } => { return {success: false, message: 'Not implemented'} };
+    const deleteSaleReturn = (returnId: string): { success: boolean; message: string } => {
+        const saleReturnToDelete = state.saleReturns.find(sr => sr.id === returnId);
+        if (!saleReturnToDelete) {
+            return { success: false, message: 'لم يتم العثور على المرتجع.' };
+        }
+    
+        // Check inventory levels
+        for (const lineItem of saleReturnToDelete.items) {
+            const inventoryItem = state.inventory.find(i => i.id === lineItem.itemId);
+            if (!inventoryItem) {
+                return { success: false, message: `الصنف ${lineItem.itemName} غير موجود.` };
+            }
+    
+            let quantityInBaseUnit = lineItem.quantity;
+            if (lineItem.unitId !== 'base') {
+                const packingUnit = inventoryItem.units.find(u => u.id === lineItem.unitId);
+                if (packingUnit) {
+                    quantityInBaseUnit *= packingUnit.factor;
+                }
+            }
+    
+            if (inventoryItem.stock < quantityInBaseUnit) {
+                return {
+                    success: false,
+                    message: `لا يمكن حذف المرتجع. تم بيع جزء من الكمية المرتجعة للصنف "${inventoryItem.name}". الرصيد الحالي: ${inventoryItem.stock}.`,
+                };
+            }
+        }
+    
+        // 1. Reverse inventory
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        saleReturnToDelete.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+    
+        // 2. Reverse customer balance
+        const updatedCustomers = state.customers.map(c => {
+            if (c.name === saleReturnToDelete.customer) {
+                return { ...c, balance: c.balance + saleReturnToDelete.total };
+            }
+            return c;
+        });
+    
+        // 3. Archive the journal entry
+        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const entryToArchive = state.journal.find(e => e.id === saleReturnToDelete.journalEntryId);
+        let updatedJournal = state.journal;
+        if (entryToArchive) {
+            if (entryToArchive.status === 'مرحل') {
+                entryToArchive.lines.forEach(line => {
+                    updateBalancesRecursively(newChart, line.accountId, -(line.debit - line.credit));
+                });
+            }
+            updatedJournal = state.journal.map(e => e.id === entryToArchive.id ? { ...e, isArchived: true } : e);
+        }
+        
+        // 4. Remove the sale return (it's not archived, it's deleted)
+        const updatedSaleReturns = state.saleReturns.filter(sr => sr.id !== returnId);
+
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'حذف مرتجع مبيعات',
+            details: `تم حذف مرتجع المبيعات رقم #${returnId}.`
+        };
+        
+        dispatch({
+            type: 'ARCHIVE_SALE_RETURN', // Re-using this action type to update state
+            payload: {
+                updatedSaleReturns,
+                updatedInventory,
+                updatedCustomers,
+                updatedJournal,
+                chartOfAccounts: newChart,
+                log,
+            }
+        });
+    
+        return { success: true, message: 'تم الحذف بنجاح.' };
+    };
     const unarchiveSaleReturn = (id: string): void => {};
 
     const addPurchaseReturn = (returnData: Omit<PurchaseReturn, 'id' | 'journalEntryId'>): PurchaseReturn => {
@@ -2267,7 +2436,94 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         dispatch({ type: 'ADD_PURCHASE_RETURN', payload: { newPurchaseReturn: newReturn, log, updatedInventory: state.inventory, updatedSuppliers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
         return newReturn;
     };
-    const archivePurchaseReturn = (returnId: string): { success: boolean, message: string } => { return {success: false, message: 'Not implemented'} };
+    const deletePurchaseReturn = (returnId: string): { success: boolean; message: string } => {
+        const purchaseReturnToDelete = state.purchaseReturns.find(pr => pr.id === returnId);
+        if (!purchaseReturnToDelete) {
+            return { success: false, message: 'لم يتم العثور على المرتجع.' };
+        }
+    
+        const supplier = state.suppliers.find(s => s.name === purchaseReturnToDelete.supplier);
+        if (!supplier) {
+            return { success: false, message: 'لم يتم العثور على المورد المرتبط بالمرتجع.' };
+        }
+    
+        // Check if it's the last transaction for the supplier
+        const supplierTransactions = [
+            ...state.purchases.filter(p => p.supplier === supplier.name && !p.isArchived).map(p => ({ date: p.date, id: p.id, type: 'purchase' })),
+            ...state.purchaseReturns.filter(pr => pr.supplier === supplier.name && !pr.isArchived).map(pr => ({ date: pr.date, id: pr.id, type: 'purchaseReturn' })),
+            ...state.treasury.filter(t => t.partyType === 'supplier' && t.partyId === supplier.id && !t.isArchived).map(t => ({ date: t.date, id: t.id, type: 'treasury' })),
+        ].sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            if (dateA !== dateB) return dateB - dateA;
+            return b.id.localeCompare(a.id);
+        });
+    
+        if (supplierTransactions.length > 0 && (supplierTransactions[0].id !== returnId || supplierTransactions[0].type !== 'purchaseReturn')) {
+            return { success: false, message: 'لا يمكن حذف المرتجع لأنه ليس آخر حركة مالية للمورد. يجب التعامل مع الحركات الأحدث أولاً.' };
+        }
+    
+        // 1. Reverse inventory
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        purchaseReturnToDelete.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+    
+        // 2. Reverse supplier balance
+        const updatedSuppliers = state.suppliers.map(s => {
+            if (s.id === supplier.id) {
+                return { ...s, balance: s.balance + purchaseReturnToDelete.total };
+            }
+            return s;
+        });
+    
+        // 3. Archive journal entry
+        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const entryToArchive = state.journal.find(e => e.id === purchaseReturnToDelete.journalEntryId);
+        let updatedJournal = state.journal;
+        if (entryToArchive) {
+            if (entryToArchive.status === 'مرحل') {
+                entryToArchive.lines.forEach(line => {
+                    updateBalancesRecursively(newChart, line.accountId, -(line.debit - line.credit));
+                });
+            }
+            updatedJournal = state.journal.map(e => e.id === entryToArchive.id ? { ...e, isArchived: true } : e);
+        }
+    
+        // 4. Remove the purchase return
+        const updatedPurchaseReturns = state.purchaseReturns.filter(pr => pr.id !== returnId);
+    
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'حذف مرتجع مشتريات',
+            details: `تم حذف مرتجع المشتريات رقم #${returnId}.`
+        };
+    
+        dispatch({
+            type: 'ARCHIVE_PURCHASE_RETURN',
+            payload: {
+                updatedPurchaseReturns,
+                updatedInventory,
+                updatedSuppliers,
+                updatedJournal,
+                chartOfAccounts: newChart,
+                log,
+            }
+        });
+    
+        return { success: true, message: 'تم الحذف بنجاح.' };
+    };
     const unarchivePurchaseReturn = (id: string): void => {};
 
     const addTreasuryTransaction = (transactionData: Omit<TreasuryTransaction, 'id' | 'balance' | 'journalEntryId'>): TreasuryTransaction => {
@@ -2572,10 +2828,10 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         cancelPurchaseQuote,
         convertQuoteToPurchase,
         addSaleReturn,
-        archiveSaleReturn,
+        deleteSaleReturn,
         unarchiveSaleReturn,
         addPurchaseReturn,
-        archivePurchaseReturn,
+        deletePurchaseReturn,
         unarchivePurchaseReturn,
         addTreasuryTransaction,
         updateTreasuryTransaction,

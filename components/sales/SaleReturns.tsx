@@ -11,35 +11,35 @@ import type { SaleReturn } from '../../types';
 import { ArrowUturnLeftIcon } from '../icons';
 
 const SaleReturns: React.FC = () => {
-  const { saleReturns, archiveSaleReturn, showToast, sequences } = useContext(DataContext);
+  const { saleReturns, deleteSaleReturn, showToast, sequences } = useContext(DataContext);
   const { openWindow } = useContext(WindowContext);
   const navigate = useNavigate();
 
   const [isViewModalOpen, setViewModalOpen] = useState(false);
-  const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
-  const [selectedReturn, setSelectedReturn] = useState<SaleReturn | null>(null);
+  const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [returnToDelete, setReturnToDelete] = useState<SaleReturn | null>(null);
 
   const handleView = (saleReturn: SaleReturn) => {
-    setSelectedReturn(saleReturn);
+    setReturnToDelete(saleReturn);
     setViewModalOpen(true);
   };
 
-  const handleArchive = (saleReturn: SaleReturn) => {
-    setSelectedReturn(saleReturn);
-    setArchiveModalOpen(true);
+  const handleDelete = (saleReturn: SaleReturn) => {
+    setReturnToDelete(saleReturn);
+    setDeleteModalOpen(true);
   };
   
-  const confirmArchive = () => {
-    if (selectedReturn) {
-        const result = archiveSaleReturn(selectedReturn.id);
+  const confirmDelete = () => {
+    if (returnToDelete) {
+        const result = deleteSaleReturn(returnToDelete.id);
         if (!result.success) {
             showToast(result.message, 'error');
         } else {
-            showToast('تمت أرشفة المرتجع بنجاح.');
+            showToast('تم حذف المرتجع بنجاح.');
         }
     }
-    setArchiveModalOpen(false);
-    setSelectedReturn(null);
+    setDeleteModalOpen(false);
+    setReturnToDelete(null);
   };
   
   const handleAddNewReturn = () => {
@@ -80,27 +80,27 @@ const SaleReturns: React.FC = () => {
       <DataTable 
         columns={columns} 
         data={saleReturns}
-        actions={['view', 'archive']}
+        actions={['view', 'delete']}
         onView={handleView}
-        onArchive={handleArchive}
+        onDelete={handleDelete}
         searchableColumns={['id', 'customer', 'date', 'originalSaleId']}
       />
       
-      {selectedReturn && (
+      {returnToDelete && (
         <SaleReturnView
           isOpen={isViewModalOpen}
-          onClose={() => setViewModalOpen(false)}
-          saleReturn={selectedReturn}
+          onClose={() => { setViewModalOpen(false); setReturnToDelete(null); }}
+          saleReturn={returnToDelete}
         />
       )}
 
-      {selectedReturn && (
+      {returnToDelete && (
         <ConfirmationModal
-          isOpen={isArchiveModalOpen}
-          onClose={() => setArchiveModalOpen(false)}
-          onConfirm={confirmArchive}
-          title="تأكيد الأرشفة"
-          message={`هل أنت متأكد من رغبتك في أرشفة المرتجع رقم "${selectedReturn.id}"؟ سيتم التراجع عن أثره المالي والمخزني.`}
+          isOpen={isDeleteModalOpen}
+          onClose={() => setDeleteModalOpen(false)}
+          onConfirm={confirmDelete}
+          title="تأكيد الحذف"
+          message={`هل أنت متأكد من رغبتك في حذف المرتجع رقم "${returnToDelete.id}"؟ لا يمكن التراجع عن هذا الإجراء.`}
         />
       )}
     </div>

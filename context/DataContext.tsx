@@ -608,7 +608,7 @@ interface DataContextType {
     financialYear: FinancialYear;
     generalSettings: GeneralSettings;
     chartOfAccounts: AccountNode[];
-    sequences: typeof seedData.sequencesData;
+    sequences: typeof seedData.sequencesData & { saleReturnStockFixApplied_v2?: boolean };
     unitDefinitions: UnitDefinition[];
     activityLog: ActivityLogEntry[];
     notifications: Notification[];
@@ -805,10 +805,55 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         const loadData = async () => {
             if (!dataManager.activeDatasetKey) return;
             
-            const savedData = await get<AppState>(dataManager.activeDatasetKey);
+            let savedData = await get<AppState>(dataManager.activeDatasetKey);
             if (savedData) {
                 if (savedData.chartOfAccounts) {
                     savedData.chartOfAccounts = migrateChartOfAccounts(savedData.chartOfAccounts);
+                }
+
+                // ONE-TIME MIGRATION FOR OLD SALE RETURNS
+                // @ts-ignore
+                if (!savedData.sequences.saleReturnStockFixApplied_v2) {
+                    let inventoryNeedsUpdate = false;
+                    const updatedInventory = JSON.parse(JSON.stringify(savedData.inventory));
+    
+                    savedData.saleReturns = savedData.saleReturns.map(sr => {
+                        if (sr.stockCorrectionApplied) {
+                            return sr;
+                        }
+    
+                        if (sr.id === 'SRET-001') {
+                            console.log(`MIGRATION: Flagging SRET-001 as corrected without changing stock.`);
+                            return { ...sr, stockCorrectionApplied: true };
+                        }
+    
+                        inventoryNeedsUpdate = true;
+                        console.log(`MIGRATION: Applying stock correction for old Sale Return: ${sr.id}`);
+                        
+                        sr.items.forEach(lineItem => {
+                            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+                            if (item) {
+                                let quantityInBaseUnit = lineItem.quantity;
+                                const itemDetails = savedData.inventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+                                if (itemDetails && lineItem.unitId !== 'base') {
+                                    const packingUnit = itemDetails.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                                    if (packingUnit) {
+                                        quantityInBaseUnit *= packingUnit.factor;
+                                    }
+                                }
+                                item.stock += quantityInBaseUnit;
+                            }
+                        });
+                        return { ...sr, stockCorrectionApplied: true };
+                    });
+    
+                    if (inventoryNeedsUpdate) {
+                        savedData.inventory = updatedInventory;
+                    }
+
+                    // @ts-ignore
+                    savedData.sequences.saleReturnStockFixApplied_v2 = true; 
+                    console.log('Sale return stock migration logic finished.');
                 }
                 
                 dispatch({ type: 'SET_STATE', payload: savedData });
@@ -2223,6 +2268,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
     const addSaleReturn = (returnData: Omit<SaleReturn, 'id' | 'journalEntryId'>): SaleReturn => {
         const newReturn: SaleReturn = {
             id: `SRET-${String(state.sequences.saleReturn).padStart(3, '0')}`,
+            stockCorrectionApplied: true,
             ...returnData
         };
 
@@ -2419,13 +2465,63 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             id: `PRET-${String(state.sequences.purchaseReturn).padStart(3, '0')}`,
             ...returnData
         };
+    
+        // 1. Update Inventory
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        returnData.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) {
+                        quantityInBaseUnit *= packingUnit.factor;
+                    }
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+    
+        // 2. Update Supplier Balance
         const updatedSuppliers = state.suppliers.map(s => {
             if (s.name === newReturn.supplier) {
                 return { ...s, balance: s.balance - newReturn.total };
             }
             return s;
         });
-         const log = {
+    
+        // 3. Create Journal Entry
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const supplierAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '2101');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+    
+        if (!supplierAccount || !inventoryAccount) {
+            showToast("خطأ: لم يتم العثور على حسابات الموردين أو المخزون.", "error");
+            throw new Error("Missing critical accounts for purchase return");
+        }
+    
+        const journalLines: JournalLine[] = [
+            { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: newReturn.total, credit: 0 },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: newReturn.total },
+        ];
+    
+        const journalEntry: JournalEntry = {
+            id: `JE-${state.sequences.journal}`,
+            date: newReturn.date,
+            description: `مرتجع مشتريات رقم ${newReturn.id}`,
+            debit: newReturn.total,
+            credit: newReturn.total,
+            status: 'مرحل',
+            lines: journalLines,
+        };
+        newReturn.journalEntryId = journalEntry.id;
+    
+        // 4. Update Account Balances
+        journalLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+    
+        const log = {
             id: `log-${Date.now()}`,
             timestamp: new Date().toISOString(),
             userId: currentUser!.id,
@@ -2433,7 +2529,21 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             action: 'إضافة مرتجع مشتريات',
             details: `تمت إضافة مرتجع مشتريات #${newReturn.id}.`
         };
-        dispatch({ type: 'ADD_PURCHASE_RETURN', payload: { newPurchaseReturn: newReturn, log, updatedInventory: state.inventory, updatedSuppliers, journalEntry: {}, updatedChartOfAccounts: state.chartOfAccounts } });
+    
+        // 5. Dispatch
+        dispatch({
+            type: 'ADD_PURCHASE_RETURN',
+            payload: {
+                newPurchaseReturn: newReturn,
+                updatedInventory,
+                updatedSuppliers,
+                journalEntry,
+                updatedChartOfAccounts,
+                log,
+            }
+        });
+    
+        showToast('تمت إضافة مرتجع المشتريات بنجاح.');
         return newReturn;
     };
     const deletePurchaseReturn = (returnId: string): { success: boolean; message: string } => {

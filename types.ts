@@ -114,6 +114,7 @@ export interface SaleReturn {
   total: number;
   journalEntryId?: string;
   isArchived?: boolean;
+  stockCorrectionApplied?: boolean;
 }
 
 export interface PurchaseReturn {

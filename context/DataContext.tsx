@@ -314,6 +314,10 @@ function dataReducer(state: AppState, action: Action): AppState {
                 activityLog: [action.payload.log, ...state.activityLog]
             };
         }
+        case 'UPDATE_PRICE_QUOTE':
+        case 'UPDATE_PURCHASE_QUOTE': {
+            return { ...state, ...action.payload };
+        }
         case 'CANCEL_PRICE_QUOTE': {
             return {
                 ...state,
@@ -708,6 +712,7 @@ interface DataContextType {
     unarchiveSale: (id: string) => void;
     
     addPriceQuote: (quoteData: Omit<PriceQuote, 'id' | 'status'>) => PriceQuote;
+    updatePriceQuote: (quoteData: PriceQuote) => void;
     cancelPriceQuote: (quoteId: string) => void;
     convertQuoteToSale: (quoteId: string) => void;
 
@@ -717,6 +722,7 @@ interface DataContextType {
     unarchivePurchase: (id: string) => void;
     
     addPurchaseQuote: (quoteData: Omit<PurchaseQuote, 'id' | 'status'>) => PurchaseQuote;
+    updatePurchaseQuote: (quoteData: PurchaseQuote) => void;
     cancelPurchaseQuote: (quoteId: string) => void;
     convertQuoteToPurchase: (quoteId: string) => void;
 
@@ -1829,6 +1835,21 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         dispatch({ type: 'ADD_PRICE_QUOTE', payload: { newQuote, log } });
         return newQuote;
     };
+    const updatePriceQuote = (quoteData: PriceQuote) => {
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'تعديل بيان أسعار',
+            details: `تم تعديل بيان أسعار رقم ${quoteData.id}.`
+        };
+        const payload = {
+            priceQuotes: state.priceQuotes.map(q => q.id === quoteData.id ? quoteData : q),
+            log,
+        };
+        dispatch({ type: 'UPDATE_PRICE_QUOTE', payload });
+    };
     const cancelPriceQuote = (quoteId: string): void => {
         const log = {
             id: `log-${Date.now()}`,
@@ -2084,6 +2105,21 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         };
         dispatch({ type: 'ADD_PURCHASE_QUOTE', payload: { newQuote, log } });
         return newQuote;
+    };
+    const updatePurchaseQuote = (quoteData: PurchaseQuote) => {
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'تعديل طلب شراء',
+            details: `تم تعديل طلب شراء رقم ${quoteData.id}.`
+        };
+        const payload = {
+            purchaseQuotes: state.purchaseQuotes.map(q => q.id === quoteData.id ? quoteData : q),
+            log,
+        };
+        dispatch({ type: 'UPDATE_PURCHASE_QUOTE', payload });
     };
     const cancelPurchaseQuote = (quoteId: string): void => {
          const log = {
@@ -2524,6 +2560,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         archiveSale,
         unarchiveSale,
         addPriceQuote,
+        updatePriceQuote,
         cancelPriceQuote,
         convertQuoteToSale,
         addPurchase,
@@ -2531,6 +2568,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         archivePurchase,
         unarchivePurchase,
         addPurchaseQuote,
+        updatePurchaseQuote,
         cancelPurchaseQuote,
         convertQuoteToPurchase,
         addSaleReturn,

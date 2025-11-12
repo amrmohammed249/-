@@ -14,7 +14,7 @@ interface PriceQuotesProps {
 }
 
 const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStateChange }) => {
-    const { customers, inventory, addPriceQuote, showToast, sequences, scannedItem } = useContext(DataContext);
+    const { customers, inventory, addPriceQuote, updatePriceQuote, showToast, sequences, scannedItem } = useContext(DataContext);
     const { visibleWindowId, closeWindow } = useContext(WindowContext);
     
     const productSearchRef = useRef<HTMLInputElement>(null);
@@ -24,7 +24,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
     // The component now fully relies on the state passed via props
     const setState = onStateChange!;
     const state = windowState || {};
-    const { activeQuote, items, customer, productSearchTerm, customerSearchTerm, isProcessing } = state;
+    const { activeQuote, items, customer, productSearchTerm, customerSearchTerm, isProcessing, isEditMode } = state;
 
     const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
     const [quoteToView, setQuoteToView] = useState<PriceQuote | null>(null);
@@ -104,28 +104,40 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
         }
         setState(p => ({...p, isProcessing: true}));
 
-        const newQuoteData: Omit<PriceQuote, 'id' | 'status'> = {
+        const quoteData = {
+            ...(isEditMode ? activeQuote : {}),
+            id: activeQuote.id,
             customer: customer?.name,
             date: activeQuote.date!,
             items: items,
             subtotal: totals.subtotal,
             totalDiscount: totals.totalDiscount,
             total: totals.grandTotal,
+            status: 'جديد' as const,
         };
 
         try {
-            const createdQuote = addPriceQuote(newQuoteData);
-            showToast(`تم إنشاء بيان الأسعار ${createdQuote.id} بنجاح.`);
-            if(print) {
-                setQuoteToView(createdQuote);
+            let savedQuote;
+            if (isEditMode) {
+                updatePriceQuote(quoteData as PriceQuote);
+                savedQuote = quoteData as PriceQuote;
+                showToast('تم تعديل بيان الأسعار بنجاح.');
+                closeWindow(windowId);
+            } else {
+                savedQuote = addPriceQuote(quoteData);
+                showToast(`تم إنشاء بيان الأسعار ${savedQuote.id} بنجاح.`);
+                resetQuote();
             }
-            resetQuote();
+
+            if (print) {
+                setQuoteToView(savedQuote);
+            }
         } catch (error: any) {
             showToast(error.message || 'حدث خطأ أثناء حفظ البيان', 'error');
         } finally {
             setState(p => ({...p, isProcessing: false}));
         }
-    }, [items, customer, activeQuote, totals, addPriceQuote, showToast, resetQuote, setState]);
+    }, [isEditMode, items, customer, activeQuote, totals, addPriceQuote, updatePriceQuote, showToast, resetQuote, setState, windowId, closeWindow]);
 
 
     useEffect(() => {
@@ -134,7 +146,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
             if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); customerSearchRef.current?.focus(); }
             if (e.key === 'F9') { e.preventDefault(); handleFinalize(true); }
             if (e.key === 'F2') { e.preventDefault(); handleFinalize(false); }
-            if (e.key === 'F3') { e.preventDefault(); resetQuote(); }
+            if (e.key === 'F3') { e.preventDefault(); handleCancelOrReset(); }
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -229,13 +241,21 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
         else if (e.key === 'Tab' && !e.shiftKey && field === 'price') { e.preventDefault(); productSearchRef.current?.focus(); }
     };
 
+    const handleCancelOrReset = () => {
+        if (isEditMode) {
+            closeWindow(windowId);
+        } else {
+            resetQuote();
+        }
+    };
+
     if (!state || !activeQuote) return null;
 
     return (
         <div className="flex flex-col h-full bg-[--bg] text-[--text] font-sans">
             <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">إنشاء بيان أسعار</h1>
+                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{isEditMode ? 'تعديل بيان أسعار' : 'إنشاء بيان أسعار'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">
                         {activeQuote.id}
                     </span>
@@ -308,9 +328,11 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                         <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-4"><div className="flex justify-between items-center text-3xl font-bold text-[--accent]"><span>الإجمالي</span><span className="font-mono">{totals.grandTotal.toLocaleString()}</span></div></div>
                     </div>
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 space-y-3">
-                        <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent-2] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : 'حفظ (F2)'}</button>
-                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : 'حفظ وطباعة (F9)'}</button>
-                        <button onClick={resetQuote} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">بيان أسعار جديد (F3)</button>
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : isEditMode ? 'حفظ وطباعة' : 'حفظ وطباعة (F9)'}</button>
+                        <div className="grid grid-cols-2 gap-2">
+                           <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ التعديلات' : 'حفظ (F2)'}</button>
+                           <button onClick={handleCancelOrReset} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'إلغاء' : 'بيان جديد (F3)'}</button>
+                        </div>
                     </div>
                 </aside>
             </div>

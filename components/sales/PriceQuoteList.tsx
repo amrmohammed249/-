@@ -1,4 +1,3 @@
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
@@ -7,7 +6,7 @@ import DataTable from '../shared/DataTable';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import QuoteView from './QuoteView';
 import { PriceQuote } from '../../types';
-import { DocumentPlusIcon, EyeIcon, ArrowPathIcon, TrashIcon } from '../icons';
+import { DocumentPlusIcon, EyeIcon, ArrowPathIcon, TrashIcon, PencilIcon } from '../icons';
 
 const StatusBadge: React.FC<{ status: PriceQuote['status'] }> = ({ status }) => {
     const statusClasses = {
@@ -19,12 +18,30 @@ const StatusBadge: React.FC<{ status: PriceQuote['status'] }> = ({ status }) => 
 }
 
 const PriceQuoteList: React.FC = () => {
-    const { priceQuotes, convertQuoteToSale, cancelPriceQuote, showToast, sequences } = useContext(DataContext);
+    const { priceQuotes, convertQuoteToSale, cancelPriceQuote, showToast, sequences, customers } = useContext(DataContext);
     const { openWindow } = useContext(WindowContext);
 
     const [quoteToView, setQuoteToView] = useState<PriceQuote | null>(null);
     const [quoteToCancel, setQuoteToCancel] = useState<PriceQuote | null>(null);
     const [quoteToConvert, setQuoteToConvert] = useState<PriceQuote | null>(null);
+
+    const handleEdit = (quote: PriceQuote) => {
+        const customer = customers.find((c: any) => c.name === quote.customer);
+        openWindow({
+            path: '/price-quotes',
+            title: `تعديل بيان أسعار ${quote.id}`,
+            icon: <PencilIcon />,
+            state: {
+                isEditMode: true,
+                activeQuote: quote,
+                items: JSON.parse(JSON.stringify(quote.items)),
+                customer: customer || null,
+                productSearchTerm: '',
+                customerSearchTerm: '',
+                isProcessing: false,
+            }
+        });
+    };
 
     const handleConvert = (quote: PriceQuote) => {
         if (quote.status !== 'جديد') {
@@ -56,6 +73,9 @@ const PriceQuoteList: React.FC = () => {
             </button>
             {row.status === 'جديد' && (
                 <>
+                    <button onClick={() => handleEdit(row)} className="text-gray-400 hover:text-green-500" title="تعديل">
+                        <PencilIcon className="w-5 h-5"/>
+                    </button>
                     <button onClick={() => handleConvert(row)} className="text-gray-400 hover:text-green-500" title="تحويل إلى فاتورة">
                         <ArrowPathIcon className="w-5 h-5"/>
                     </button>
@@ -86,6 +106,7 @@ const PriceQuoteList: React.FC = () => {
                     title: 'إنشاء بيان أسعار', 
                     icon: <DocumentPlusIcon />,
                     state: {
+                        isEditMode: false,
                         activeQuote: {
                             id: `QT-${String(sequences.priceQuote).padStart(3, '0')}`,
                             date: new Date().toISOString().slice(0, 10),

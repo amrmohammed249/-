@@ -14,8 +14,8 @@ interface PurchaseQuotesProps {
 }
 
 const PurchaseQuotes: React.FC<PurchaseQuotesProps> = ({ windowId, windowState, onStateChange }) => {
-    const { suppliers, inventory, addPurchaseQuote, showToast, sequences, scannedItem } = useContext(DataContext);
-    const { visibleWindowId } = useContext(WindowContext);
+    const { suppliers, inventory, addPurchaseQuote, updatePurchaseQuote, showToast, sequences, scannedItem } = useContext(DataContext);
+    const { visibleWindowId, closeWindow } = useContext(WindowContext);
     
     const productSearchRef = useRef<HTMLInputElement>(null);
     const supplierSearchRef = useRef<HTMLInputElement>(null);
@@ -24,7 +24,7 @@ const PurchaseQuotes: React.FC<PurchaseQuotesProps> = ({ windowId, windowState, 
     // Rely on state from props
     const setState = onStateChange!;
     const state = windowState || {};
-    const { activeQuote, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing } = state;
+    const { activeQuote, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing, isEditMode } = state;
 
     const [isAddSupplierModalOpen, setAddSupplierModalOpen] = useState(false);
     const [quoteToView, setQuoteToView] = useState<PurchaseQuote | null>(null);
@@ -104,28 +104,40 @@ const PurchaseQuotes: React.FC<PurchaseQuotesProps> = ({ windowId, windowState, 
         }
         setState(p => ({...p, isProcessing: true}));
 
-        const newQuoteData: Omit<PurchaseQuote, 'id' | 'status'> = {
+        const quoteData = {
+            ...(isEditMode ? activeQuote : {}),
+            id: activeQuote.id,
             supplier: supplier?.name,
             date: activeQuote.date!,
             items: items,
             subtotal: totals.subtotal,
             totalDiscount: totals.totalDiscount,
             total: totals.grandTotal,
+            status: 'جديد' as const,
         };
 
         try {
-            const createdQuote = addPurchaseQuote(newQuoteData);
-            showToast(`تم إنشاء طلب الشراء ${createdQuote.id} بنجاح.`);
-            if(print) {
-                setQuoteToView(createdQuote);
+            let savedQuote;
+            if (isEditMode) {
+                updatePurchaseQuote(quoteData as PurchaseQuote);
+                savedQuote = quoteData as PurchaseQuote;
+                showToast('تم تعديل طلب الشراء بنجاح.');
+                closeWindow(windowId);
+            } else {
+                savedQuote = addPurchaseQuote(quoteData);
+                showToast(`تم إنشاء طلب الشراء ${savedQuote.id} بنجاح.`);
+                resetQuote();
             }
-            resetQuote();
+
+            if (print) {
+                setQuoteToView(savedQuote);
+            }
         } catch (error: any) {
             showToast(error.message || 'حدث خطأ أثناء حفظ الطلب', 'error');
         } finally {
             setState(p => ({...p, isProcessing: false}));
         }
-    }, [items, supplier, activeQuote, totals, addPurchaseQuote, showToast, resetQuote, setState]);
+    }, [isEditMode, items, supplier, activeQuote, totals, addPurchaseQuote, updatePurchaseQuote, showToast, resetQuote, setState, windowId, closeWindow]);
 
 
     useEffect(() => {
@@ -134,7 +146,7 @@ const PurchaseQuotes: React.FC<PurchaseQuotesProps> = ({ windowId, windowState, 
             if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); supplierSearchRef.current?.focus(); }
             if (e.key === 'F9') { e.preventDefault(); handleFinalize(true); }
             if (e.key === 'F2') { e.preventDefault(); handleFinalize(false); }
-            if (e.key === 'F3') { e.preventDefault(); resetQuote(); }
+            if (e.key === 'F3') { e.preventDefault(); handleCancelOrReset(); }
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -229,13 +241,21 @@ const PurchaseQuotes: React.FC<PurchaseQuotesProps> = ({ windowId, windowState, 
         else if (e.key === 'Tab' && !e.shiftKey && field === 'price') { e.preventDefault(); productSearchRef.current?.focus(); }
     };
 
+    const handleCancelOrReset = () => {
+        if (isEditMode) {
+            closeWindow(windowId);
+        } else {
+            resetQuote();
+        }
+    };
+
     if (!state || !activeQuote) return null;
 
     return (
         <div className="flex flex-col h-full bg-[--bg] text-[--text] font-sans">
             <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">طلب شراء</h1>
+                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{isEditMode ? 'تعديل طلب شراء' : 'طلب شراء جديد'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeQuote.id}</span>
                     <input type="date" value={activeQuote.date || ''} onChange={e => setState(p => ({...p, activeQuote: {...p.activeQuote, date: e.target.value}}))} className="input-style w-36"/>
                 </div>
@@ -305,9 +325,11 @@ const PurchaseQuotes: React.FC<PurchaseQuotesProps> = ({ windowId, windowState, 
                         <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-4"><div className="flex justify-between items-center text-3xl font-bold text-[--accent]"><span>الإجمالي</span><span className="font-mono">{totals.grandTotal.toLocaleString()}</span></div></div>
                     </div>
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 space-y-3">
-                        <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent-2] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : 'حفظ (F2)'}</button>
-                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : 'حفظ وطباعة (F9)'}</button>
-                        <button onClick={resetQuote} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">طلب شراء جديد (F3)</button>
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : isEditMode ? 'حفظ وطباعة' : 'حفظ وطباعة (F9)'}</button>
+                         <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'حفظ التعديلات' : 'حفظ (F2)'}</button>
+                            <button onClick={handleCancelOrReset} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'إلغاء' : 'طلب جديد (F3)'}</button>
+                        </div>
                     </div>
                 </aside>
             </div>

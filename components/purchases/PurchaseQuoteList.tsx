@@ -1,4 +1,3 @@
-
 import React, { useState, useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
@@ -7,7 +6,7 @@ import DataTable from '../shared/DataTable';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import QuoteView from './QuoteView';
 import { PurchaseQuote } from '../../types';
-import { DocumentPlusIcon, EyeIcon, ArrowPathIcon, TrashIcon } from '../icons';
+import { DocumentPlusIcon, EyeIcon, ArrowPathIcon, TrashIcon, PencilIcon } from '../icons';
 
 const StatusBadge: React.FC<{ status: PurchaseQuote['status'] }> = ({ status }) => {
     const statusClasses = {
@@ -19,12 +18,30 @@ const StatusBadge: React.FC<{ status: PurchaseQuote['status'] }> = ({ status }) 
 }
 
 const PurchaseQuoteList: React.FC = () => {
-    const { purchaseQuotes, convertQuoteToPurchase, cancelPurchaseQuote, showToast, sequences } = useContext(DataContext);
+    const { purchaseQuotes, convertQuoteToPurchase, cancelPurchaseQuote, showToast, sequences, suppliers } = useContext(DataContext);
     const { openWindow } = useContext(WindowContext);
 
     const [quoteToView, setQuoteToView] = useState<PurchaseQuote | null>(null);
     const [quoteToCancel, setQuoteToCancel] = useState<PurchaseQuote | null>(null);
     const [quoteToConvert, setQuoteToConvert] = useState<PurchaseQuote | null>(null);
+
+    const handleEdit = (quote: PurchaseQuote) => {
+        const supplier = suppliers.find((s: any) => s.name === quote.supplier);
+        openWindow({
+            path: '/purchase-quotes',
+            title: `تعديل طلب شراء ${quote.id}`,
+            icon: <PencilIcon />,
+            state: {
+                isEditMode: true,
+                activeQuote: quote,
+                items: JSON.parse(JSON.stringify(quote.items)),
+                supplier: supplier || null,
+                productSearchTerm: '',
+                supplierSearchTerm: '',
+                isProcessing: false,
+            }
+        });
+    };
 
     const handleConvert = (quote: PurchaseQuote) => {
         if (quote.status !== 'جديد') {
@@ -56,6 +73,9 @@ const PurchaseQuoteList: React.FC = () => {
             </button>
             {row.status === 'جديد' && (
                 <>
+                    <button onClick={() => handleEdit(row)} className="text-gray-400 hover:text-green-500" title="تعديل">
+                        <PencilIcon className="w-5 h-5"/>
+                    </button>
                     <button onClick={() => handleConvert(row)} className="text-gray-400 hover:text-green-500" title="تحويل إلى فاتورة مشتريات">
                         <ArrowPathIcon className="w-5 h-5"/>
                     </button>
@@ -86,6 +106,7 @@ const PurchaseQuoteList: React.FC = () => {
                     title: 'إنشاء طلب شراء', 
                     icon: <DocumentPlusIcon />,
                     state: {
+                        isEditMode: false,
                         activeQuote: {
                             id: `PQT-${String(sequences.purchaseQuote).padStart(3, '0')}`,
                             date: new Date().toISOString().slice(0, 10),

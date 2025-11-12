@@ -19,7 +19,7 @@ const StatusBadge: React.FC<{ status: PurchaseQuote['status'] }> = ({ status }) 
 }
 
 const PurchaseQuoteList: React.FC = () => {
-    const { purchaseQuotes, convertQuoteToPurchase, cancelPurchaseQuote, showToast } = useContext(DataContext);
+    const { purchaseQuotes, convertQuoteToPurchase, cancelPurchaseQuote, showToast, sequences } = useContext(DataContext);
     const { openWindow } = useContext(WindowContext);
 
     const [quoteToView, setQuoteToView] = useState<PurchaseQuote | null>(null);
@@ -81,7 +81,22 @@ const PurchaseQuoteList: React.FC = () => {
             <PageHeader 
                 title="قائمة طلبات الشراء" 
                 buttonText="إنشاء طلب شراء جديد"
-                onButtonClick={() => openWindow({ path: '/purchase-quotes', title: 'إنشاء طلب شراء', icon: <DocumentPlusIcon /> })}
+                onButtonClick={() => openWindow({ 
+                    path: '/purchase-quotes', 
+                    title: 'إنشاء طلب شراء', 
+                    icon: <DocumentPlusIcon />,
+                    state: {
+                        activeQuote: {
+                            id: `PQT-${String(sequences.purchaseQuote).padStart(3, '0')}`,
+                            date: new Date().toISOString().slice(0, 10),
+                        },
+                        items: [],
+                        supplier: null,
+                        productSearchTerm: '',
+                        supplierSearchTerm: '',
+                        isProcessing: false,
+                    }
+                })}
                 buttonIcon={<DocumentPlusIcon />}
             />
             <DataTable 

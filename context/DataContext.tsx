@@ -1840,20 +1840,150 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         };
         dispatch({ type: 'CANCEL_PRICE_QUOTE', payload: { quoteId, log } });
     };
-    const convertQuoteToSale = (quoteId: string): void => {
+    const convertQuoteToSale = (quoteId: string) => {
         const quote = state.priceQuotes.find(q => q.id === quoteId);
-        if (!quote) return;
-        const saleData = {
+        if (!quote) {
+            showToast('لم يتم العثور على بيان الأسعار.', 'error');
+            return;
+        }
+
+        // --- STOCK CHECK ---
+        if (!state.generalSettings.allowNegativeStock) {
+            const insufficientStockItems: string[] = [];
+            for (const lineItem of quote.items) {
+                const inventoryItem = state.inventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+                if (!inventoryItem) {
+                    showToast(`الصنف "${lineItem.itemName}" غير موجود في المخزون.`, 'error');
+                    return;
+                }
+
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) {
+                        quantityInBaseUnit *= packingUnit.factor;
+                    }
+                }
+                
+                if (inventoryItem.stock < quantityInBaseUnit) {
+                    insufficientStockItems.push(`${lineItem.itemName} (المطلوب: ${quantityInBaseUnit}, المتاح: ${inventoryItem.stock})`);
+                }
+            }
+            
+            if (insufficientStockItems.length > 0) {
+                const errorMessage = `لا يمكن التحويل لنقص المخزون: ${insufficientStockItems.join(', ')}`;
+                showToast(errorMessage, 'error');
+                return;
+            }
+        }
+        // --- END STOCK CHECK ---
+
+        const updatedQuote = { ...quote, status: 'تم تحويله' as const };
+        
+        const newSale: Sale = {
+            id: `INV-${String(state.sequences.sale).padStart(3, '0')}`,
             customer: quote.customer,
             date: new Date().toISOString().slice(0, 10),
             items: quote.items,
             subtotal: quote.subtotal,
             totalDiscount: quote.totalDiscount,
             total: quote.total,
-            status: 'مستحقة' as Sale['status'],
+            status: 'مستحقة',
+            paidAmount: 0,
         };
-        addSale(saleData);
-        dispatch({ type: 'SET_STATE', payload: {...state, priceQuotes: state.priceQuotes.map(q => q.id === quoteId ? {...q, status: 'تم تحويله'} : q)} });
+
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        newSale.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if(item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) {
+                        quantityInBaseUnit *= packingUnit.factor;
+                    }
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+
+        const updatedCustomers = state.customers.map(c => {
+            if (c.name === newSale.customer) {
+                return { ...c, balance: c.balance + (newSale.total - (newSale.paidAmount || 0)) };
+            }
+            return c;
+        });
+
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const customerAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1103');
+        const salesAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '4101');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+        const cogsAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '4204');
+        
+        if (!customerAccount || !salesAccount || !inventoryAccount || !cogsAccount) {
+            showToast("خطأ: لم يتم العثور على الحسابات المحاسبية الأساسية.", "error");
+            throw new Error("Missing critical accounts");
+        }
+    
+        const cogsValue = newSale.items.reduce((sum, line) => {
+            const item = state.inventory.find(i => i.id === line.itemId);
+            if(!item) return sum;
+            let quantityInBaseUnit = line.quantity;
+            if(line.unitId !== 'base') {
+                const packingUnit = item.units.find(u => u.id === line.unitId);
+                if(packingUnit) quantityInBaseUnit *= packingUnit.factor;
+            }
+            return sum + (quantityInBaseUnit * item.purchasePrice);
+        }, 0);
+    
+        const journalLines: JournalLine[] = [
+            { accountId: customerAccount.id, accountName: customerAccount.name, debit: newSale.total, credit: 0 },
+            { accountId: salesAccount.id, accountName: salesAccount.name, debit: 0, credit: newSale.total },
+            { accountId: cogsAccount.id, accountName: cogsAccount.name, debit: cogsValue, credit: 0 },
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: 0, credit: cogsValue },
+        ];
+        
+        const journalEntry: JournalEntry = {
+            id: `JE-${state.sequences.journal}`,
+            date: newSale.date,
+            description: `فاتورة مبيعات رقم ${newSale.id} (من بيان أسعار ${quote.id})`,
+            debit: journalLines.reduce((s, l) => s + l.debit, 0),
+            credit: journalLines.reduce((s, l) => s + l.credit, 0),
+            status: 'مرحل',
+            lines: journalLines,
+        };
+        newSale.journalEntryId = journalEntry.id;
+    
+        journalLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+    
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'تحويل بيان أسعار لفاتورة',
+            details: `تم تحويل بيان أسعار #${quote.id} إلى فاتورة #${newSale.id}.`
+        };
+    
+        const lowStockItems = updatedInventory.filter((i: InventoryItem) => i.stock <= 10 && i.stock > 0);
+        const notification = lowStockItems.length > 0 ? {
+            id: `notif-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            message: `تنبيه: ${lowStockItems.map(i => i.name).join(', ')} على وشك النفاد.`,
+            type: 'warning' as 'warning',
+            link: '/inventory',
+            read: false,
+        } : null;
+
+        const payload = { 
+            updatedQuote, newSale, updatedInventory, updatedCustomers, 
+            journalEntry, updatedChartOfAccounts, log, notification 
+        };
+    
+        dispatch({ type: 'CONVERT_QUOTE_TO_SALE', payload });
+        showToast('تم تحويل بيان الأسعار إلى فاتورة بنجاح.', 'success');
     };
 
     const addPurchase = (purchaseData: Omit<Purchase, 'id' | 'journalEntryId'>): Purchase => {
@@ -1968,18 +2098,90 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
     };
     const convertQuoteToPurchase = (quoteId: string): void => {
         const quote = state.purchaseQuotes.find(q => q.id === quoteId);
-        if (!quote) return;
-        const purchaseData = {
+        if (!quote) {
+            showToast('لم يتم العثور على طلب الشراء.', 'error');
+            return;
+        }
+
+        const updatedQuote = { ...quote, status: 'تم تحويله' as const };
+        
+        const newPurchase: Purchase = {
+            id: `BILL-${String(state.sequences.purchase).padStart(3, '0')}`,
             supplier: quote.supplier,
             date: new Date().toISOString().slice(0, 10),
             items: quote.items,
             subtotal: quote.subtotal,
             totalDiscount: quote.totalDiscount,
             total: quote.total,
-            status: 'مستحقة' as Purchase['status'],
+            status: 'مستحقة',
         };
-        addPurchase(purchaseData);
-        dispatch({ type: 'SET_STATE', payload: {...state, purchaseQuotes: state.purchaseQuotes.map(q => q.id === quoteId ? {...q, status: 'تم تحويله'} : q)} });
+
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        newPurchase.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+    
+        const updatedSuppliers = state.suppliers.map(s => {
+            if (s.name === newPurchase.supplier) {
+                const balanceChange = newPurchase.total - (newPurchase.paidAmount || 0);
+                return { ...s, balance: s.balance + balanceChange };
+            }
+            return s;
+        });
+    
+        const updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const supplierAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '2101');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+    
+        if (!supplierAccount || !inventoryAccount) {
+            showToast("خطأ: لم يتم العثور على الحسابات المحاسبية الأساسية.", "error");
+            throw new Error("Missing critical accounts");
+        }
+    
+        const journalLines: JournalLine[] = [
+            { accountId: inventoryAccount.id, accountName: inventoryAccount.name, debit: newPurchase.total, credit: 0 },
+            { accountId: supplierAccount.id, accountName: supplierAccount.name, debit: 0, credit: newPurchase.total },
+        ];
+    
+        const journalEntry: JournalEntry = {
+            id: `JE-${state.sequences.journal}`,
+            date: newPurchase.date,
+            description: `فاتورة مشتريات #${newPurchase.id} (من طلب شراء ${quote.id})`,
+            debit: journalLines.reduce((s, l) => s + l.debit, 0),
+            credit: journalLines.reduce((s, l) => s + l.credit, 0),
+            status: 'مرحل',
+            lines: journalLines,
+        };
+        newPurchase.journalEntryId = journalEntry.id;
+    
+        journalLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+    
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'تحويل طلب شراء لفاتورة',
+            details: `طلب شراء #${quote.id} تم تحويله لفاتورة #${newPurchase.id}.`
+        };
+
+        const payload = {
+            updatedQuote, newPurchase, updatedInventory, updatedSuppliers, 
+            journalEntry, updatedChartOfAccounts, log
+        };
+
+        dispatch({ type: 'CONVERT_QUOTE_TO_PURCHASE', payload });
+        showToast('تم تحويل طلب الشراء إلى فاتورة بنجاح.', 'success');
     };
 
     const addSaleReturn = (returnData: Omit<SaleReturn, 'id' | 'journalEntryId'>): SaleReturn => {

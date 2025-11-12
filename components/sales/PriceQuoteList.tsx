@@ -19,7 +19,7 @@ const StatusBadge: React.FC<{ status: PriceQuote['status'] }> = ({ status }) => 
 }
 
 const PriceQuoteList: React.FC = () => {
-    const { priceQuotes, convertQuoteToSale, cancelPriceQuote, showToast } = useContext(DataContext);
+    const { priceQuotes, convertQuoteToSale, cancelPriceQuote, showToast, sequences } = useContext(DataContext);
     const { openWindow } = useContext(WindowContext);
 
     const [quoteToView, setQuoteToView] = useState<PriceQuote | null>(null);
@@ -81,7 +81,22 @@ const PriceQuoteList: React.FC = () => {
             <PageHeader 
                 title="قائمة بيانات الأسعار" 
                 buttonText="إنشاء بيان أسعار جديد"
-                onButtonClick={() => openWindow({ path: '/price-quotes', title: 'إنشاء بيان أسعار', icon: <DocumentPlusIcon /> })}
+                onButtonClick={() => openWindow({ 
+                    path: '/price-quotes', 
+                    title: 'إنشاء بيان أسعار', 
+                    icon: <DocumentPlusIcon />,
+                    state: {
+                        activeQuote: {
+                            id: `QT-${String(sequences.priceQuote).padStart(3, '0')}`,
+                            date: new Date().toISOString().slice(0, 10),
+                        },
+                        items: [],
+                        customer: null,
+                        productSearchTerm: '',
+                        customerSearchTerm: '',
+                        isProcessing: false,
+                    }
+                })}
                 buttonIcon={<DocumentPlusIcon />}
             />
             <DataTable 

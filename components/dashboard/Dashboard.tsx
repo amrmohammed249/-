@@ -1,3 +1,4 @@
+
 import React, { useState, useContext, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
@@ -36,7 +37,7 @@ const QuickActionButton = ({ label, icon, onClick, className }: any) => (
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { 
-    sales, purchases, customers, suppliers,
+    sales, purchases, customers, suppliers, saleReturns, purchaseReturns,
     totalReceivables, totalPayables, inventoryValue, totalCashBalance,
     recentTransactions, topCustomers, sequences
    } = useContext(DataContext);
@@ -75,6 +76,7 @@ const Dashboard: React.FC = () => {
       });
     }
 
+    // Add Sales
     sales.forEach(sale => {
       const saleDate = new Date(sale.date);
       const monthData = months.find(m => 
@@ -86,6 +88,19 @@ const Dashboard: React.FC = () => {
       }
     });
 
+    // Subtract Sale Returns
+    saleReturns.forEach(ret => {
+        const retDate = new Date(ret.date);
+        const monthData = months.find(m => 
+          m.date.getFullYear() === retDate.getFullYear() && 
+          m.date.getMonth() === retDate.getMonth()
+        );
+        if (monthData) {
+          monthData.sales -= ret.total;
+        }
+    });
+
+    // Add Purchases
     purchases.forEach(purchase => {
       const purchaseDate = new Date(purchase.date);
       const monthData = months.find(m => 
@@ -97,11 +112,32 @@ const Dashboard: React.FC = () => {
       }
     });
 
-    return months.map(({ name, sales, purchases }) => ({ name, sales, purchases }));
-  }, [sales, purchases]);
+    // Subtract Purchase Returns
+    purchaseReturns.forEach(ret => {
+        const retDate = new Date(ret.date);
+        const monthData = months.find(m => 
+          m.date.getFullYear() === retDate.getFullYear() && 
+          m.date.getMonth() === retDate.getMonth()
+        );
+        if (monthData) {
+          monthData.purchases -= ret.total;
+        }
+    });
 
-  const totalSales = sales.reduce((sum, item) => sum + item.total, 0);
-  const totalPurchases = purchases.reduce((sum, item) => sum + item.total, 0);
+    return months.map(({ name, sales, purchases }) => ({ 
+        name, 
+        sales: Math.max(0, sales), 
+        purchases: Math.max(0, purchases) 
+    }));
+  }, [sales, purchases, saleReturns, purchaseReturns]);
+
+  const totalGrossSales = sales.reduce((sum, item) => sum + item.total, 0);
+  const totalSaleReturns = saleReturns.reduce((sum, item) => sum + item.total, 0);
+  const totalSales = totalGrossSales - totalSaleReturns;
+
+  const totalGrossPurchases = purchases.reduce((sum, item) => sum + item.total, 0);
+  const totalPurchaseReturns = purchaseReturns.reduce((sum, item) => sum + item.total, 0);
+  const totalPurchases = totalGrossPurchases - totalPurchaseReturns;
   
   const handleTreasuryTransactionAdded = useCallback((newTransaction: TreasuryTransaction) => {
     setReceiptModalOpen(false);
@@ -234,8 +270,8 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card title="إجمالي المبيعات" value={totalSales.toLocaleString()} icon={<ShoppingCartIcon className="text-green-500" />} footer={<span className="flex items-center text-green-500"><ArrowTrendingUpIcon className="w-4 h-4 ml-1"/> 12.5%</span>} />
-            <Card title="إجمالي المشتريات" value={totalPurchases.toLocaleString()} icon={<TruckIcon className="text-red-500" />} footer={<span className="flex items-center text-red-500"><ArrowTrendingDownIcon className="w-4 h-4 ml-1"/> 3.2%</span>} />
+            <Card title="صافي المبيعات" value={totalSales.toLocaleString()} icon={<ShoppingCartIcon className="text-green-500" />} footer={<span className="flex items-center text-gray-500 text-xs">(مخصوم منه المرتجعات)</span>} />
+            <Card title="صافي المشتريات" value={totalPurchases.toLocaleString()} icon={<TruckIcon className="text-red-500" />} footer={<span className="flex items-center text-gray-500 text-xs">(مخصوم منه المرتجعات)</span>} />
             <Card title="الرصيد النقدي" value={totalCashBalance.toLocaleString()} icon={<BanknotesIcon className="text-blue-500" />} footer="محدث الآن"/>
           </div>
           
@@ -255,7 +291,7 @@ const Dashboard: React.FC = () => {
 
 
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
-            <h3 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">نظرة عامة على المبيعات والمشتريات</h3>
+            <h3 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">صافي المبيعات والمشتريات (شهرياً)</h3>
             <div style={{ width: '100%', height: 300 }}>
               <ResponsiveContainer>
                 <AreaChart data={dynamicSalesChartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
@@ -274,8 +310,8 @@ const Dashboard: React.FC = () => {
                   <YAxis fontSize={12} />
                   <Tooltip contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', borderColor: '#4B5563', borderRadius: '0.5rem' }} labelStyle={{ color: '#F9FAFB' }} />
                   <Legend />
-                  <Area type="monotone" dataKey="sales" name="المبيعات" stroke="#3B82F6" fillOpacity={1} fill="url(#colorSales)" />
-                  <Area type="monotone" dataKey="purchases" name="المشتريات" stroke="#EF4444" fillOpacity={1} fill="url(#colorPurchases)" />
+                  <Area type="monotone" dataKey="sales" name="صافي المبيعات" stroke="#3B82F6" fillOpacity={1} fill="url(#colorSales)" />
+                  <Area type="monotone" dataKey="purchases" name="صافي المشتريات" stroke="#EF4444" fillOpacity={1} fill="url(#colorPurchases)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

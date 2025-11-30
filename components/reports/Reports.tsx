@@ -18,17 +18,19 @@ import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, Mag
 import CustomerBalancesReport from './CustomerBalancesReport';
 import SupplierBalancesReport from './SupplierBalancesReport';
 import CustomerProfitabilityReport from './CustomerProfitabilityReport';
+import GeneralJournalReport from './GeneralJournalReport';
 
 
 declare var jspdf: any;
 declare var html2canvas: any;
 
 
-type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability';
+type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability' | 'generalJournalReport';
 
 const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category: string }[] = [
     { key: 'profitAndLoss', label: 'قائمة الدخل', isTable: false, category: 'تقارير مالية' },
     { key: 'balanceSheet', label: 'الميزانية العمومية', isTable: false, category: 'تقارير مالية' },
+    { key: 'generalJournalReport', label: 'دفتر اليومية العام', isTable: true, category: 'تقارير مالية' },
     { key: 'treasury', label: 'حركة الخزينة', isTable: true, category: 'تقارير مالية' },
     { key: 'expense', label: 'المصروفات', isTable: true, category: 'تقارير مالية' },
     { key: 'sales', label: 'المبيعات', isTable: true, category: 'تقارير المبيعات والمشتريات' },
@@ -177,9 +179,8 @@ const Reports: React.FC = () => {
         }
     };
 
-    const isDateRangeReport = !['balanceSheet', 'inventory', 'customerBalances', 'supplierBalances'].includes(activeTab);
+    const isSingleDateReport = ['balanceSheet', 'inventory', 'customerBalances', 'supplierBalances', 'generalJournalReport'].includes(activeTab);
     const isViewButtonDisabled = activeTab === 'itemMovement' && !selectedInventoryId;
-
 
     const renderReport = () => {
         const props = { startDate, endDate, onDataReady: handleDataReady };
@@ -190,6 +191,7 @@ const Reports: React.FC = () => {
             case 'purchaseReturns': return <PurchaseReturnsReport {...props} supplierId={selectedSupplierId} />;
             case 'profitAndLoss': return <ProfitAndLoss {...props} />;
             case 'balanceSheet': return <BalanceSheet asOfDate={endDate} onDataReady={handleDataReady} />;
+            case 'generalJournalReport': return <GeneralJournalReport date={endDate} onDataReady={handleDataReady} />;
             case 'customerSummary': return <CustomerSummaryReport {...props} />;
             case 'inventory': return <InventoryReport asOfDate={endDate} onDataReady={handleDataReady} itemId={selectedInventoryId} reportType={inventoryReportType} />;
             case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
@@ -217,7 +219,7 @@ const Reports: React.FC = () => {
                         <div>
                              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{activeReportTab?.label}</h2>
                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {isDateRangeReport ? `الفترة من ${startDate} إلى ${endDate}` : `حتى تاريخ ${endDate}`}
+                                {isSingleDateReport ? `في تاريخ ${endDate}` : `الفترة من ${startDate} إلى ${endDate}`}
                              </p>
                         </div>
                     </div>
@@ -250,7 +252,12 @@ const Reports: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">مركز التقارير</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
-                    {isDateRangeReport ? (
+                    {isSingleDateReport ? (
+                         <div>
+                            <label htmlFor="asOfDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">التاريخ</label>
+                            <input type="date" id="asOfDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
+                        </div>
+                    ) : (
                         <>
                             <div>
                                 <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">من تاريخ</label>
@@ -261,11 +268,6 @@ const Reports: React.FC = () => {
                                 <input type="date" id="endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
                             </div>
                         </>
-                    ) : (
-                         <div>
-                            <label htmlFor="asOfDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">حتى تاريخ</label>
-                            <input type="date" id="asOfDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
-                        </div>
                     )}
                     
                     {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability') && (

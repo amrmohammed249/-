@@ -2063,11 +2063,18 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
             if (item) {
                 let quantityInBaseUnit = lineItem.quantity;
+                let newBasePurchasePrice = lineItem.price;
+
                 if (lineItem.unitId !== 'base') {
                     const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
-                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                    if (packingUnit && packingUnit.factor > 0) {
+                        quantityInBaseUnit *= packingUnit.factor;
+                        newBasePurchasePrice = lineItem.price / packingUnit.factor;
+                    }
                 }
                 item.stock += quantityInBaseUnit;
+                // Update the master item purchase price to the latest price
+                item.purchasePrice = newBasePurchasePrice;
             }
         });
     
@@ -2693,7 +2700,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         const journalEntry: JournalEntry = {
             id: newTransaction.journalEntryId,
             date: newTransaction.date,
-            description: newTransaction.description,
+            description: `${newTransaction.type} - ${newTransaction.description}`,
             debit: absAmount,
             credit: absAmount,
             status: 'مرحل',

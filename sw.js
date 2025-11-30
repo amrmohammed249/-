@@ -92,6 +92,7 @@ const ASSETS_TO_CACHE = [
   'components/reports/CustomerBalancesReport.tsx',
   'components/reports/SupplierBalancesReport.tsx',
   'components/reports/CustomerProfitabilityReport.tsx',
+  'components/reports/GeneralJournalReport.tsx',
   'components/settings/Settings.tsx',
   'components/settings/AddUserForm.tsx',
   'components/settings/EditUserForm.tsx',

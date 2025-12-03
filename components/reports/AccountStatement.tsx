@@ -1,3 +1,4 @@
+
 import React, { useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import ReportToolbar from './ReportToolbar';
@@ -29,18 +30,18 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
         // 1. Get ALL transaction objects for the party
         let allTxObjects: any[] = [];
         if (partyType === 'customer') {
-            sales.filter((s: Sale) => s.customer === party.name && !s.isArchived).forEach((s: Sale) => allTxObjects.push({ date: s.date, description: `فاتورة مبيعات #${s.id}`, debit: s.total, credit: 0, original: s, type: 'sale' }));
-            saleReturns.filter((sr: SaleReturn) => sr.customer === party.name && !sr.isArchived).forEach((sr: SaleReturn) => allTxObjects.push({ date: sr.date, description: `مرتجع مبيعات #${sr.id}`, debit: 0, credit: sr.total, original: sr, type: 'saleReturn' }));
+            sales.filter((s: Sale) => s.customer === party.name && !s.isArchived).forEach((s: Sale) => allTxObjects.push({ date: s.date, description: `فاتورة مبيعات #${s.id}`, debit: s.total, credit: 0, original: s, type: 'sale', id: s.id }));
+            saleReturns.filter((sr: SaleReturn) => sr.customer === party.name && !sr.isArchived).forEach((sr: SaleReturn) => allTxObjects.push({ date: sr.date, description: `مرتجع مبيعات #${sr.id}`, debit: 0, credit: sr.total, original: sr, type: 'saleReturn', id: sr.id }));
             treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === party.id && !t.isArchived).forEach((t: TreasuryTransaction) => {
-                if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: Math.abs(t.amount), original: t, type: 'treasury' });
-                if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: Math.abs(t.amount), credit: 0, original: t, type: 'treasury' });
+                if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: Math.abs(t.amount), original: t, type: 'treasury', id: t.id });
+                if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: Math.abs(t.amount), credit: 0, original: t, type: 'treasury', id: t.id });
             });
         } else { // Supplier
-            purchases.filter((p: Purchase) => p.supplier === party.name && !p.isArchived).forEach((p: Purchase) => allTxObjects.push({ date: p.date, description: `فاتورة مشتريات #${p.id}`, debit: 0, credit: p.total, original: p, type: 'purchase' }));
-            purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === party.name && !pr.isArchived).forEach((pr: PurchaseReturn) => allTxObjects.push({ date: pr.date, description: `مرتجع مشتريات #${pr.id}`, debit: pr.total, credit: 0, original: pr, type: 'purchaseReturn' }));
+            purchases.filter((p: Purchase) => p.supplier === party.name && !p.isArchived).forEach((p: Purchase) => allTxObjects.push({ date: p.date, description: `فاتورة مشتريات #${p.id}`, debit: 0, credit: p.total, original: p, type: 'purchase', id: p.id }));
+            purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === party.name && !pr.isArchived).forEach((pr: PurchaseReturn) => allTxObjects.push({ date: pr.date, description: `مرتجع مشتريات #${pr.id}`, debit: pr.total, credit: 0, original: pr, type: 'purchaseReturn', id: pr.id }));
             treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === party.id && !t.isArchived).forEach((t: TreasuryTransaction) => {
-                if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: Math.abs(t.amount), credit: 0, original: t, type: 'treasury' });
-                if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: Math.abs(t.amount), original: t, type: 'treasury' });
+                if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: Math.abs(t.amount), credit: 0, original: t, type: 'treasury', id: t.id });
+                if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: Math.abs(t.amount), original: t, type: 'treasury', id: t.id });
             });
         }
 
@@ -59,26 +60,32 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
                 return balance + change;
             }, initialOpeningBalance);
         
-        // 4. Filter for transactions within the period and sort them
+        // 4. Filter for transactions within the period and sort them Oldest -> Newest
         const periodTransactionsRaw = allTxObjects
             .filter(tx => {
                 const txDate = new Date(tx.date);
                 return txDate >= start && txDate <= end;
             })
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            .sort((a, b) => {
+                const dateA = new Date(a.date).getTime();
+                const dateB = new Date(b.date).getTime();
+                if (dateA !== dateB) return dateA - dateB;
+                // If same date, sort by ID to maintain a consistent order
+                return a.id.localeCompare(b.id);
+            });
 
         // 5. Calculate running balance for the period
         let runningBalance = openingBalanceForPeriod;
         const transactionsWithBalance = periodTransactionsRaw.map(tx => {
             const change = partyType === 'customer' ? (tx.debit - tx.credit) : (tx.credit - tx.debit);
             runningBalance += change;
-            return { ...tx, id: `${tx.original.id}-${tx.date}`, balance: runningBalance };
+            return { ...tx, id: `${tx.id}`, balance: runningBalance };
         });
 
         return { 
             party, 
             openingBalanceForPeriod, 
-            transactions: transactionsWithBalance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()), // sort desc for display
+            transactions: transactionsWithBalance, // Already sorted Oldest -> Newest
             closingBalance: runningBalance 
         };
 

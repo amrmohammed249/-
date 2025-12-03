@@ -1,3 +1,4 @@
+
 import React, { useState, useContext, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
@@ -35,15 +36,19 @@ const CustomerProfile: React.FC = () => {
         }))
     ];
 
-    // 1. Calculate the "beginning of time" opening balance by working backwards from the current final balance.
-    // This accounts for any opening balance set in the opening balances modal.
+    // 1. Calculate the "beginning of time" opening balance
     const totalChange = allTx.reduce((sum, tx) => sum + (tx.debit - tx.credit), 0);
     const openingBalance = party.balance - totalChange;
     
-    // 2. Sort all transactions chronologically.
-    const sortedTx = allTx.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.id.localeCompare(b.id));
+    // 2. Sort all transactions chronologically (Oldest -> Newest).
+    const sortedTx = allTx.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateA - dateB;
+        return a.id.localeCompare(b.id);
+    });
 
-    // 3. Calculate running balance starting from the true opening balance.
+    // 3. Calculate running balance
     let runningBalance = openingBalance;
     const statementWithBalance = sortedTx.map(tx => {
         const change = tx.debit - tx.credit;
@@ -51,9 +56,8 @@ const CustomerProfile: React.FC = () => {
         return { ...tx, balance: runningBalance };
     });
 
-    // 4. Sort for display (latest first)
-    const finalStatementData = statementWithBalance.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id));
-
+    // 4. Return as Oldest -> Newest (no reverse sort)
+    const finalStatementData = statementWithBalance;
 
     return { statementData: finalStatementData, party, openingBalance };
   }, [id, customers, sales, saleReturns, treasury]);
@@ -89,7 +93,7 @@ const CustomerProfile: React.FC = () => {
       </div>
 
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-bold mb-4">كشف الحساب</h3>
+        <h3 className="text-xl font-bold mb-4">كشف الحساب (الأقدم للأحدث)</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-right">
             <thead className="bg-gray-50 dark:bg-gray-700/50">
@@ -103,6 +107,11 @@ const CustomerProfile: React.FC = () => {
               </tr>
             </thead>
             <tbody>
+              <tr className="bg-gray-100 dark:bg-gray-700 font-semibold">
+                  <td colSpan={2} className="px-4 py-2">الرصيد الافتتاحي الأولي</td>
+                  <td colSpan={3} className="px-4 py-2 font-mono">{openingBalance.toLocaleString()}</td>
+                  <td></td>
+              </tr>
               {statementData.map((tx, index) => (
                 <tr key={`${tx.id}-${index}`} className={`border-b dark:border-gray-700 ${getRowClass(tx.debit)}`}>
                   <td className="px-4 py-2">{tx.date}</td>
@@ -117,11 +126,6 @@ const CustomerProfile: React.FC = () => {
                   </td>
                 </tr>
               ))}
-               <tr className="bg-gray-100 dark:bg-gray-700 font-semibold">
-                  <td colSpan={2} className="px-4 py-2">الرصيد الافتتاحي الأولي</td>
-                  <td colSpan={3} className="px-4 py-2 font-mono">{openingBalance.toLocaleString()}</td>
-                  <td></td>
-              </tr>
             </tbody>
           </table>
         </div>

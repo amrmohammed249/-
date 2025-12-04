@@ -1,3 +1,4 @@
+
 import React, { useContext, useMemo, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -33,10 +34,39 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
             totalValue: isSaleView ? item.stock * item.salePrice : item.stock * item.purchasePrice,
         }));
 
+        // Helper to format detailed stock (e.g. "1 Ton and 50 Kg")
+        const getDetailedStock = (item: InventoryItem) => {
+            if (!item.units || item.units.length === 0) return '-';
+            
+            // Find largest unit
+            const sortedUnits = [...item.units].sort((a, b) => b.factor - a.factor);
+            const maxUnit = sortedUnits[0];
+            
+            if (!maxUnit || maxUnit.factor <= 1) return '-';
+
+            const major = Math.floor(item.stock / maxUnit.factor);
+            const remainder = item.stock % maxUnit.factor;
+            
+            if (major === 0) return '-'; // If less than 1 packing unit, just show dash (base unit column covers it)
+            
+            return remainder > 0 
+                ? `${major} ${maxUnit.name} و ${Number(remainder.toFixed(2))} ${item.baseUnit}`
+                : `${major} ${maxUnit.name}`;
+        };
+
         const baseColumns = [
             { header: 'كود الصنف', accessor: 'id' },
             { header: 'اسم الصنف', accessor: 'name' },
-            { header: 'الكمية المتاحة', accessor: 'stock' },
+            { 
+                header: 'الكمية (أساسي)', 
+                accessor: 'stock',
+                render: (row: any) => <span className="font-bold text-gray-800 dark:text-gray-200">{row.stock} {row.baseUnit}</span>
+            },
+            { 
+                header: 'الرصيد (وحدات كبرى)', 
+                accessor: 'detailedStock', 
+                render: (row: any) => <span className="text-blue-600 dark:text-blue-400 font-medium" dir="rtl">{getDetailedStock(row)}</span>
+            },
             { header: 'سعر التكلفة', accessor: 'purchasePrice', render: (row: any) => `${row.purchasePrice.toLocaleString()} جنيه` },
             { header: 'سعر البيع', accessor: 'salePrice', render: (row: any) => `${row.salePrice.toLocaleString()} جنيه` },
             { 
@@ -72,7 +102,22 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
     const reportName = `Inventory-Report-${reportType}-${asOfDate}`;
     
     useEffect(() => {
-        onDataReady({ data: reportData, columns: reportColumns, name: reportName });
+        // Prepare export data with computed detailed stock
+        const exportData = reportData.map(item => ({
+            ...item,
+            detailedStock: (() => {
+                 if (!item.units || item.units.length === 0) return '-';
+                 const sorted = [...item.units].sort((a, b) => b.factor - a.factor);
+                 const max = sorted[0];
+                 if (!max || max.factor <= 1) return '-';
+                 const major = Math.floor(item.stock / max.factor);
+                 const rem = item.stock % max.factor;
+                 if (major === 0) return '-';
+                 return rem > 0 ? `${major} ${max.name} و ${rem} ${item.baseUnit}` : `${major} ${max.name}`;
+            })()
+        }));
+
+        onDataReady({ data: exportData, columns: reportColumns, name: reportName });
     }, [reportData, reportColumns, reportName, onDataReady]);
 
     return (

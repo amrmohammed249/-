@@ -1,3 +1,4 @@
+
 import React, { useState, useContext } from 'react';
 import { NavLink } from 'react-router-dom';
 import { HomeIcon } from '../icons/HomeIcon';
@@ -141,6 +142,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           }), label: 'إنشاء فاتورة مبيعات', icon: <DocumentPlusIcon /> },
         { to: '/sales', label: 'قائمة فواتير المبيعات', icon: <DocumentTextIcon /> },
         { to: '/price-quotes/list', label: 'قائمة بيانات الأسعار', icon: <ClipboardDocumentListIcon /> },
+        { to: '/sales/manual-price-list', label: 'قائمة أسعار (يدوية)', icon: <DocumentTextIcon /> },
         { onClick: () => openWindow({
             path: '/sales-returns/new',
             title: 'مرتجع مبيعات',

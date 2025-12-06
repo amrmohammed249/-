@@ -40,6 +40,7 @@ import InvoiceTestPrintPage from './components/printing/InvoiceTestPrintPage';
 import BarcodeLabelBatchPrint from './components/printing/BarcodeLabelBatchPrint';
 import SaleReturnsForm from './components/sales/SaleReturnsForm';
 import PurchaseReturnsForm from './components/purchases/PurchaseReturnsForm';
+import PriceListBuilder from './components/sales/PriceListBuilder';
 
 
 const App: React.FC = () => {
@@ -183,6 +184,7 @@ const App: React.FC = () => {
                             <Route path="/barcode-tools" element={<BarcodeTools />} />
                             <Route path="/sales" element={<SaleList />} />
                             <Route path="/sales/edit/:id" element={<Sales />} />
+                            <Route path="/sales/manual-price-list" element={<PriceListBuilder />} />
                             <Route path="/price-quotes/list" element={<PriceQuoteList />} />
                             <Route path="/purchases" element={<PurchaseList />} />
                             <Route path="/purchases/edit/:id" element={<Purchases />} />

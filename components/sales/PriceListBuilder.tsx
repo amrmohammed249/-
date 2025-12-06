@@ -1,5 +1,5 @@
 
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { PlusIcon, TrashIcon, PrinterIcon, ArrowPathIcon } from '../icons';
 
@@ -13,15 +13,29 @@ interface PriceListRow {
 const PriceListBuilder: React.FC = () => {
     const { companyInfo, printSettings } = useContext(DataContext);
     
-    // Initialize with 15 empty rows
-    const [rows, setRows] = useState<PriceListRow[]>(
-        Array.from({ length: 15 }, (_, i) => ({
-            id: i + 1,
+    // Initialize state from localStorage or default to 15 empty rows
+    const [rows, setRows] = useState<PriceListRow[]>(() => {
+        const savedRows = localStorage.getItem('manualPriceListRows');
+        if (savedRows) {
+            try {
+                return JSON.parse(savedRows);
+            } catch (e) {
+                console.error("Failed to parse saved price list", e);
+            }
+        }
+        // Default initial state
+        return Array.from({ length: 15 }, (_, i) => ({
+            id: Date.now() + i,
             name: '',
             unit: '',
             price: ''
-        }))
-    );
+        }));
+    });
+
+    // Save to localStorage whenever rows change
+    useEffect(() => {
+        localStorage.setItem('manualPriceListRows', JSON.stringify(rows));
+    }, [rows]);
 
     const addRow = () => {
         setRows([...rows, { id: Date.now(), name: '', unit: '', price: '' }]);
@@ -91,7 +105,8 @@ const PriceListBuilder: React.FC = () => {
                 <div className="text-center mb-8 border-b-2 border-gray-800 pb-6">
                     {printSettings.logo && (
                         <div className="flex justify-center mb-4">
-                            <img src={printSettings.logo} alt="Logo" className="h-24 object-contain" />
+                            {/* Increased height from h-24 to h-48 for larger visibility */}
+                            <img src={printSettings.logo} alt="Logo" className="h-48 object-contain" />
                         </div>
                     )}
                     <h1 className="text-3xl font-bold mb-2">{companyInfo.name}</h1>

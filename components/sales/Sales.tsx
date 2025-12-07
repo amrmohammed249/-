@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
 import { Sale, LineItem, InventoryItem, Customer, PackingUnit, TreasuryTransaction } from '../../types';
-import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon } from '../icons';
+import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon, InformationCircleIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddCustomerForm from '../customers/AddCustomerForm';
 import InvoiceView from './InvoiceView';
@@ -39,7 +40,6 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         isProcessing: false,
     });
     
-    // Determine which state and setter to use
     const state = isWindowMode ? windowState : localState;
     const setState = useCallback(
         isWindowMode ? onStateChange! : (updater: any) => setLocalState(updater),
@@ -48,13 +48,16 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
     
     const { activeInvoice, items, itemErrors, customer, productSearchTerm, customerSearchTerm, paidAmount, isProcessing } = state || {};
 
-
     const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
     const [saleToView, setSaleToView] = useState<Sale | null>(null);
     
     const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1);
     const [highlightedCustomerIndex, setHighlightedCustomerIndex] = useState(-1);
     const [lastProcessedScan, setLastProcessedScan] = useState(0);
+    
+    // New state for price history visual feedback
+    const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+    const [lastPriceInfo, setLastPriceInfo] = useState<string>('');
 
     const resetInvoice = useCallback(() => {
         const resetState = {
@@ -74,12 +77,11 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         if(isWindowMode) {
             setState(() => resetState);
         } else {
-            navigate('/sales/new'); // Should not be called in new architecture
+            navigate('/sales/new');
         }
         customerSearchRef.current?.focus();
     }, [sequences.sale, isWindowMode, setState, navigate]);
 
-    // Load data for non-windowed edit mode
     useEffect(() => {
         if (!isWindowMode && isEditMode) {
             const saleToEdit = sales.find((s: Sale) => s.id === id);
@@ -99,6 +101,42 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         }
     }, [id, isEditMode, isWindowMode, sales, customers, showToast, navigate, setState]);
     
+    // Helper to get last price for a specific item
+    const getLastPriceForItem = useCallback((itemId: string) => {
+        if (!customer) return null;
+        
+        const customerSales = sales
+            .filter((s: Sale) => s.customer === customer.name && !s.isArchived && s.id !== activeInvoice.id)
+            .sort((a: Sale, b: Sale) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        for (const s of customerSales) {
+            const itemInSale = s.items.find(item => item.itemId === itemId);
+            if (itemInSale) {
+                return { price: itemInSale.price, date: s.date, unitName: itemInSale.unitName };
+            }
+        }
+        return null;
+    }, [customer, sales, activeInvoice.id]);
+
+    // Logic to find last price for the active line item (for the hint box)
+    useEffect(() => {
+        if (activeLineIndex === null || !customer || !items || items.length <= activeLineIndex) {
+            setLastPriceInfo('');
+            return;
+        }
+
+        const activeLineItem = items[activeLineIndex];
+        if (!activeLineItem) return;
+
+        const foundPrice = getLastPriceForItem(activeLineItem.itemId);
+        
+        if (foundPrice) {
+            setLastPriceInfo(`آخر سعر بيع لهذا العميل: ${foundPrice.price.toLocaleString()} (${foundPrice.unitName}) في ${foundPrice.date}`);
+        } else {
+            setLastPriceInfo('لا يوجد سجل مبيعات سابق لهذا الصنف مع هذا العميل.');
+        }
+    }, [activeLineIndex, customer, items, getLastPriceForItem]);
+
 
     const { totals, paidAmountValue, remainingAmount } = useMemo(() => {
         const subtotal = (items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -124,6 +162,13 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
     }, [items, activeInvoice?.status, paidAmount]);
 
     const handleProductSelect = useCallback((product: InventoryItem) => {
+        // Find last price logic for new item
+        let initialPrice = product.salePrice;
+        const foundPrice = getLastPriceForItem(product.id);
+        if (foundPrice) {
+            initialPrice = foundPrice.price;
+        }
+
         setState(prev => {
             const currentItems = prev.items || [];
             const existingItem = currentItems.find(item => item.itemId === product.id);
@@ -139,9 +184,9 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                     unitId: 'base',
                     unitName: product.baseUnit,
                     quantity: 1,
-                    price: product.salePrice,
+                    price: initialPrice, // Use historical price if found
                     discount: 0,
-                    total: product.salePrice,
+                    total: initialPrice,
                 };
                 newItems = [...currentItems, newItem];
             }
@@ -150,7 +195,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
 
         setHighlightedProductIndex(-1);
         productSearchRef.current?.focus();
-    }, [setState]);
+    }, [setState, getLastPriceForItem]);
     
     useEffect(() => {
         const isCurrentWindow = windowId ? visibleWindowId === windowId : !visibleWindowId;
@@ -198,17 +243,15 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                 
                 if (print) {
                     setSaleToView(updatedSale);
-                    // After printing, close window or navigate away
                     if(windowId) closeWindow(windowId);
                     else navigate('/sales');
                 } else {
                     if(windowId) closeWindow(windowId);
                     else navigate('/sales');
                 }
-                return; // Exit after handling edit mode
+                return;
             }
 
-            // 1. Create the sale first to get its ID
             const saleData: Omit<Sale, 'id' | 'journalEntryId'> = {
                 customer: customer.name,
                 date: activeInvoice.date!,
@@ -222,7 +265,6 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
 
             const createdSale = addSale(saleData);
 
-            // 2. If paid (fully or partially), create a treasury transaction
             if (paidAmountValue > 0) {
                 const mainTreasury = treasuriesList.find((t: any) => t.name === 'الخزينة الرئيسية') || treasuriesList.find((t: any) => !t.isTotal);
                 if (!mainTreasury) {
@@ -345,6 +387,8 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
             }
             return {...prev, items: newItems, itemErrors: newErrors};
         });
+        setActiveLineIndex(null);
+        setLastPriceInfo('');
     };
 
     const productSearchResults = useMemo(() => {
@@ -394,11 +438,11 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         else if (e.key === 'Tab' && !e.shiftKey && field === 'price') { e.preventDefault(); productSearchRef.current?.focus(); }
     };
 
-    if (!state) return null; // Important for windowed mode initial render
+    if (!state) return null; 
 
     return (
         <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900/50 text-[--text] font-sans">
-            <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
+            <header className="flex-shrink-0 bg-[--panel] dark:bg-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
                     <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{isEditMode ? 'تعديل فاتورة مبيعات' : 'فاتورة مبيعات جديدة'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeInvoice.id}</span>
@@ -450,8 +494,14 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                                     const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
                                     const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
                                     const error = (itemErrors || {})[item.itemId];
+                                    
+                                    // Check against history for this specific item (not just the focused one)
+                                    const lastPriceData = getLastPriceForItem(item.itemId);
+                                    const isMatchingLastPrice = lastPriceData !== null && Math.abs(item.price - lastPriceData.price) < 0.01;
+                                    const priceInputClass = `input-style w-full text-center ${isMatchingLastPrice ? 'bg-green-50 text-green-700 border-green-500 font-bold focus:ring-green-500' : ''}`;
+
                                     return (
-                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/20">
+                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/20" onFocus={() => setActiveLineIndex(index)}>
                                             <td className="px-2 py-2 text-xs font-mono text-center">{item.itemId}</td><td className="px-2 py-2 font-semibold truncate">{item.itemName}</td>
                                             <td className="px-2 py-2">
                                                 <div className="relative">
@@ -483,7 +533,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                                                     value={item.price} 
                                                     onChange={e => handleItemUpdate(index, 'price', e.target.value)} 
                                                     onKeyDown={(e) => handleItemInputKeyDown(e, index, 'price')} 
-                                                    className="input-style w-full text-center"
+                                                    className={priceInputClass}
                                                 />
                                             </td>
                                             <td className="px-2 py-2"><input type="number" value={item.discount} onChange={e => handleItemUpdate(index, 'discount', e.target.value)} className="input-style w-full text-center"/></td>
@@ -495,6 +545,13 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                             </tbody>
                         </table>
                     </div>
+                    {/* Last Price Hint Box (Only for the active line) */}
+                    {lastPriceInfo && activeLineIndex !== null && items[activeLineIndex] && (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800 flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200 animate-fade-in-out">
+                            <InformationCircleIcon className="w-5 h-5 text-blue-500" />
+                            <span>{lastPriceInfo}</span>
+                        </div>
+                    )}
                 </main>
                 <aside className="w-full md:w-1/3 flex flex-col gap-4">
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 flex-grow flex flex-col">

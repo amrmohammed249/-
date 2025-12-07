@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
-import { PurchaseReturn, LineItem, InventoryItem, Supplier, PackingUnit } from '../../types';
-import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon } from '../icons';
+import { PurchaseReturn, LineItem, InventoryItem, Supplier, PackingUnit, Purchase } from '../../types';
+import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon, InformationCircleIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddSupplierForm from '../suppliers/AddSupplierForm';
 import PurchaseReturnView from './PurchaseReturnView';
@@ -14,7 +15,7 @@ interface PurchaseReturnsFormProps {
 }
 
 const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, windowState, onStateChange }) => {
-    const { suppliers, inventory, addPurchaseReturn, showToast, sequences, scannedItem, generalSettings } = useContext(DataContext);
+    const { suppliers, inventory, addPurchaseReturn, showToast, sequences, scannedItem, generalSettings, purchases } = useContext(DataContext);
     const { visibleWindowId } = useContext(WindowContext);
     
     const productSearchRef = useRef<HTMLInputElement>(null);
@@ -31,6 +32,10 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
     const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1);
     const [highlightedSupplierIndex, setHighlightedSupplierIndex] = useState(-1);
     const [lastProcessedScan, setLastProcessedScan] = useState(0);
+
+    // Smart Price Logic State
+    const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+    const [lastPriceInfo, setLastPriceInfo] = useState<string>('');
 
     const resetForm = useCallback(() => {
         const resetState = {
@@ -56,7 +61,51 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
         return { subtotal, totalDiscount, grandTotal };
     }, [items]);
 
+    // Helper to get last price for a specific item
+    const getLastPriceForItem = useCallback((itemId: string) => {
+        if (!supplier) return null;
+        
+        const supplierPurchases = purchases
+            .filter((p: Purchase) => p.supplier === supplier.name && !p.isArchived)
+            .sort((a: Purchase, b: Purchase) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        for (const p of supplierPurchases) {
+            const itemInPurchase = p.items.find(item => item.itemId === itemId);
+            if (itemInPurchase) {
+                return { price: itemInPurchase.price, date: p.date, unitName: itemInPurchase.unitName };
+            }
+        }
+        return null;
+    }, [supplier, purchases]);
+
+    // Update hint text when active line changes
+    useEffect(() => {
+        if (activeLineIndex === null || !supplier || !items || items.length <= activeLineIndex) {
+            setLastPriceInfo('');
+            return;
+        }
+
+        const activeLineItem = items[activeLineIndex];
+        if (!activeLineItem) return;
+
+        const foundPrice = getLastPriceForItem(activeLineItem.itemId);
+        
+        if (foundPrice) {
+            setLastPriceInfo(`آخر سعر شراء من هذا المورد: ${foundPrice.price.toLocaleString()} (${foundPrice.unitName}) في ${foundPrice.date} (يفضل الإرجاع بنفس السعر)`);
+        } else {
+            setLastPriceInfo('لا يوجد سجل مشتريات سابق لهذا الصنف مع هذا المورد.');
+        }
+    }, [activeLineIndex, supplier, items, getLastPriceForItem]);
+
+
     const handleProductSelect = useCallback((product: InventoryItem) => {
+        // Auto-fill price based on last purchase
+        let initialPrice = product.purchasePrice;
+        const foundPrice = getLastPriceForItem(product.id);
+        if (foundPrice) {
+            initialPrice = foundPrice.price;
+        }
+
         setState(prev => {
             const currentItems = prev.items || [];
             const existingItem = currentItems.find(item => item.itemId === product.id);
@@ -69,16 +118,16 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
                 unitId: 'base',
                 unitName: product.baseUnit,
                 quantity: 1,
-                price: product.purchasePrice,
+                price: initialPrice,
                 discount: 0,
-                total: product.purchasePrice,
+                total: initialPrice,
             };
             const newItems = [...currentItems, newItem];
             return { ...prev, items: newItems, productSearchTerm: '' };
         });
         setHighlightedProductIndex(-1);
         productSearchRef.current?.focus();
-    }, [setState]);
+    }, [setState, getLastPriceForItem]);
     
     useEffect(() => {
         if (visibleWindowId === windowId && scannedItem && scannedItem.timestamp > lastProcessedScan) {
@@ -180,6 +229,8 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
             }
             return {...prev, items: newItems, itemErrors: newErrors};
         });
+        setActiveLineIndex(null);
+        setLastPriceInfo('');
     };
 
     const productSearchResults = useMemo(() => {
@@ -222,7 +273,10 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
         };
         if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(index + 1); } 
         else if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(index - 1); }
-        else if (e.key === 'Tab' && !e.shiftKey && field === 'price') { e.preventDefault(); productSearchRef.current?.focus(); }
+        else if (e.key === 'Tab' && !e.shiftKey && field === 'price') {
+            e.preventDefault();
+            productSearchRef.current?.focus();
+        }
     };
 
     if (!state || !activeReturn) return null;
@@ -270,15 +324,21 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
                                     const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
                                     const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
                                     const error = (itemErrors || {})[item.itemId];
+                                    
+                                    // Price comparison logic - independent of focus
+                                    const lastPriceData = getLastPriceForItem(item.itemId);
+                                    const isMatchingLastPrice = lastPriceData !== null && Math.abs(item.price - lastPriceData.price) < 0.01;
+                                    const priceInputClass = `input-style w-full text-center ${isMatchingLastPrice ? 'bg-green-50 text-green-700 border-green-500 font-bold focus:ring-green-500' : ''}`;
+
                                     return (
-                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700">
+                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700" onFocus={() => setActiveLineIndex(index)}>
                                             <td className="px-2 py-2 font-semibold">{item.itemName}</td>
                                             <td className="px-2 py-2 w-28">
                                                 <input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].quantity = el; }} type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'quantity')} className={`input-style w-full text-center ${error ? 'border-red-500' : ''}`}/>
                                                 {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
                                             </td>
                                             <td className="px-2 py-2 w-32"><select ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].unit = el; }} value={item.unitId} onChange={e => handleItemUpdate(index, 'unitId', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'unit')} className="input-style w-full">{unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}</select></td>
-                                            <td className="px-2 py-2 w-28"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].price = el; }} type="number" value={item.price} onChange={e => handleItemUpdate(index, 'price', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'price')} className="input-style w-full text-center"/></td>
+                                            <td className="px-2 py-2 w-28"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].price = el; }} type="number" value={item.price} onChange={e => handleItemUpdate(index, 'price', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'price')} className={priceInputClass}/></td>
                                             <td className="px-2 py-2 w-32 text-left font-mono font-semibold">{item.total.toLocaleString()}</td>
                                             <td className="px-2 py-2 w-12 text-center"><button onClick={() => handleItemRemove(index)} className="text-red-400 hover:text-red-600"><TrashIcon className="w-5 h-5"/></button></td>
                                         </tr>
@@ -287,6 +347,13 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
                             </tbody>
                         </table>
                     </div>
+                    {/* Last Price Hint Box (Only for the active line) */}
+                    {lastPriceInfo && activeLineIndex !== null && items[activeLineIndex] && (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800 flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200 animate-fade-in-out">
+                            <InformationCircleIcon className="w-5 h-5 text-blue-500" />
+                            <span>{lastPriceInfo}</span>
+                        </div>
+                    )}
                 </main>
                 <aside className="w-full md:w-1/3 flex flex-col gap-4">
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-md p-4 flex-grow flex flex-col">

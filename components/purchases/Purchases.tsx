@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
 import { Purchase, LineItem, InventoryItem, Supplier, PackingUnit, TreasuryTransaction } from '../../types';
-import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon } from '../icons';
+import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon, InformationCircleIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddSupplierForm from '../suppliers/AddSupplierForm';
 import PurchaseInvoiceView from './PurchaseInvoiceView';
@@ -38,7 +39,6 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
         isProcessing: false,
     });
 
-    // Determine which state and setter to use
     const state = isWindowMode ? windowState : localState;
     const setState = useCallback(
         isWindowMode ? onStateChange! : (updater: any) => setLocalState(updater),
@@ -47,13 +47,16 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
     
     const { activeBill, items, supplier, productSearchTerm, supplierSearchTerm, paidAmount, isProcessing } = state || {};
 
-
     const [isAddSupplierModalOpen, setAddSupplierModalOpen] = useState(false);
     const [purchaseToView, setPurchaseToView] = useState<Purchase | null>(null);
 
     const [highlightedProductIndex, setHighlightedProductIndex] = useState(-1);
     const [highlightedSupplierIndex, setHighlightedSupplierIndex] = useState(-1);
     const [lastProcessedScan, setLastProcessedScan] = useState(0);
+
+    // Smart Price Logic State
+    const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+    const [lastPriceInfo, setLastPriceInfo] = useState<string>('');
 
     const resetBill = useCallback(() => {
         const resetState = {
@@ -72,13 +75,12 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
         if(isWindowMode) {
             setState(() => resetState);
         } else {
-            navigate('/purchases/new'); // Fallback for direct navigation
+            navigate('/purchases/new');
         }
         supplierSearchRef.current?.focus();
     }, [sequences.purchase, isWindowMode, setState, navigate]);
 
 
-    // Load data for non-windowed edit mode
     useEffect(() => {
         if (!isWindowMode && isEditMode) {
             const purchaseToEdit = purchases.find((p: Purchase) => p.id === id);
@@ -97,6 +99,42 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
             }
         }
     }, [id, isEditMode, isWindowMode, purchases, suppliers, showToast, navigate, setState]);
+
+    // Helper to get last price for a specific item
+    const getLastPriceForItem = useCallback((itemId: string) => {
+        if (!supplier) return null;
+        
+        const supplierPurchases = purchases
+            .filter((p: Purchase) => p.supplier === supplier.name && !p.isArchived && p.id !== activeBill.id)
+            .sort((a: Purchase, b: Purchase) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        for (const p of supplierPurchases) {
+            const itemInPurchase = p.items.find(item => item.itemId === itemId);
+            if (itemInPurchase) {
+                return { price: itemInPurchase.price, date: p.date, unitName: itemInPurchase.unitName };
+            }
+        }
+        return null;
+    }, [supplier, purchases, activeBill.id]);
+
+    // Calculate historical price info when line item focus changes
+    useEffect(() => {
+        if (activeLineIndex === null || !supplier || !items || items.length <= activeLineIndex) {
+            setLastPriceInfo('');
+            return;
+        }
+
+        const activeLineItem = items[activeLineIndex];
+        if (!activeLineItem) return;
+
+        const foundPrice = getLastPriceForItem(activeLineItem.itemId);
+        
+        if (foundPrice) {
+            setLastPriceInfo(`آخر سعر شراء من هذا المورد: ${foundPrice.price.toLocaleString()} (${foundPrice.unitName}) في ${foundPrice.date}`);
+        } else {
+            setLastPriceInfo('لا يوجد سجل مشتريات سابق لهذا الصنف مع هذا المورد.');
+        }
+    }, [activeLineIndex, supplier, items, getLastPriceForItem]);
 
 
     const { totals, paidAmountValue, remainingAmount } = useMemo(() => {
@@ -123,6 +161,13 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
     }, [items, activeBill?.status, paidAmount]);
 
     const handleProductSelect = useCallback((product: InventoryItem) => {
+        // Find last price logic for new item
+        let initialPrice = product.purchasePrice;
+        const foundPrice = getLastPriceForItem(product.id);
+        if (foundPrice) {
+            initialPrice = foundPrice.price;
+        }
+
         setState(prev => {
             const currentItems = prev.items || [];
             const existingItem = currentItems.find(item => item.itemId === product.id);
@@ -138,9 +183,9 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
                     unitId: 'base',
                     unitName: product.baseUnit,
                     quantity: 1,
-                    price: product.purchasePrice,
+                    price: initialPrice,
                     discount: 0,
-                    total: product.purchasePrice,
+                    total: initialPrice,
                 };
                 newItems = [...currentItems, newItem];
             }
@@ -149,7 +194,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
 
         setHighlightedProductIndex(-1);
         productSearchRef.current?.focus();
-    }, [setState]);
+    }, [setState, getLastPriceForItem]);
 
     useEffect(() => {
         const isCurrentWindow = windowId ? visibleWindowId === windowId : !visibleWindowId;
@@ -204,7 +249,6 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
                  return;
             }
 
-            // 1. Create the purchase first to get its ID
             const purchaseData: Omit<Purchase, 'id' | 'journalEntryId'> = {
                 supplier: supplier.name,
                 date: activeBill.date!,
@@ -218,7 +262,6 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
 
             const createdPurchase = addPurchase(purchaseData);
 
-            // 2. If paid, create a treasury transaction
             if (paidAmountValue > 0) {
                  const mainTreasury = treasuriesList.find((t: any) => t.name === 'الخزينة الرئيسية') || treasuriesList.find((t: any) => !t.isTotal);
                 if (!mainTreasury) {
@@ -305,6 +348,8 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
             const newItems = currentItems.filter((_, i) => i !== index);
             return {...prev, items: newItems};
         });
+        setActiveLineIndex(null);
+        setLastPriceInfo('');
     };
 
     const productSearchResults = useMemo(() => {
@@ -357,7 +402,7 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
         }
     };
 
-    if (!state) return null; // Important for windowed mode initial render
+    if (!state) return null; 
 
     return (
         <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900/50 text-[--text] font-sans">
@@ -391,7 +436,9 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
                         <input ref={productSearchRef} type="text" placeholder="ابحث بالباركود أو اسم الصنف... (Ctrl+F)" value={productSearchTerm || ''} onChange={(e) => setState(p => ({...p, productSearchTerm: e.target.value}))} onKeyDown={handleProductSearchKeyDown} className="w-full text-lg bg-gray-100 dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-3 pr-12 focus:ring-2 focus:ring-[--accent] outline-none" />
                         {productSearchResults.length > 0 && (
                             <div className="absolute top-full right-3 left-3 bg-[--panel] dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-20">
-                                {productSearchResults.map((p, index) => (<div key={p.id} onClick={() => handleProductSelect(p)} className={`p-3 flex justify-between cursor-pointer ${index === highlightedProductIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}><span>{p.name}</span><span className="text-sm text-gray-500">سعر الشراء: {p.purchasePrice}</span></div>))}
+                                {productSearchResults.map((p, index) => (
+                                    <div key={p.id} onClick={() => handleProductSelect(p)} className={`p-3 flex justify-between cursor-pointer ${index === highlightedProductIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}><span>{p.name}</span><span className="text-sm text-gray-500">سعر الشراء: {p.purchasePrice}</span></div>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -403,12 +450,18 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
                                 {items && items.map((item, index) => {
                                     const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
                                     const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
+                                    
+                                    // Price comparison logic - independent of focus
+                                    const lastPriceData = getLastPriceForItem(item.itemId);
+                                    const isMatchingLastPrice = lastPriceData !== null && Math.abs(item.price - lastPriceData.price) < 0.01;
+                                    const priceInputClass = `input-style w-full text-center ${isMatchingLastPrice ? 'bg-green-50 text-green-700 border-green-500 font-bold focus:ring-green-500' : ''}`;
+
                                     return (
-                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/20">
+                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/20" onFocus={() => setActiveLineIndex(index)}>
                                             <td className="px-2 py-2 text-xs font-mono text-center">{item.itemId}</td><td className="px-2 py-2 font-semibold truncate">{item.itemName}</td>
                                             <td className="px-2 py-2"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].quantity = el; }} type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'quantity')} className="input-style w-full text-center"/></td>
                                             <td className="px-2 py-2"><select ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].unit = el; }} value={item.unitId} onChange={e => handleItemUpdate(index, 'unitId', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'unit')} className="input-style w-full">{unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}</select></td>
-                                            <td className="px-2 py-2"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].price = el; }} type="number" value={item.price} onChange={e => handleItemUpdate(index, 'price', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'price')} className="input-style w-full text-center"/></td>
+                                            <td className="px-2 py-2"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].price = el; }} type="number" value={item.price} onChange={e => handleItemUpdate(index, 'price', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'price')} className={priceInputClass}/></td>
                                             <td className="px-2 py-2"><input type="number" value={item.discount} onChange={e => handleItemUpdate(index, 'discount', e.target.value)} className="input-style w-full text-center"/></td>
                                             <td className="px-2 py-2 text-left font-mono font-semibold">{item.total.toLocaleString()}</td><td className="px-2 py-2 text-center"><button onClick={() => handleItemRemove(index)} className="text-red-400 hover:text-red-600"><TrashIcon className="w-5 h-5"/></button></td>
                                         </tr>
@@ -417,6 +470,13 @@ const Purchases: React.FC<PurchasesProps> = ({ windowId, windowState, onStateCha
                             </tbody>
                         </table>
                     </div>
+                    {/* Last Price Hint Box (Only for the active line) */}
+                    {lastPriceInfo && activeLineIndex !== null && items[activeLineIndex] && (
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800 flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200 animate-fade-in-out">
+                            <InformationCircleIcon className="w-5 h-5 text-blue-500" />
+                            <span>{lastPriceInfo}</span>
+                        </div>
+                    )}
                 </main>
                 <aside className="w-full md:w-1/3 flex flex-col gap-4">
                      <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 flex-grow flex flex-col">

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { PrinterIcon } from '../icons/PrinterIcon';
 import { ArrowDownTrayIcon } from '../icons/ArrowDownTrayIcon';
@@ -15,16 +16,21 @@ const ReportToolbar: React.FC<ReportToolbarProps> = ({ reportName }) => {
         const input = document.getElementById('printable-report');
         if (input) {
             const isDarkMode = document.documentElement.classList.contains('dark');
-            html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
-                .then(canvas => {
-                    const imgData = canvas.toDataURL('image/png');
-                    const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-                    const pdfWidth = pdf.internal.pageSize.getWidth();
-                    const imgProps = pdf.getImageProperties(imgData);
-                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-                    pdf.save(`${reportName}.pdf`);
-                });
+            html2canvas(input, { 
+                scale: 2, 
+                useCORS: true, 
+                backgroundColor: isDarkMode ? '#111827' : '#ffffff' 
+            })
+            .then(canvas => {
+                // Use JPEG with 0.7 quality to reduce file size
+                const imgData = canvas.toDataURL('image/jpeg', 0.7);
+                const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const imgProps = pdf.getImageProperties(imgData);
+                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save(`${reportName}.pdf`);
+            });
         }
     };
     

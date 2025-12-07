@@ -1,3 +1,4 @@
+
 import React, { useContext } from 'react';
 import Modal from '../shared/Modal';
 import { DataContext } from '../../context/DataContext';
@@ -34,7 +35,8 @@ const SaleReturnView: React.FC<SaleReturnViewProps> = ({ isOpen, onClose, saleRe
         useCORS: true,
         backgroundColor: isDarkMode ? '#111827' : '#ffffff',
       }).then(canvas => {
-        const imgData = canvas.toDataURL('image/png');
+        // Use JPEG with 0.7 quality to reduce file size
+        const imgData = canvas.toDataURL('image/jpeg', 0.7);
         const pdf = new jspdf.jsPDF({
           orientation: 'portrait',
           unit: 'pt',
@@ -43,7 +45,7 @@ const SaleReturnView: React.FC<SaleReturnViewProps> = ({ isOpen, onClose, saleRe
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const imgProps = pdf.getImageProperties(imgData);
         const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
         pdf.save(`إشعار-دائن-${saleReturn.id}.pdf`);
       });
     }

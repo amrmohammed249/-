@@ -1,11 +1,14 @@
+
+
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
-import type { SaleReturn, LineItem, InventoryItem, Customer } from '../../types';
+import type { SaleReturn, LineItem, InventoryItem, Customer, Sale } from '../../types';
 import { PlusIcon } from '../icons/PlusIcon';
 import { TrashIcon } from '../icons/TrashIcon';
 import Modal from '../shared/Modal';
 import AddCustomerForm from '../customers/AddCustomerForm';
 import AddItemForm from '../inventory/AddItemForm';
+import { InformationCircleIcon } from '../icons/InformationCircleIcon';
 
 interface AddSaleReturnFormProps {
   onClose: () => void;
@@ -13,7 +16,7 @@ interface AddSaleReturnFormProps {
 }
 
 const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSuccess }) => {
-  const { customers, inventory, addSaleReturn, showToast } = useContext(DataContext);
+  const { customers, inventory, addSaleReturn, showToast, sales } = useContext(DataContext);
   
   const [customerId, setCustomerId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -25,10 +28,56 @@ const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSucces
   const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
   const [isAddItemModalOpen, setAddItemModalOpen] = useState(false);
 
+  const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+  const [lastPriceInfo, setLastPriceInfo] = useState<string>('');
+
   useEffect(() => {
     const total = lineItems.reduce((sum, item) => sum + item.total, 0);
     setGrandTotal(total);
   }, [lineItems]);
+
+  useEffect(() => {
+    if (activeLineIndex === null || !customerId || lineItems.length <= activeLineIndex) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    const activeLineItem = lineItems[activeLineIndex];
+    if (!activeLineItem) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    const itemId = activeLineItem.itemId;
+    const customerName = customers.find((c: Customer) => c.id === customerId)?.name;
+
+    if (!customerName) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    // Find the last sale for this customer and item to reference the original sale price
+    const customerSales = sales
+      .filter((s: Sale) => s.customer === customerName && !s.isArchived)
+      .sort((a: Sale, b: Sale) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    let foundPrice: { price: number; date: string; unitName: string } | null = null;
+
+    for (const sale of customerSales) {
+      const itemInSale = sale.items.find(item => item.itemId === itemId);
+      if (itemInSale) {
+        foundPrice = { price: itemInSale.price, date: sale.date, unitName: itemInSale.unitName };
+        break; // Found the most recent one
+      }
+    }
+    
+    if (foundPrice) {
+      setLastPriceInfo(`تنبيه: آخر سعر بيع لهذا العميل كان ${foundPrice.price.toLocaleString()} جنيه (${foundPrice.unitName}) بتاريخ ${foundPrice.date}.`);
+    } else {
+      setLastPriceInfo('لا يوجد سجل مبيعات سابق لهذا الصنف مع هذا العميل.');
+    }
+  }, [activeLineIndex, customerId, lineItems, sales, customers]);
+
 
   const handleItemChange = (index: number, field: 'quantity' | 'price' | 'unitId', value: string) => {
     const updatedItems = [...lineItems];
@@ -84,10 +133,13 @@ const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSucces
 
     setLineItems([...lineItems, newLine]);
     setNewItemId('');
+    setActiveLineIndex(lineItems.length);
   };
 
   const removeLineItem = (index: number) => {
     setLineItems(lineItems.filter((_, i) => i !== index));
+    setActiveLineIndex(null);
+    setLastPriceInfo('');
   };
 
   const handleCustomerAdded = (newCustomer: Customer) => {
@@ -169,7 +221,7 @@ const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSucces
             ] : [];
 
             return (
-              <div key={line.itemId} className="grid grid-cols-12 gap-2 items-center mb-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700/20">
+              <div key={line.itemId} className="grid grid-cols-12 gap-2 items-center mb-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700/20" onFocus={() => setActiveLineIndex(index)}>
                 <input type="text" value={line.itemName} readOnly className="col-span-4 input-style bg-gray-100 dark:bg-gray-800" />
                 <select value={line.unitId} onChange={e => handleItemChange(index, 'unitId', e.target.value)} className="col-span-2 input-style">
                   {unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
@@ -183,6 +235,13 @@ const AddSaleReturnForm: React.FC<AddSaleReturnFormProps> = ({ onClose, onSucces
               </div>
             );
           })}
+
+          {lastPriceInfo && activeLineIndex !== null && (
+            <div className="mt-2 p-3 bg-blue-50 dark:bg-gray-900/40 border-r-4 border-blue-400 text-sm text-blue-800 dark:text-blue-200 rounded-md flex items-center gap-3 transition-opacity duration-300">
+                <InformationCircleIcon className="w-5 h-5 flex-shrink-0" />
+                <p>{lastPriceInfo}</p>
+            </div>
+          )}
 
           <div className="flex items-center space-x-2 space-x-reverse mt-4 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
               <select value={newItemId} onChange={e => setNewItemId(e.target.value)} className="input-style w-full">

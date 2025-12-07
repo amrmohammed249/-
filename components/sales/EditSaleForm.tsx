@@ -2,16 +2,17 @@
 
 import React, { useState, useContext, useEffect } from 'react';
 import { DataContext } from '../../context/DataContext';
-import type { Sale, LineItem, InventoryItem } from '../../types';
+import type { Sale, LineItem, InventoryItem, Customer } from '../../types';
 import { PlusIcon } from '../icons/PlusIcon';
 import { TrashIcon } from '../icons/TrashIcon';
+import { InformationCircleIcon } from '../icons/InformationCircleIcon';
 
 interface EditLineItem extends LineItem {
   availableStock: number;
 }
 
 const EditSaleForm: React.FC<{ sale: Sale; onClose: () => void }> = ({ sale, onClose }) => {
-  const { customers, inventory, updateSale, showToast } = useContext(DataContext);
+  const { customers, inventory, updateSale, showToast, sales } = useContext(DataContext);
   
   const initialCustomerId = customers.find(c => c.name === sale.customer)?.id || '';
   
@@ -24,10 +25,55 @@ const EditSaleForm: React.FC<{ sale: Sale; onClose: () => void }> = ({ sale, onC
   const [grandTotal, setGrandTotal] = useState(sale.total);
   const [newItemId, setNewItemId] = useState('');
 
+  const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+  const [lastPriceInfo, setLastPriceInfo] = useState<string>('');
+
   useEffect(() => {
     const total = lineItems.reduce((sum, item) => sum + item.total, 0);
     setGrandTotal(total);
   }, [lineItems]);
+
+  useEffect(() => {
+    if (activeLineIndex === null || !customerId || lineItems.length <= activeLineIndex) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    const activeLineItem = lineItems[activeLineIndex];
+    if (!activeLineItem) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    const itemId = activeLineItem.itemId;
+    const customerName = customers.find((c: Customer) => c.id === customerId)?.name;
+
+    if (!customerName) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    // Find the last sale for this customer and item, excluding the current sale being edited
+    const customerSales = sales
+      .filter((s: Sale) => s.customer === customerName && s.id !== sale.id && !s.isArchived)
+      .sort((a: Sale, b: Sale) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    let foundPrice: { price: number; date: string; unitName: string } | null = null;
+
+    for (const s of customerSales) {
+      const itemInSale = s.items.find(item => item.itemId === itemId);
+      if (itemInSale) {
+        foundPrice = { price: itemInSale.price, date: s.date, unitName: itemInSale.unitName };
+        break;
+      }
+    }
+    
+    if (foundPrice) {
+      setLastPriceInfo(`آخر سعر بيع لهذا العميل كان ${foundPrice.price.toLocaleString()} جنيه (${foundPrice.unitName}) بتاريخ ${foundPrice.date}.`);
+    } else {
+      setLastPriceInfo('لا يوجد سجل أسعار سابق لهذا الصنف مع هذا العميل.');
+    }
+  }, [activeLineIndex, customerId, lineItems, sales, customers, sale.id]);
 
 
   const handleItemChange = (index: number, field: 'quantity' | 'price' | 'unitId', value: any) => {
@@ -121,10 +167,13 @@ const EditSaleForm: React.FC<{ sale: Sale; onClose: () => void }> = ({ sale, onC
 
     setLineItems([...lineItems, newLine]);
     setNewItemId('');
+    setActiveLineIndex(lineItems.length);
   };
 
   const removeLineItem = (index: number) => {
     setLineItems(lineItems.filter((_, i) => i !== index));
+    setActiveLineIndex(null);
+    setLastPriceInfo('');
   };
 
 
@@ -242,7 +291,7 @@ const EditSaleForm: React.FC<{ sale: Sale; onClose: () => void }> = ({ sale, onC
           ] : [];
 
           return (
-            <div key={line.itemId} className="grid grid-cols-12 gap-2 items-center mb-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700/20">
+            <div key={line.itemId} className="grid grid-cols-12 gap-2 items-center mb-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700/20" onFocus={() => setActiveLineIndex(index)}>
               <input type="text" value={line.itemName} readOnly className="col-span-4 input-style bg-gray-100 dark:bg-gray-800" />
               <select value={line.unitId} onChange={e => handleItemChange(index, 'unitId', e.target.value)} className="col-span-2 input-style">
                 {unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
@@ -256,6 +305,13 @@ const EditSaleForm: React.FC<{ sale: Sale; onClose: () => void }> = ({ sale, onC
             </div>
           );
         })}
+
+        {lastPriceInfo && activeLineIndex !== null && (
+            <div className="mt-2 p-3 bg-blue-50 dark:bg-gray-900/40 border-r-4 border-blue-400 text-sm text-blue-800 dark:text-blue-200 rounded-md flex items-center gap-3 transition-opacity duration-300">
+                <InformationCircleIcon className="w-5 h-5 flex-shrink-0" />
+                <p>{lastPriceInfo}</p>
+            </div>
+        )}
       </div>
       
       <div className="border-t pt-4 flex justify-end">

@@ -1,10 +1,13 @@
+
+
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
-import { PurchaseReturn, LineItem, InventoryItem, Supplier, PackingUnit } from '../../types';
+import { PurchaseReturn, LineItem, InventoryItem, Supplier, PackingUnit, Purchase } from '../../types';
 import { PlusIcon, TrashIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddSupplierForm from '../suppliers/AddSupplierForm';
 import AddItemForm from '../inventory/AddItemForm';
+import { InformationCircleIcon } from '../icons/InformationCircleIcon';
 
 interface AddPurchaseReturnFormProps {
   onClose: () => void;
@@ -12,7 +15,7 @@ interface AddPurchaseReturnFormProps {
 }
 
 const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, onSuccess }) => {
-  const { suppliers, inventory, addPurchaseReturn, showToast, generalSettings } = useContext(DataContext);
+  const { suppliers, inventory, addPurchaseReturn, showToast, generalSettings, purchases } = useContext(DataContext);
   
   const [supplierId, setSupplierId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -25,10 +28,55 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
   const [isAddSupplierModalOpen, setAddSupplierModalOpen] = useState(false);
   const [isAddItemModalOpen, setAddItemModalOpen] = useState(false);
 
+  const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+  const [lastPriceInfo, setLastPriceInfo] = useState<string>('');
+
   useEffect(() => {
     const total = lineItems.reduce((sum, item) => sum + item.total, 0);
     setGrandTotal(total);
   }, [lineItems]);
+
+  useEffect(() => {
+    if (activeLineIndex === null || !supplierId || lineItems.length <= activeLineIndex) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    const activeLineItem = lineItems[activeLineIndex];
+    if (!activeLineItem) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    const itemId = activeLineItem.itemId;
+    const supplierName = suppliers.find((s: Supplier) => s.id === supplierId)?.name;
+
+    if (!supplierName) {
+      setLastPriceInfo('');
+      return;
+    }
+
+    // Find the last purchase from this supplier for this item to show reference cost
+    const supplierPurchases = purchases
+      .filter((p: Purchase) => p.supplier === supplierName && !p.isArchived)
+      .sort((a: Purchase, b: Purchase) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    let foundPrice: { price: number; date: string; unitName: string } | null = null;
+
+    for (const p of supplierPurchases) {
+      const itemInPurchase = p.items.find(item => item.itemId === itemId);
+      if (itemInPurchase) {
+        foundPrice = { price: itemInPurchase.price, date: p.date, unitName: itemInPurchase.unitName };
+        break;
+      }
+    }
+    
+    if (foundPrice) {
+      setLastPriceInfo(`تنبيه: آخر سعر شراء من هذا المورد كان ${foundPrice.price.toLocaleString()} جنيه (${foundPrice.unitName}) بتاريخ ${foundPrice.date}.`);
+    } else {
+      setLastPriceInfo('لا يوجد سجل مشتريات سابق لهذا الصنف مع هذا المورد.');
+    }
+  }, [activeLineIndex, supplierId, lineItems, purchases, suppliers]);
 
 
   const handleItemChange = (index: number, field: 'quantity' | 'price' | 'unitId', value: string) => {
@@ -43,7 +91,7 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
         item.unitName = inventoryItem.baseUnit;
         item.price = inventoryItem.purchasePrice;
       } else {
-        const packingUnit = inventoryItem.units.find(u => u.id === value);
+        const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === value);
         if (packingUnit) {
           item.unitName = packingUnit.name;
           item.price = packingUnit.purchasePrice;
@@ -102,11 +150,14 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
     
     setLineItems([...lineItems, newLine]);
     setNewItemId('');
+    setActiveLineIndex(lineItems.length);
   };
 
   const removeLineItem = (index: number) => {
     const itemToRemove = lineItems[index];
     setLineItems(lineItems.filter((_, i) => i !== index));
+    setActiveLineIndex(null);
+    setLastPriceInfo('');
     if (itemToRemove) {
         setItemErrors(prev => {
             const newErrors = {...prev};
@@ -204,7 +255,7 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
             const error = itemErrors[line.itemId];
             
             return (
-              <div key={line.itemId} className="grid grid-cols-12 gap-2 items-start mb-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700/20">
+              <div key={line.itemId} className="grid grid-cols-12 gap-2 items-start mb-2 p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700/20" onFocus={() => setActiveLineIndex(index)}>
                 <input type="text" value={line.itemName} readOnly className="col-span-4 input-style bg-gray-100 dark:bg-gray-800" />
                 <select value={line.unitId} onChange={e => handleItemChange(index, 'unitId', e.target.value)} className="col-span-2 input-style">
                   {unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
@@ -221,6 +272,14 @@ const AddPurchaseReturnForm: React.FC<AddPurchaseReturnFormProps> = ({ onClose, 
               </div>
             );
           })}
+
+          {lastPriceInfo && activeLineIndex !== null && (
+            <div className="mt-2 p-3 bg-blue-50 dark:bg-gray-900/40 border-r-4 border-blue-400 text-sm text-blue-800 dark:text-blue-200 rounded-md flex items-center gap-3 transition-opacity duration-300">
+                <InformationCircleIcon className="w-5 h-5 flex-shrink-0" />
+                <p>{lastPriceInfo}</p>
+            </div>
+          )}
+
           <div className="flex items-center space-x-2 space-x-reverse mt-4 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
               <select value={newItemId} onChange={e => setNewItemId(e.target.value)} className="input-style w-full">
                   <option value="">-- اختر صنف للإضافة --</option>

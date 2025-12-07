@@ -58,7 +58,7 @@ const AddPurchaseForm: React.FC<AddPurchaseFormProps> = ({ onClose, onSuccess })
     }
 
     const supplierPurchases = purchases
-      .filter((p: Purchase) => p.supplier === supplierName)
+      .filter((p: Purchase) => p.supplier === supplierName && !p.isArchived)
       .sort((a: Purchase, b: Purchase) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     let foundPrice: { price: number; date: string; unitName: string } | null = null;

@@ -62,7 +62,7 @@ const AddSaleForm: React.FC<AddSaleFormProps> = ({ onClose, onSuccess }) => {
 
     // Find the last sale for this customer and item
     const customerSales = sales
-      .filter((s: Sale) => s.customer === customerName)
+      .filter((s: Sale) => s.customer === customerName && !s.isArchived)
       .sort((a: Sale, b: Sale) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     let foundPrice: { price: number; date: string; unitName: string } | null = null;

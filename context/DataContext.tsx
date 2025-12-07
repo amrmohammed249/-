@@ -1860,7 +1860,66 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         showToast('تم تعديل الفاتورة بنجاح.');
         return saleData;
     };
-    const archiveSale = (id: string): { success: boolean, message: string } => { return {success: false, message: 'Not implemented'} };
+    const archiveSale = (id: string): { success: boolean, message: string } => {
+        const sale = state.sales.find(s => s.id === id);
+        if (!sale) return { success: false, message: 'الفاتورة غير موجودة.' };
+
+        // 1. Restore Inventory
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        sale.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: any) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: any) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+
+        // 2. Update Customer Balance (Decrease balance by invoice value, effectively cancelling debt)
+        const updatedCustomers = state.customers.map(c => {
+            if (c.name === sale.customer) {
+                return { ...c, balance: c.balance - (sale.total - (sale.paidAmount || 0)) };
+            }
+            return c;
+        });
+
+        // 3. Archive Journal Entry & Reverse GL Impact
+        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        let updatedJournal = [...state.journal];
+        if (sale.journalEntryId) {
+            const entry = updatedJournal.find(j => j.id === sale.journalEntryId);
+            if (entry) {
+                entry.isArchived = true;
+                if (entry.status === 'مرحل') {
+                    entry.lines.forEach(line => {
+                        updateBalancesRecursively(newChart, line.accountId, -(line.debit - line.credit));
+                    });
+                }
+            }
+        }
+
+        // 4. Update Sales Array
+        const updatedSales = state.sales.map(s => s.id === id ? { ...s, isArchived: true } : s);
+
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'أرشفة فاتورة مبيعات',
+            details: `تمت أرشفة فاتورة مبيعات رقم #${id}.`
+        };
+
+        dispatch({
+            type: 'ARCHIVE_SALE',
+            payload: { updatedSales, updatedInventory, updatedCustomers, log, updatedJournal, chartOfAccounts: newChart }
+        });
+
+        return { success: true, message: 'تمت أرشفة الفاتورة بنجاح.' };
+    };
     const unarchiveSale = (id: string): void => {};
     
     const addPriceQuote = (quoteData: Omit<PriceQuote, 'id' | 'status'>): PriceQuote => {
@@ -2135,10 +2194,168 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         return newPurchase;
     };
     const updatePurchase = (purchaseData: Purchase): Purchase => {
-        showToast("تم تحديث فاتورة الشراء بنجاح");
+        const originalPurchase = state.purchases.find(p => p.id === purchaseData.id);
+        if (!originalPurchase) {
+            showToast('لم يتم العثور على الفاتورة الأصلية للتعديل.', 'error');
+            throw new Error('Original purchase not found');
+        }
+
+        archiveJournalEntry(originalPurchase.journalEntryId!);
+
+        let updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        let updatedSuppliers = JSON.parse(JSON.stringify(state.suppliers));
+        let updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+
+        originalPurchase.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+
+        updatedSuppliers = updatedSuppliers.map((s: Supplier) => {
+            if (s.name === originalPurchase.supplier) {
+                return { ...s, balance: s.balance - (originalPurchase.total - (originalPurchase.paidAmount || 0)) };
+            }
+            return s;
+        });
+
+        purchaseData.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                let newBasePurchasePrice = lineItem.price;
+
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) {
+                        quantityInBaseUnit *= packingUnit.factor;
+                        newBasePurchasePrice = lineItem.price / packingUnit.factor;
+                    }
+                }
+                item.stock += quantityInBaseUnit;
+                // Update purchase price in item master to latest cost
+                item.purchasePrice = newBasePurchasePrice;
+            }
+        });
+
+        updatedSuppliers = updatedSuppliers.map((s: Supplier) => {
+            if (s.name === purchaseData.supplier) {
+                return { ...s, balance: s.balance + (purchaseData.total - (purchaseData.paidAmount || 0)) };
+            }
+            return s;
+        });
+        
+        const newJournalEntry = addJournalEntry({
+            date: purchaseData.date,
+            description: `تعديل فاتورة مشتريات رقم ${purchaseData.id}`,
+            debit: 0, 
+            credit: 0, 
+            status: 'مرحل',
+            lines: [] 
+        });
+        const supplierAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '2101');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+        const updatedJournal = state.journal.filter(j => j.id !== originalPurchase.journalEntryId);
+        
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'تعديل فاتورة مشتريات',
+            details: `تم تعديل فاتورة #${purchaseData.id}.`
+        };
+
+        dispatch({ type: 'UPDATE_PURCHASE', payload: { updatedPurchase: purchaseData, updatedInventory, updatedSuppliers, journal: updatedJournal, chartOfAccounts: updatedChartOfAccounts, log } });
+        
+        showToast('تم تعديل فاتورة المشتريات بنجاح.');
         return purchaseData;
      };
-    const archivePurchase = (id: string): { success: boolean, message: string } => { return {success: false, message: 'Not implemented'} };
+    const archivePurchase = (id: string): { success: boolean, message: string } => {
+        const purchase = state.purchases.find(p => p.id === id);
+        if (!purchase) return { success: false, message: 'الفاتورة غير موجودة.' };
+
+        // 1. Inventory Validation Check
+        for (const lineItem of purchase.items) {
+            const item = state.inventory.find(i => i.id === lineItem.itemId);
+            if (!item) continue;
+
+            let quantityInBaseUnit = lineItem.quantity;
+            if (lineItem.unitId !== 'base') {
+                const packingUnit = item.units.find(u => u.id === lineItem.unitId);
+                if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+            }
+
+            if (item.stock < quantityInBaseUnit) {
+                return { 
+                    success: false, 
+                    message: `لا يمكن أرشفة الفاتورة. الرصيد الحالي للصنف "${item.name}" (${item.stock}) أقل من الكمية المراد إرجاعها (${quantityInBaseUnit}).` 
+                };
+            }
+        }
+
+        // 2. Reduce Inventory
+        const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        purchase.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: any) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: any) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+
+        // 3. Update Supplier Balance (Decrease balance by invoice value - effectively reversing the credit)
+        const updatedSuppliers = state.suppliers.map(s => {
+            if (s.name === purchase.supplier) {
+                return { ...s, balance: s.balance - (purchase.total - (purchase.paidAmount || 0)) };
+            }
+            return s;
+        });
+
+        // 4. Archive Journal Entry & Reverse GL Impact
+        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        let updatedJournal = [...state.journal];
+        if (purchase.journalEntryId) {
+            const entry = updatedJournal.find(j => j.id === purchase.journalEntryId);
+            if (entry) {
+                entry.isArchived = true;
+                if (entry.status === 'مرحل') {
+                    entry.lines.forEach(line => {
+                        updateBalancesRecursively(newChart, line.accountId, -(line.debit - line.credit));
+                    });
+                }
+            }
+        }
+
+        // 5. Update Purchases Array
+        const updatedPurchases = state.purchases.map(p => p.id === id ? { ...p, isArchived: true } : p);
+
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'أرشفة فاتورة مشتريات',
+            details: `تمت أرشفة فاتورة مشتريات رقم #${id}.`
+        };
+
+        dispatch({
+            type: 'ARCHIVE_PURCHASE',
+            payload: { updatedPurchases, updatedInventory, updatedSuppliers, log, updatedJournal, chartOfAccounts: newChart }
+        });
+
+        return { success: true, message: 'تمت أرشفة الفاتورة بنجاح.' };
+    };
     const unarchivePurchase = (id: string): void => {};
     
     const addPurchaseQuote = (quoteData: Omit<PurchaseQuote, 'id' | 'status'>): PurchaseQuote => {

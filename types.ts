@@ -1,3 +1,4 @@
+
 import { ReactNode } from 'react';
 
 export interface AccountNode {
@@ -212,6 +213,10 @@ export interface JournalEntry {
   status: 'مرحل' | 'تحت المراجعة';
   lines: JournalLine[];
   isArchived?: boolean;
+  // New fields for linking manual entries to parties (Credit/Debit Notes)
+  relatedPartyId?: string;
+  relatedPartyType?: 'customer' | 'supplier';
+  relatedPartyName?: string;
 }
 
 export interface ActivityLogEntry {

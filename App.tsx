@@ -3,7 +3,6 @@ import React, { useContext, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
-// FIX: Import 'Dashboard' as a default export.
 import Dashboard from './components/dashboard/Dashboard';
 import ChartOfAccounts from './components/accounts/ChartOfAccounts';
 import JournalEntries from './components/accounts/JournalEntries';
@@ -41,6 +40,7 @@ import BarcodeLabelBatchPrint from './components/printing/BarcodeLabelBatchPrint
 import SaleReturnsForm from './components/sales/SaleReturnsForm';
 import PurchaseReturnsForm from './components/purchases/PurchaseReturnsForm';
 import PriceListBuilder from './components/sales/PriceListBuilder';
+import FixedAssets from './components/fixedassets/FixedAssets';
 
 
 const App: React.FC = () => {
@@ -59,19 +59,16 @@ const App: React.FC = () => {
   }, [isDataLoaded, hasData, createNewDataset]);
 
   useEffect(() => {
-    // On route change, close the sidebar on mobile
     if (!isPrintRoute) {
       setSidebarOpen(false);
     }
   }, [location, isPrintRoute]);
 
-  // Barcode scanner listener logic
   useEffect(() => {
       let barcode = '';
       let lastKeyTime = 0;
 
       const handleKeyDown = (e: KeyboardEvent) => {
-          // Ignore events from inputs, textareas, and selects to avoid interfering with manual typing
           const activeEl = document.activeElement;
           if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')) {
               return;
@@ -81,18 +78,17 @@ const App: React.FC = () => {
           const timeDiff = currentTime - lastKeyTime;
           lastKeyTime = currentTime;
 
-          // Reset if the delay between keys is too long, indicating manual typing
           if (timeDiff > 100) {
               barcode = '';
           }
 
           if (e.key === 'Enter') {
-              if (barcode.length > 2) { // Minimum length for a barcode scan
+              if (barcode.length > 2) {
                   e.preventDefault();
                   processBarcodeScan(barcode);
               }
               barcode = '';
-          } else if (e.key.length === 1) { // It's a character, not a control key
+          } else if (e.key.length === 1) {
               barcode += e.key;
           }
       };
@@ -127,7 +123,6 @@ const App: React.FC = () => {
     }
   };
   
-  // Special rendering for print routes to avoid the main layout
   if (isPrintRoute) {
     return (
       <Routes>
@@ -140,7 +135,6 @@ const App: React.FC = () => {
   }
 
 
-  // 1. Initial loading state while waiting for data to load or first dataset to be created.
   if (!isDataLoaded || !hasData) {
     return (
         <div dir="rtl" className="flex h-screen w-full items-center justify-center bg-gray-100 dark:bg-gray-900">
@@ -151,7 +145,6 @@ const App: React.FC = () => {
     );
   }
   
-  // 2. If no user is logged in, only render the Login page for all routes.
   if (!currentUser) {
     return (
         <>
@@ -163,12 +156,10 @@ const App: React.FC = () => {
     );
   }
 
-  // 3. If user is logged in, render the full application layout.
   return (
     <>
       <div dir="rtl" className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
         <div className="flex flex-1 overflow-hidden">
-            {/* Main Content Area (Dashboard, lists, etc.) */}
             <div className={`flex flex-1 overflow-hidden ${visibleWindowId ? 'hidden' : 'flex'}`}>
                 <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
                 <div className="flex-1 flex flex-col overflow-hidden">
@@ -192,6 +183,7 @@ const App: React.FC = () => {
                             <Route path="/sales-returns" element={<SaleReturns />} />
                             <Route path="/purchases-returns" element={<PurchaseReturns />} />
                             <Route path="/treasury" element={<Treasury />} />
+                            <Route path="/fixed-assets" element={<FixedAssets />} />
                             <Route path="/customers" element={<Customers />} />
                             <Route path="/customers/:id" element={<CustomerProfile />} />
                             <Route path="/suppliers" element={<Suppliers />} />
@@ -206,7 +198,6 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            {/* Active Fullscreen Windows Area */}
             {activeWindows.map(window => (
                 <div
                     key={window.id}

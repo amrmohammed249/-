@@ -1,3 +1,4 @@
+
 import React, { useState, useContext, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
@@ -6,8 +7,11 @@ import DataTable from '../shared/DataTable';
 import Modal from '../shared/Modal';
 import AddSupplierForm from './AddSupplierForm';
 import EditSupplierForm from './EditSupplierForm';
+import SupplierNoteForm from './SupplierNoteForm';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import { PlusIcon } from '../icons/PlusIcon';
+import { CalculatorIcon } from '../icons/CalculatorIcon';
+import { Supplier } from '../../types';
 
 const Suppliers: React.FC = () => {
   const { suppliers, archiveSupplier, showToast } = useContext(DataContext);
@@ -16,7 +20,8 @@ const Suppliers: React.FC = () => {
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
-  const [selectedSupplier, setSelectedSupplier] = useState<any | null>(null);
+  const [isNoteModalOpen, setNoteModalOpen] = useState(false);
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
 
   const handleEdit = (supplier: any) => {
     setSelectedSupplier(supplier);
@@ -26,6 +31,11 @@ const Suppliers: React.FC = () => {
   const handleArchive = (supplier: any) => {
     setSelectedSupplier(supplier);
     setArchiveModalOpen(true);
+  };
+
+  const handleNote = (supplier: any) => {
+      setSelectedSupplier(supplier);
+      setNoteModalOpen(true);
   };
   
   const confirmArchive = () => {
@@ -48,6 +58,19 @@ const Suppliers: React.FC = () => {
     { header: 'العنوان', accessor: 'address' },
     { header: 'جهة الاتصال', accessor: 'contact' },
     { header: 'الرصيد', accessor: 'balance', render: (row: any) => `${row.balance.toLocaleString()} جنيه مصري` },
+    { 
+        header: 'تسوية', 
+        accessor: 'settle', 
+        render: (row: any) => (
+            <button 
+                onClick={(e) => { e.stopPropagation(); handleNote(row); }}
+                className="text-gray-500 hover:text-blue-600 p-1"
+                title="تسوية حساب (إشعار)"
+            >
+                <CalculatorIcon className="w-5 h-5" />
+            </button>
+        )
+    }
   ], []);
 
   return (
@@ -76,6 +99,12 @@ const Suppliers: React.FC = () => {
         <Modal isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} title={`تعديل المورد: ${selectedSupplier.name}`}>
           <EditSupplierForm supplier={selectedSupplier} onClose={() => setEditModalOpen(false)} />
         </Modal>
+      )}
+
+      {selectedSupplier && (
+          <Modal isOpen={isNoteModalOpen} onClose={() => setNoteModalOpen(false)} title="تسوية حساب (إشعار خصم/إضافة)">
+              <SupplierNoteForm supplier={selectedSupplier} onClose={() => setNoteModalOpen(false)} onSuccess={() => setNoteModalOpen(false)} />
+          </Modal>
       )}
 
       {selectedSupplier && (

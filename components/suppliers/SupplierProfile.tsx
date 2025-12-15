@@ -2,17 +2,21 @@
 import React, { useState, useContext, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
-import { Purchase, PurchaseReturn, TreasuryTransaction } from '../../types';
-import { TruckIcon, PhoneIcon, MapPinIcon, BanknotesIcon, EyeIcon } from '../icons';
+import { Purchase, PurchaseReturn, TreasuryTransaction, JournalEntry } from '../../types';
+import { TruckIcon, PhoneIcon, MapPinIcon, BanknotesIcon, EyeIcon, CalculatorIcon } from '../icons';
 import PurchaseInvoiceView from '../purchases/PurchaseInvoiceView';
 import PurchaseReturnView from '../purchases/PurchaseReturnView';
 import TreasuryVoucherView from '../treasury/TreasuryVoucherView';
+import ViewDetailsModal from '../shared/ViewDetailsModal';
+import Modal from '../shared/Modal';
+import SupplierNoteForm from './SupplierNoteForm';
 
 const SupplierProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { suppliers, purchases, purchaseReturns, treasury } = useContext(DataContext);
+  const { suppliers, purchases, purchaseReturns, treasury, journal } = useContext(DataContext);
   
   const [viewingTransaction, setViewingTransaction] = useState<{ type: string; data: any } | null>(null);
+  const [isNoteModalOpen, setNoteModalOpen] = useState(false);
 
   const { statementData, party, openingBalance } = useMemo(() => {
     if (!id) return { statementData: [], party: null, openingBalance: 0 };
@@ -33,6 +37,32 @@ const SupplierProfile: React.FC = () => {
             debit: t.type === 'سند صرف' ? Math.abs(t.amount) : 0, // Payment to supplier is a debit
             credit: t.type === 'سند قبض' ? Math.abs(t.amount) : 0, // Refund from supplier is a credit
             type: 'treasury', original: t
+        })),
+        // Add Journal Entries explicitly linked to this supplier (Debit/Credit Notes)
+        ...journal.filter((j: JournalEntry) => !j.isArchived && j.relatedPartyType === 'supplier' && j.relatedPartyId === party.id).map((j: JournalEntry) => ({
+            date: j.date, id: j.id, description: j.description,
+            // Logic: If user created a "Debit Note" (reduces debt), the Supplier Control Account was debited.
+            // In JournalEntry lines, we need to find the line affecting the supplier account.
+            // Simplified for display: The 'debit' and 'credit' fields on the JE object represent totals.
+            // We assume the JE is balanced. We need to determine the direction relative to the supplier.
+            // However, our `SupplierNoteForm` logic:
+            // Debit Note -> Debit Supplier Control.
+            // Credit Note -> Credit Supplier Control.
+            // We can infer direction from description or check lines. Let's check lines for robustness.
+            debit: j.lines.reduce((sum, line) => {
+                 // Assuming '2101' is the Supplier Control code prefix or we check if debit > 0 on the supplier line
+                 // Since we don't easily know which line is the supplier line without code, we use the fact that
+                 // Debit Note = reduces balance = Debit column in statement.
+                 // Credit Note = increases balance = Credit column in statement.
+                 // We can rely on the description convention we set: "إشعار خصم" vs "إشعار إضافة"
+                 if (j.description.includes('إشعار خصم')) return sum + j.debit; // Debit Note -> Debit Column
+                 return sum;
+            }, 0),
+            credit: j.lines.reduce((sum, line) => {
+                 if (j.description.includes('إشعار إضافة')) return sum + j.credit; // Credit Note -> Credit Column
+                 return sum;
+            }, 0),
+            type: 'journal', original: j
         }))
     ];
     
@@ -60,7 +90,7 @@ const SupplierProfile: React.FC = () => {
     const finalStatementData = statementWithBalance;
 
     return { statementData: finalStatementData, party, openingBalance };
-  }, [id, suppliers, purchases, purchaseReturns, treasury]);
+  }, [id, suppliers, purchases, purchaseReturns, treasury, journal]);
 
   if (!party) {
     return <div className="p-8 text-center">لم يتم العثور على المورد.</div>;
@@ -82,11 +112,21 @@ const SupplierProfile: React.FC = () => {
                 {party.address && <span className="flex items-center gap-1"><MapPinIcon className="w-4 h-4" /> {party.address}</span>}
             </div>
           </div>
-          <div className="mt-4 md:mt-0 text-right">
-            <p className="text-sm text-gray-500 dark:text-gray-400">الرصيد الحالي (لهم)</p>
-            <p className={`text-3xl font-bold font-mono ${party.balance >= 0.01 ? 'text-green-600' : 'text-red-500'}`}>
-              {party.balance.toLocaleString()} جنيه
-            </p>
+          <div className="mt-4 md:mt-0 flex items-center gap-4">
+             <div className="text-right">
+                <p className="text-sm text-gray-500 dark:text-gray-400">الرصيد الحالي (لهم)</p>
+                <p className={`text-3xl font-bold font-mono ${party.balance >= 0.01 ? 'text-green-600' : 'text-red-500'}`}>
+                {party.balance.toLocaleString()} جنيه
+                </p>
+            </div>
+            <button 
+                onClick={() => setNoteModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                title="إضافة إشعار خصم/إضافة"
+            >
+                <CalculatorIcon className="w-5 h-5" />
+                <span>تسوية</span>
+            </button>
           </div>
         </div>
       </div>
@@ -133,6 +173,11 @@ const SupplierProfile: React.FC = () => {
       {viewingTransaction?.type === 'purchase' && <PurchaseInvoiceView isOpen={true} onClose={() => setViewingTransaction(null)} purchase={viewingTransaction.data} />}
       {viewingTransaction?.type === 'purchaseReturn' && <PurchaseReturnView isOpen={true} onClose={() => setViewingTransaction(null)} purchaseReturn={viewingTransaction.data} />}
       {viewingTransaction?.type === 'treasury' && <TreasuryVoucherView isOpen={true} onClose={() => setViewingTransaction(null)} transaction={viewingTransaction.data} />}
+      {viewingTransaction?.type === 'journal' && <ViewDetailsModal isOpen={true} onClose={() => setViewingTransaction(null)} title={`تفاصيل الإشعار: ${viewingTransaction.data.id}`} data={viewingTransaction.data} />}
+
+      <Modal isOpen={isNoteModalOpen} onClose={() => setNoteModalOpen(false)} title="تسوية حساب (إشعار خصم/إضافة)">
+          <SupplierNoteForm supplier={party} onClose={() => setNoteModalOpen(false)} onSuccess={() => setNoteModalOpen(false)} />
+      </Modal>
     </div>
   );
 };

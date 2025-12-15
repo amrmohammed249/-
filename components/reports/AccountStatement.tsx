@@ -3,7 +3,7 @@ import React, { useContext, useMemo } from 'react';
 import { DataContext } from '../../context/DataContext';
 import ReportToolbar from './ReportToolbar';
 import DataTable from '../shared/DataTable';
-import { Sale, SaleReturn, Purchase, PurchaseReturn, TreasuryTransaction } from '../../types';
+import { Sale, SaleReturn, Purchase, PurchaseReturn, TreasuryTransaction, JournalEntry } from '../../types';
 
 interface ReportProps {
     partyType: 'customer' | 'supplier';
@@ -13,7 +13,7 @@ interface ReportProps {
 }
 
 const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate, endDate }) => {
-    const { customers, suppliers, sales, purchases, saleReturns, purchaseReturns, treasury } = useContext(DataContext);
+    const { customers, suppliers, sales, purchases, saleReturns, purchaseReturns, treasury, journal } = useContext(DataContext);
 
     const { party, openingBalanceForPeriod, transactions, closingBalance } = useMemo(() => {
         const party = partyType === 'customer'
@@ -36,12 +36,45 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
                 if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: Math.abs(t.amount), original: t, type: 'treasury', id: t.id });
                 if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: Math.abs(t.amount), credit: 0, original: t, type: 'treasury', id: t.id });
             });
+            // Linked Journal Entries for Customers
+            journal.filter((j: JournalEntry) => !j.isArchived && j.relatedPartyType === 'customer' && j.relatedPartyId === party.id).forEach((j: JournalEntry) => {
+                 // Simplistic mapping for display. 
+                 // If desc contains "إشعار خصم" (Credit Note for Customer - rare) -> reduces balance (Credit)
+                 // If desc contains "إشعار إضافة" (Debit Note for Customer) -> increases balance (Debit)
+                 // Or fallback to line analysis if description is custom.
+                 let debit = 0;
+                 let credit = 0;
+                 // Assuming standard implementation:
+                 // Credit Note to Customer (Return/Discount) = Credit Customer.
+                 // Debit Note to Customer (Charge) = Debit Customer.
+                 if (j.description.includes('إشعار إضافة') || j.description.includes('مدين')) {
+                     debit = j.debit;
+                 } else {
+                     credit = j.credit;
+                 }
+                 allTxObjects.push({ date: j.date, description: j.description, debit, credit, original: j, type: 'journal', id: j.id });
+            });
+
         } else { // Supplier
             purchases.filter((p: Purchase) => p.supplier === party.name && !p.isArchived).forEach((p: Purchase) => allTxObjects.push({ date: p.date, description: `فاتورة مشتريات #${p.id}`, debit: 0, credit: p.total, original: p, type: 'purchase', id: p.id }));
             purchaseReturns.filter((pr: PurchaseReturn) => pr.supplier === party.name && !pr.isArchived).forEach((pr: PurchaseReturn) => allTxObjects.push({ date: pr.date, description: `مرتجع مشتريات #${pr.id}`, debit: pr.total, credit: 0, original: pr, type: 'purchaseReturn', id: pr.id }));
             treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === party.id && !t.isArchived).forEach((t: TreasuryTransaction) => {
                 if (t.type === 'سند صرف') allTxObjects.push({ date: t.date, description: t.description, debit: Math.abs(t.amount), credit: 0, original: t, type: 'treasury', id: t.id });
                 if (t.type === 'سند قبض') allTxObjects.push({ date: t.date, description: t.description, debit: 0, credit: Math.abs(t.amount), original: t, type: 'treasury', id: t.id });
+            });
+            // Linked Journal Entries for Suppliers
+            journal.filter((j: JournalEntry) => !j.isArchived && j.relatedPartyType === 'supplier' && j.relatedPartyId === party.id).forEach((j: JournalEntry) => {
+                 let debit = 0;
+                 let credit = 0;
+                 // Supplier Logic:
+                 // Debit Note (We pay less) -> Debit Supplier
+                 // Credit Note (We pay more) -> Credit Supplier
+                 if (j.description.includes('إشعار خصم')) {
+                     debit = j.debit;
+                 } else {
+                     credit = j.credit;
+                 }
+                 allTxObjects.push({ date: j.date, description: j.description, debit, credit, original: j, type: 'journal', id: j.id });
             });
         }
 
@@ -89,7 +122,7 @@ const AccountStatement: React.FC<ReportProps> = ({ partyType, partyId, startDate
             closingBalance: runningBalance 
         };
 
-    }, [partyId, partyType, startDate, endDate, customers, suppliers, sales, purchases, saleReturns, purchaseReturns, treasury]);
+    }, [partyId, partyType, startDate, endDate, customers, suppliers, sales, purchases, saleReturns, purchaseReturns, treasury, journal]);
 
 
     const columns = [

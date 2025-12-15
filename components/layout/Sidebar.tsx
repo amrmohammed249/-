@@ -21,6 +21,7 @@ import { XIcon } from '../icons/XIcon';
 import { ClipboardDocumentCheckIcon } from '../icons/ClipboardDocumentCheckIcon';
 import { BarcodeIcon } from '../icons/BarcodeIcon';
 import { DocumentPlusIcon } from '../icons/DocumentPlusIcon';
+import { OfficeBuildingIcon } from '../icons/OfficeBuildingIcon';
 
 interface NavItemProps {
   to?: string;
@@ -101,6 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const navItems = [
     { to: '/', label: 'الرئيسية', icon: <HomeIcon />, show: true },
     { to: '/treasury', label: 'الخزينة', icon: <BanknotesIcon />, show: true },
+    { to: '/fixed-assets', label: 'الأصول الثابتة', icon: <OfficeBuildingIcon />, show: true }, // Added Fixed Assets Link
     { to: '/customers', label: 'العملاء', icon: <UsersIcon />, show: true },
     { to: '/suppliers', label: 'الموردين', icon: <UsersIcon />, show: true },
     { to: '/reports', label: 'التقارير', icon: <DocumentReportIcon />, show: canViewReports },

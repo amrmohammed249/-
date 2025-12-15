@@ -1,3 +1,4 @@
+
 export * from './ArrowDownOnSquareIcon';
 export * from './ArrowDownTrayIcon';
 export * from './ArrowLeftOnRectangleIcon';
@@ -14,6 +15,7 @@ export * from './Bars3Icon';
 export * from './BellIcon';
 export * from './BoxIcon';
 export * from './BuildingStorefrontIcon';
+export * from './CalculatorIcon';
 export * from './ChartBarIcon';
 export * from './CheckCircleIcon';
 export * from './CheckIcon';
@@ -44,6 +46,7 @@ export * from './LockClosedIcon';
 export * from './MagnifyingGlassIcon';
 export * from './MapPinIcon';
 export * from './MinusIcon';
+export * from './OfficeBuildingIcon';
 export * from './PencilIcon';
 export * from './PencilSquareIcon';
 export * from './PhoneIcon';

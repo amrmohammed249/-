@@ -72,10 +72,11 @@ const Customers: React.FC = () => {
         render: (row: any) => (
             <button 
                 onClick={(e) => { e.stopPropagation(); handleNote(row); }}
-                className="text-gray-500 hover:text-blue-600 p-1"
+                className="flex items-center gap-1 bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-1 rounded-md text-xs font-bold transition-colors"
                 title="تسوية حساب (إشعار)"
             >
-                <CalculatorIcon className="w-5 h-5" />
+                <CalculatorIcon className="w-4 h-4" />
+                <span>تسوية</span>
             </button>
         )
     }

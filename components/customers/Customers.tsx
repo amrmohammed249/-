@@ -1,3 +1,4 @@
+
 import React, { useState, useContext, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataContext } from '../../context/DataContext';
@@ -8,6 +9,9 @@ import AddCustomerForm from './AddCustomerForm';
 import EditCustomerForm from './EditCustomerForm';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import { PlusIcon } from '../icons/PlusIcon';
+import { CalculatorIcon } from '../icons/CalculatorIcon';
+import CustomerNoteForm from './CustomerNoteForm';
+import { Customer } from '../../types';
 
 const Customers: React.FC = () => {
   const { customers, archiveCustomer, showToast } = useContext(DataContext);
@@ -16,7 +20,8 @@ const Customers: React.FC = () => {
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [isNoteModalOpen, setNoteModalOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   const handleEdit = (customer: any) => {
     setSelectedCustomer(customer);
@@ -26,6 +31,11 @@ const Customers: React.FC = () => {
   const handleArchive = (customer: any) => {
     setSelectedCustomer(customer);
     setArchiveModalOpen(true);
+  };
+
+  const handleNote = (customer: any) => {
+      setSelectedCustomer(customer);
+      setNoteModalOpen(true);
   };
   
   const confirmArchive = () => {
@@ -56,6 +66,19 @@ const Customers: React.FC = () => {
         </span>
       )
     },
+    { 
+        header: 'تسوية', 
+        accessor: 'settle', 
+        render: (row: any) => (
+            <button 
+                onClick={(e) => { e.stopPropagation(); handleNote(row); }}
+                className="text-gray-500 hover:text-blue-600 p-1"
+                title="تسوية حساب (إشعار)"
+            >
+                <CalculatorIcon className="w-5 h-5" />
+            </button>
+        )
+    }
   ], []);
 
   return (
@@ -84,6 +107,12 @@ const Customers: React.FC = () => {
         <Modal isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} title={`تعديل العميل: ${selectedCustomer.name}`}>
           <EditCustomerForm customer={selectedCustomer} onClose={() => setEditModalOpen(false)} />
         </Modal>
+      )}
+
+      {selectedCustomer && (
+          <Modal isOpen={isNoteModalOpen} onClose={() => setNoteModalOpen(false)} title="تسوية حساب (إشعار دائن/مدين)">
+              <CustomerNoteForm customer={selectedCustomer} onClose={() => setNoteModalOpen(false)} onSuccess={() => setNoteModalOpen(false)} />
+          </Modal>
       )}
 
       {selectedCustomer && (

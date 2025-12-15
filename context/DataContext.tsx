@@ -271,9 +271,15 @@ function dataReducer(state: AppState, action: Action): AppState {
         
         case 'ARCHIVE_JOURNAL_ENTRY':
         case 'UNARCHIVE_JOURNAL_ENTRY': {
-            const { updatedJournal, chartOfAccounts, log } = action.payload;
-            // NOTE: Reversing balances for Party linked JEs would require full recalc, but we rely on forceBalanceRecalculation if issues arise.
-            return { ...state, journal: updatedJournal, chartOfAccounts, activityLog: [log, ...state.activityLog] };
+            const { updatedJournal, chartOfAccounts, log, updatedCustomers, updatedSuppliers } = action.payload;
+            return { 
+                ...state, 
+                journal: updatedJournal, 
+                chartOfAccounts, 
+                customers: updatedCustomers || state.customers,
+                suppliers: updatedSuppliers || state.suppliers,
+                activityLog: [log, ...state.activityLog] 
+            };
         }
         
         case 'ADD_SALE': {
@@ -1749,10 +1755,42 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         if (!entry) return;
 
         const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const updatedCustomers = [...state.customers];
+        const updatedSuppliers = [...state.suppliers];
+
         if (entry.status === 'مرحل' && entry.lines) {
             entry.lines.forEach(line => {
                 updateBalancesRecursively(newChart, line.accountId, -(line.debit - line.credit));
             });
+
+            // REVERSE BALANCE IMPACT FOR RELATED PARTIES
+            if (entry.relatedPartyId && entry.relatedPartyType) {
+                if (entry.relatedPartyType === 'customer') {
+                    const customer = updatedCustomers.find(c => c.id === entry.relatedPartyId);
+                    const controlAccount = findNodeRecursive(newChart, 'code', '1103');
+                    if (customer && controlAccount) {
+                        const lines = entry.lines.filter(l => l.accountId === controlAccount.id);
+                        lines.forEach(l => {
+                            // Reverse the impact:
+                            // If Debit increased balance, we subtract it.
+                            // If Credit decreased balance, we add it.
+                            customer.balance -= (l.debit - l.credit);
+                        });
+                    }
+                } else if (entry.relatedPartyType === 'supplier') {
+                    const supplier = updatedSuppliers.find(s => s.id === entry.relatedPartyId);
+                    const controlAccount = findNodeRecursive(newChart, 'code', '2101');
+                    if (supplier && controlAccount) {
+                        const lines = entry.lines.filter(l => l.accountId === controlAccount.id);
+                        lines.forEach(l => {
+                            // Reverse the impact:
+                            // If Credit increased balance, we subtract it.
+                            // If Debit decreased balance, we add it.
+                            supplier.balance -= (l.credit - l.debit);
+                        });
+                    }
+                }
+            }
         }
         
         const log = {
@@ -1761,7 +1799,17 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         };
 
         const updatedJournal = state.journal.map(e => e.id === id ? { ...e, isArchived: true } : e);
-        dispatch({ type: 'ARCHIVE_JOURNAL_ENTRY', payload: { updatedJournal, chartOfAccounts: newChart, log }});
+        
+        dispatch({ 
+            type: 'ARCHIVE_JOURNAL_ENTRY', 
+            payload: { 
+                updatedJournal, 
+                chartOfAccounts: newChart, 
+                log,
+                updatedCustomers, 
+                updatedSuppliers 
+            }
+        });
     };
     
     const unarchiveJournalEntry = (id: string) => {
@@ -1769,10 +1817,36 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         if (!entry) return;
 
         const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        const updatedCustomers = [...state.customers];
+        const updatedSuppliers = [...state.suppliers];
+
         if (entry.status === 'مرحل' && entry.lines) {
             entry.lines.forEach(line => {
                 updateBalancesRecursively(newChart, line.accountId, line.debit - line.credit);
             });
+
+            // RE-APPLY BALANCE IMPACT FOR RELATED PARTIES
+            if (entry.relatedPartyId && entry.relatedPartyType) {
+                if (entry.relatedPartyType === 'customer') {
+                    const customer = updatedCustomers.find(c => c.id === entry.relatedPartyId);
+                    const controlAccount = findNodeRecursive(newChart, 'code', '1103');
+                    if (customer && controlAccount) {
+                        const lines = entry.lines.filter(l => l.accountId === controlAccount.id);
+                        lines.forEach(l => {
+                            customer.balance += (l.debit - l.credit);
+                        });
+                    }
+                } else if (entry.relatedPartyType === 'supplier') {
+                    const supplier = updatedSuppliers.find(s => s.id === entry.relatedPartyId);
+                    const controlAccount = findNodeRecursive(newChart, 'code', '2101');
+                    if (supplier && controlAccount) {
+                        const lines = entry.lines.filter(l => l.accountId === controlAccount.id);
+                        lines.forEach(l => {
+                            supplier.balance += (l.credit - l.debit);
+                        });
+                    }
+                }
+            }
         }
         
         const log = {
@@ -1781,7 +1855,16 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         };
 
         const updatedJournal = state.journal.map(e => e.id === id ? { ...e, isArchived: false } : e);
-        dispatch({ type: 'UNARCHIVE_JOURNAL_ENTRY', payload: { updatedJournal, chartOfAccounts: newChart, log }});
+        dispatch({ 
+            type: 'UNARCHIVE_JOURNAL_ENTRY', 
+            payload: { 
+                updatedJournal, 
+                chartOfAccounts: newChart, 
+                log,
+                updatedCustomers, 
+                updatedSuppliers 
+            }
+        });
     };
     
     const addSale = (saleData: Omit<Sale, 'id' | 'journalEntryId'>): Sale => {

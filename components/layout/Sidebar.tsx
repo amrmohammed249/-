@@ -22,6 +22,7 @@ import { ClipboardDocumentCheckIcon } from '../icons/ClipboardDocumentCheckIcon'
 import { BarcodeIcon } from '../icons/BarcodeIcon';
 import { DocumentPlusIcon } from '../icons/DocumentPlusIcon';
 import { OfficeBuildingIcon } from '../icons/OfficeBuildingIcon';
+import { CalculatorIcon } from '../icons/CalculatorIcon';
 
 interface NavItemProps {
   to?: string;
@@ -118,6 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     items: [
         { to: '/accounts/chart', label: 'شجرة الحسابات', icon: <ChartBarIcon /> },
         { to: '/accounts/journal', label: 'القيود اليومية', icon: <DocumentTextIcon /> },
+        { to: '/accounts/settlements', label: 'سجل التسويات', icon: <CalculatorIcon /> },
     ]
   };
   

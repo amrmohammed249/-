@@ -41,6 +41,7 @@ import SaleReturnsForm from './components/sales/SaleReturnsForm';
 import PurchaseReturnsForm from './components/purchases/PurchaseReturnsForm';
 import PriceListBuilder from './components/sales/PriceListBuilder';
 import FixedAssets from './components/fixedassets/FixedAssets';
+import Settlements from './components/settlements/Settlements';
 
 
 const App: React.FC = () => {
@@ -170,6 +171,7 @@ const App: React.FC = () => {
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/accounts/chart" element={<ChartOfAccounts />} />
                             <Route path="/accounts/journal" element={<JournalEntries />} />
+                            <Route path="/accounts/settlements" element={<Settlements />} />
                             <Route path="/inventory" element={<Inventory />} />
                             <Route path="/inventory/adjustments" element={<InventoryAdjustments />} />
                             <Route path="/barcode-tools" element={<BarcodeTools />} />

@@ -22,10 +22,8 @@ import CustomerProfitabilityReport from './CustomerProfitabilityReport';
 import GeneralJournalReport from './GeneralJournalReport';
 import NetProfitabilityReport from './NetProfitabilityReport';
 
-
 declare var jspdf: any;
 declare var html2canvas: any;
-
 
 type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'netProfitability' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability' | 'generalJournalReport';
 
@@ -51,7 +49,6 @@ const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category
 
 const flattenAccounts = (nodes: AccountNode[]): AccountNode[] => {
     return nodes.reduce<AccountNode[]>((acc, node) => {
-        // Add parent nodes as well, not just leaves
         acc.push(node);
         if (node.children && node.children.length > 0) {
             acc.push(...flattenAccounts(node.children));
@@ -60,7 +57,6 @@ const flattenAccounts = (nodes: AccountNode[]): AccountNode[] => {
     }, []);
 };
 
-
 const Reports: React.FC = () => {
     const { currentUser, financialYear, customers, suppliers, inventory, chartOfAccounts, treasuriesList } = useContext(DataContext);
     const [isReportVisible, setIsReportVisible] = useState(false);
@@ -68,7 +64,6 @@ const Reports: React.FC = () => {
     const [startDate, setStartDate] = useState(financialYear.startDate);
     const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
 
-    // Filters for different reports
     const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
     const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
     const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
@@ -78,7 +73,6 @@ const Reports: React.FC = () => {
     const [itemSearchTerm, setItemSearchTerm] = useState('');
     const [inventoryReportType, setInventoryReportType] = useState<'all_purchase' | 'stock_purchase' | 'stock_sale'>('all_purchase');
     
-    // State for searchable expense account dropdown
     const [isExpenseDropdownOpen, setIsExpenseDropdownOpen] = useState(false);
     const [expenseSearchTerm, setExpenseSearchTerm] = useState('');
     const expenseDropdownRef = useRef<HTMLDivElement>(null);
@@ -88,15 +82,11 @@ const Reports: React.FC = () => {
     const groupedTabs = useMemo(() => {
         const categories = ['تقارير مالية', 'تقارير المبيعات والمشتريات', 'تقارير المخزون', 'تقارير تحليلية'];
         const groups: { [key: string]: typeof reportTabs } = {};
-        
         categories.forEach(cat => {
             groups[cat] = reportTabs.filter(tab => tab.category === cat);
         });
-
         return groups;
-
     }, []);
-
 
     useEffect(() => {
         setSelectedCustomerId('');
@@ -112,15 +102,13 @@ const Reports: React.FC = () => {
     const itemCategories = useMemo(() => {
         const categories = new Set<string>();
         inventory.forEach((item: InventoryItem) => {
-            if (item.category) {
-                categories.add(item.category);
-            }
+            if (item.category) categories.add(item.category);
         });
         return Array.from(categories).sort();
     }, [inventory]);
 
     const expenseAccounts = useMemo(() => {
-        const expenseRoot = chartOfAccounts.find((n: AccountNode) => n.id === '4-2'); // مصاريف تشغيل
+        const expenseRoot = chartOfAccounts.find((n: AccountNode) => n.id === '4-2');
         if (!expenseRoot || !expenseRoot.children) return [];
         return flattenAccounts(expenseRoot.children).sort((a,b) => a.code.localeCompare(b.code));
     }, [chartOfAccounts]);
@@ -143,17 +131,14 @@ const Reports: React.FC = () => {
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     const itemSearchResults = useMemo(() => {
         if (itemSearchTerm.length < 1) return [];
         const term = itemSearchTerm.toLowerCase();
         return inventory.filter((i: InventoryItem) => 
-            !i.isArchived && 
-            (i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term))
+            !i.isArchived && (i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term))
         ).slice(0, 10);
     }, [inventory, itemSearchTerm]);
 
@@ -169,13 +154,8 @@ const Reports: React.FC = () => {
         const input = document.getElementById('printable-report');
         if (input) {
             const isDarkMode = document.documentElement.classList.contains('dark');
-            html2canvas(input, { 
-                scale: 2, 
-                useCORS: true, 
-                backgroundColor: isDarkMode ? '#111827' : '#ffffff' 
-            })
+            html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
             .then(canvas => {
-                // Use JPEG with 0.7 quality compression to reduce file size significantly
                 const imgData = canvas.toDataURL('image/jpeg', 0.7);
                 const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
                 const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -220,37 +200,27 @@ const Reports: React.FC = () => {
         return (
             <div className="fixed inset-0 bg-gray-100 dark:bg-gray-900 z-[60] flex flex-col">
                 <header className="no-print bg-white dark:bg-gray-800 p-3 shadow-md flex justify-between items-center flex-shrink-0">
-                    <div className="flex items-center gap-4">
-                        <button onClick={() => setIsReportVisible(false)} className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 font-semibold">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setIsReportVisible(false)} className="p-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
                            <ArrowUturnLeftIcon className="w-5 h-5 transform rotate-180"/>
-                           <span>العودة للفلاتر</span>
                         </button>
-                        <div>
-                             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{activeReportTab?.label}</h2>
-                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {isSingleDateReport ? `في تاريخ ${endDate}` : `الفترة من ${startDate} إلى ${endDate}`}
-                             </p>
+                        <div className="hidden sm:block">
+                             <h2 className="text-lg font-bold truncate max-w-[200px]">{activeReportTab?.label}</h2>
                         </div>
                     </div>
                      <div className="flex items-center gap-2">
-                        <button 
-                            onClick={onExportPDF} 
-                            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-sm"
-                        >
-                            <ArrowDownTrayIcon className="w-5 h-5" />
-                            <span>تصدير PDF</span>
+                        <button onClick={onExportPDF} className="flex items-center gap-1 px-3 py-2 bg-red-500 text-white rounded-lg text-xs font-bold shadow-sm">
+                            <ArrowDownTrayIcon className="w-4 h-4" /> <span className="hidden xs:inline">PDF</span>
                         </button>
-                        <button 
-                            onClick={() => window.print()} 
-                            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shadow-sm"
-                        >
-                            <PrinterIcon className="w-5 h-5" />
-                            <span>طباعة</span>
+                        <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm">
+                            <PrinterIcon className="w-4 h-4" /> <span className="hidden xs:inline">طباعة</span>
                         </button>
                     </div>
                 </header>
-                <main className="flex-1 overflow-y-auto p-4 md:p-6">
-                    {renderReport()}
+                <main className="flex-1 overflow-y-auto overflow-x-hidden p-2 md:p-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700 overflow-x-auto min-w-full">
+                        {renderReport()}
+                    </div>
                 </main>
             </div>
         );
@@ -258,22 +228,22 @@ const Reports: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
-                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">مركز التقارير</h2>
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md border dark:border-gray-700">
+                 <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">مركز التقارير المحاسبية</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
                     {isSingleDateReport ? (
                          <div>
-                            <label htmlFor="asOfDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">التاريخ</label>
+                            <label htmlFor="asOfDate" className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">التاريخ</label>
                             <input type="date" id="asOfDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
                         </div>
                     ) : (
                         <>
                             <div>
-                                <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">من تاريخ</label>
+                                <label htmlFor="startDate" className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">من تاريخ</label>
                                 <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-style w-full" />
                             </div>
                             <div>
-                                <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">إلى تاريخ</label>
+                                <label htmlFor="endDate" className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">إلى تاريخ</label>
                                 <input type="date" id="endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
                             </div>
                         </>
@@ -281,8 +251,8 @@ const Reports: React.FC = () => {
                     
                     {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability' || activeTab === 'netProfitability') && (
                         <div>
-                            <label htmlFor="customerFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">العميل</label>
-                            <select id="customerFilter" value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="input-style w-full">
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">العميل</label>
+                            <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="input-style w-full">
                                 <option value="">كل العملاء</option>
                                 {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
@@ -291,200 +261,59 @@ const Reports: React.FC = () => {
 
                     {(activeTab === 'purchases' || activeTab === 'purchaseReturns') && (
                         <div>
-                            <label htmlFor="supplierFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">المورد</label>
-                            <select id="supplierFilter" value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)} className="input-style w-full">
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">المورد</label>
+                            <select value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)} className="input-style w-full">
                                 <option value="">كل الموردين</option>
                                 {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
                     )}
-                    {(activeTab === 'salesProfitability' || activeTab === 'netProfitability') && (
+                    {activeTab === 'inventory' && (
                         <>
                             <div>
-                                <label htmlFor="itemFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الصنف</label>
-                                <select id="itemFilter" value={selectedInventoryId} onChange={(e) => setSelectedInventoryId(e.target.value)} className="input-style w-full">
-                                    <option value="">كل الأصناف</option>
-                                    {inventory.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label htmlFor="itemCategoryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">فئة الصنف</label>
-                                <select id="itemCategoryFilter" value={selectedItemCategory} onChange={(e) => setSelectedItemCategory(e.target.value)} className="input-style w-full">
-                                    <option value="">كل الفئات</option>
-                                    {itemCategories.map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">نوع الجرد</label>
+                                <select value={inventoryReportType} onChange={(e) => setInventoryReportType(e.target.value as any)} className="input-style w-full">
+                                    <option value="all_purchase">كل الأصناف (بالتكلفة)</option>
+                                    <option value="stock_purchase">أصناف بالمخزن (بالتكلفة)</option>
+                                    <option value="stock_sale">أصناف بالمخزن (بالبيع)</option>
                                 </select>
                             </div>
                         </>
-                    )}
-                     {activeTab === 'inventory' && (
-                        <>
-                            <div>
-                                <label htmlFor="inventoryReportType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عرض التقرير حسب</label>
-                                <select 
-                                    id="inventoryReportType" 
-                                    value={inventoryReportType} 
-                                    onChange={(e) => setInventoryReportType(e.target.value as any)} 
-                                    className="input-style w-full"
-                                >
-                                    <option value="all_purchase">كل الأصناف (تكلفة الشراء)</option>
-                                    <option value="stock_purchase">الأصناف ذات الرصيد (تكلفة الشراء)</option>
-                                    <option value="stock_sale">الأصناف ذات الرصيد (قيمة البيع)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label htmlFor="inventoryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">صنف محدد (اختياري)</label>
-                                <select id="inventoryFilter" value={selectedInventoryId} onChange={(e) => setSelectedInventoryId(e.target.value)} className="input-style w-full">
-                                    <option value="">كل الأصناف</option>
-                                    {inventory.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                                </select>
-                            </div>
-                        </>
-                    )}
-                    {activeTab === 'itemMovement' && (
-                        <div className="relative">
-                            <label htmlFor="itemMovementFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الصنف</label>
-                            <input
-                                id="itemMovementFilter"
-                                type="text"
-                                value={selectedInventoryId ? (inventory.find((i: InventoryItem) => i.id === selectedInventoryId)?.name || '') : itemSearchTerm}
-                                onChange={(e) => {
-                                    setItemSearchTerm(e.target.value);
-                                    if (selectedInventoryId) setSelectedInventoryId('');
-                                }}
-                                className="input-style w-full"
-                                placeholder="ابحث بالاسم أو الكود..."
-                                required
-                                autoComplete="off"
-                            />
-                            {itemSearchTerm && itemSearchResults.length > 0 && !selectedInventoryId && (
-                              <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-10 max-h-60 overflow-y-auto">
-                                {itemSearchResults.map((item: InventoryItem) => (
-                                  <div
-                                    key={item.id}
-                                    onClick={() => {
-                                      setSelectedInventoryId(item.id);
-                                      setItemSearchTerm('');
-                                    }}
-                                    className="p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
-                                  >
-                                    {item.name} <span className="text-xs text-gray-500">({item.id})</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {selectedInventoryId && (
-                                <button
-                                    type="button"
-                                    className="absolute left-2 top-8 text-gray-400 hover:text-red-500"
-                                    onClick={() => {
-                                        setSelectedInventoryId('');
-                                        setItemSearchTerm('');
-                                    }}
-                                    title="إزالة الاختيار"
-                                >
-                                    <XIcon className="w-5 h-5" />
-                                </button>
-                            )}
-                        </div>
-                    )}
-                    {activeTab === 'expense' && (
-                        <div ref={expenseDropdownRef} className="relative">
-                            <label htmlFor="expenseAccountFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">حساب المصروف</label>
-                             <div className="relative">
-                                <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                    <MagnifyingGlassIcon className="w-5 h-5 text-gray-400" />
-                                </span>
-                                <input
-                                    id="expenseAccountFilter"
-                                    type="text"
-                                    className="input-style w-full pr-10"
-                                    placeholder="كل الحسابات"
-                                    onFocus={() => setIsExpenseDropdownOpen(true)}
-                                    value={expenseSearchTerm || selectedExpenseAccountName}
-                                    onChange={e => {
-                                        setExpenseSearchTerm(e.target.value);
-                                        setSelectedExpenseAccountId(''); // Clear selection when user types
-                                        if (!isExpenseDropdownOpen) setIsExpenseDropdownOpen(true);
-                                    }}
-                                />
-                            </div>
-
-                            {isExpenseDropdownOpen && (
-                                <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-20 max-h-60 overflow-y-auto">
-                                    <div
-                                        onClick={() => {
-                                            setSelectedExpenseAccountId('');
-                                            setExpenseSearchTerm('');
-                                            setIsExpenseDropdownOpen(false);
-                                        }}
-                                        className="p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 font-semibold"
-                                    >
-                                        -- كل الحسابات --
-                                    </div>
-                                    {filteredExpenseAccounts.map(acc => (
-                                        <div
-                                            key={acc.id}
-                                            onClick={() => {
-                                                setSelectedExpenseAccountId(acc.id);
-                                                setExpenseSearchTerm('');
-                                                setIsExpenseDropdownOpen(false);
-                                            }}
-                                            className="p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
-                                        >
-                                            {acc.name}
-                                        </div>
-                                    ))}
-                                    {filteredExpenseAccounts.length === 0 && <div className="p-2 text-gray-500">لا توجد نتائج.</div>}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    {activeTab === 'treasury' && (
-                         <div>
-                            <label htmlFor="treasuryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الخزينة</label>
-                            <select id="treasuryFilter" value={selectedTreasuryId} onChange={(e) => setSelectedTreasuryId(e.target.value)} className="input-style w-full">
-                                <option value="">كل الخزائن</option>
-                                {(treasuriesList || []).filter((t: any) => !t.isTotal).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
-                        </div>
                     )}
                 </div>
             </div>
 
             <div className="space-y-4">
                 {Object.entries(groupedTabs).map(([category, tabs]) => (
-                    <div key={category}>
-                        <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">{category}</h3>
-                        <div className="bg-gray-200 dark:bg-gray-900 rounded-lg p-1">
-                             <nav className="flex flex-wrap gap-1">
-                                {/* FIX: Cast `tabs` to its correct array type before mapping. */}
-                                {(tabs as typeof reportTabs).map(tab => (
-                                    <button
-                                        key={tab.key}
-                                        onClick={() => setActiveTab(tab.key)}
-                                        className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                                            activeTab === tab.key
-                                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow'
-                                            : 'text-gray-600 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-gray-700/50'
-                                        }`}
-                                    >
-                                        {tab.label}
-                                    </button>
-                                ))}
-                            </nav>
+                    <div key={category} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border dark:border-gray-700">
+                        <h3 className="text-xs font-extrabold text-blue-500 dark:text-blue-400 uppercase tracking-widest mb-3">{category}</h3>
+                        <div className="flex flex-wrap gap-2">
+                            {(tabs as typeof reportTabs).map(tab => (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setActiveTab(tab.key)}
+                                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border ${
+                                        activeTab === tab.key
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                                        : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
                         </div>
                     </div>
                 ))}
             </div>
             
-            <div className="mt-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md flex justify-center items-center">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex justify-center sticky bottom-14 z-10 sm:relative sm:bottom-0">
                  <button
                     onClick={() => setIsReportVisible(true)}
                     disabled={isViewButtonDisabled}
-                    className="px-8 py-3 bg-blue-500 text-white font-bold text-lg rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-lg hover:shadow-xl disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    className="w-full sm:w-auto px-10 py-3 bg-blue-600 text-white font-bold text-lg rounded-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-xl disabled:bg-gray-400"
                 >
                     <EyeIcon className="w-6 h-6" />
-                    عرض التقرير
+                    عرض التقرير النهائي
                 </button>
             </div>
         </div>

@@ -15,17 +15,18 @@ import PurchaseReturnsReport from './PurchaseReturnsReport';
 import { AccountNode, InventoryItem } from '../../types';
 import TreasuryReport from './TreasuryReport';
 import ItemMovementReport from './ItemMovementReport';
-import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon, BoxIcon } from '../icons';
+import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon, BoxIcon, TrashIcon } from '../icons';
 import CustomerBalancesReport from './CustomerBalancesReport';
 import SupplierBalancesReport from './SupplierBalancesReport';
 import CustomerProfitabilityReport from './CustomerProfitabilityReport';
 import GeneralJournalReport from './GeneralJournalReport';
 import NetProfitabilityReport from './NetProfitabilityReport';
+import NetProfitabilityByCustomerReport from './NetProfitabilityByCustomerReport';
 
 declare var jspdf: any;
 declare var html2canvas: any;
 
-type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'netProfitability' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability' | 'generalJournalReport';
+type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'netProfitability' | 'netProfitabilityByCustomer' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability' | 'generalJournalReport';
 
 const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category: string }[] = [
     { key: 'profitAndLoss', label: 'قائمة الدخل', isTable: false, category: 'تقارير مالية' },
@@ -41,6 +42,7 @@ const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category
     { key: 'supplierBalances', label: 'أرصدة الموردين (الدائنون)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'salesProfitability', label: 'ربحية المبيعات (ملخص)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'netProfitability', label: 'صافي الربحية (تفصيلي)', isTable: true, category: 'تقارير تحليلية' },
+    { key: 'netProfitabilityByCustomer', label: 'ربحية الأصناف حسب العميل', isTable: true, category: 'تقارير تحليلية' },
     { key: 'customerProfitability', label: 'ربحية العملاء', isTable: true, category: 'تقارير تحليلية' },
     { key: 'customerSummary', label: 'ملخص العملاء', isTable: true, category: 'تقارير تحليلية' },
     { key: 'inventory', label: 'أرصدة المخزون', isTable: true, category: 'تقارير المخزون' },
@@ -67,6 +69,7 @@ const Reports: React.FC = () => {
     const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
     const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
     const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
+    const [excludedItemIds, setExcludedItemIds] = useState<string[]>([]);
     const [selectedItemCategory, setSelectedItemCategory] = useState<string>('');
     const [selectedExpenseAccountId, setSelectedExpenseAccountId] = useState<string>('');
     const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>('');
@@ -92,6 +95,7 @@ const Reports: React.FC = () => {
         setSelectedCustomerId('');
         setSelectedSupplierId('');
         setSelectedInventoryId('');
+        setExcludedItemIds([]);
         setSelectedItemCategory('');
         setSelectedExpenseAccountId('');
         setSelectedTreasuryId('');
@@ -99,62 +103,61 @@ const Reports: React.FC = () => {
         setExpenseSearchTerm('');
     }, [activeTab]);
 
-    const itemCategories = useMemo(() => {
-        const categories = new Set<string>();
-        inventory.forEach((item: InventoryItem) => {
-            if (item.category) categories.add(item.category);
-        });
-        return Array.from(categories).sort();
-    }, [inventory]);
-
-    const expenseAccounts = useMemo(() => {
-        const expenseRoot = chartOfAccounts.find((n: AccountNode) => n.id === '4-2');
-        if (!expenseRoot || !expenseRoot.children) return [];
-        return flattenAccounts(expenseRoot.children).sort((a,b) => a.code.localeCompare(b.code));
-    }, [chartOfAccounts]);
-    
-    const filteredExpenseAccounts = useMemo(() => {
-        if (!expenseSearchTerm) return expenseAccounts;
-        const term = expenseSearchTerm.toLowerCase();
-        return expenseAccounts.filter(acc => acc.name.toLowerCase().includes(term) || acc.code.includes(term));
-    }, [expenseAccounts, expenseSearchTerm]);
-
-    const selectedExpenseAccountName = useMemo(() => {
-        if (!selectedExpenseAccountId) return '';
-        return expenseAccounts.find(acc => acc.id === selectedExpenseAccountId)?.name || '';
-    }, [selectedExpenseAccountId, expenseAccounts]);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (expenseDropdownRef.current && !expenseDropdownRef.current.contains(event.target as Node)) {
-                setIsExpenseDropdownOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
     const itemSearchResults = useMemo(() => {
         if (itemSearchTerm.length < 1) return [];
         const term = itemSearchTerm.toLowerCase();
         return inventory.filter((i: InventoryItem) => 
-            !i.isArchived && (i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term) || i.barcode?.includes(term))
+            !i.isArchived && 
+            (i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term) || i.barcode?.includes(term)) &&
+            !excludedItemIds.includes(i.id)
         ).slice(0, 10);
-    }, [inventory, itemSearchTerm]);
+    }, [inventory, itemSearchTerm, excludedItemIds]);
 
     const selectedItemName = useMemo(() => {
         if (!selectedInventoryId) return '';
         return inventory.find(i => i.id === selectedInventoryId)?.name || '';
     }, [selectedInventoryId, inventory]);
 
-    if (currentUser.role !== 'مدير النظام' && currentUser.role !== 'محاسب') {
-        return <AccessDenied />;
-    }
+    const excludedItemsList = useMemo(() => {
+        return inventory.filter(i => excludedItemIds.includes(i.id));
+    }, [excludedItemIds, inventory]);
+
+    const handleToggleExcludedItem = (id: string) => {
+        setExcludedItemIds(prev => 
+            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+        );
+        setItemSearchTerm('');
+    };
+
+    const renderReport = () => {
+        const props = { startDate, endDate, onDataReady: handleDataReady };
+        switch (activeTab) {
+            case 'sales': return <SalesReport {...props} customerId={selectedCustomerId} />;
+            case 'saleReturns': return <SaleReturnsReport {...props} customerId={selectedCustomerId} />;
+            case 'purchases': return <PurchasesReport {...props} supplierId={selectedSupplierId} />;
+            case 'purchaseReturns': return <PurchaseReturnsReport {...props} supplierId={selectedSupplierId} />;
+            case 'profitAndLoss': return <ProfitAndLoss {...props} />;
+            case 'balanceSheet': return <BalanceSheet asOfDate={endDate} onDataReady={handleDataReady} />;
+            case 'generalJournalReport': return <GeneralJournalReport date={endDate} onDataReady={handleDataReady} />;
+            case 'customerSummary': return <CustomerSummaryReport {...props} />;
+            case 'inventory': return <InventoryReport asOfDate={endDate} onDataReady={handleDataReady} itemId={selectedInventoryId} reportType={inventoryReportType} />;
+            case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
+            case 'netProfitability': return <NetProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} excludedItemIds={excludedItemIds} />;
+            case 'netProfitabilityByCustomer': return <NetProfitabilityByCustomerReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} excludedItemIds={excludedItemIds} />;
+            case 'customerProfitability': return <CustomerProfitabilityReport {...props} />;
+            case 'expense': return <ExpenseReport {...props} expenseAccountId={selectedExpenseAccountId} />;
+            case 'treasury': return <TreasuryReport {...props} treasuryAccountId={selectedTreasuryId} />;
+            case 'itemMovement': return <ItemMovementReport {...props} itemId={selectedInventoryId} />;
+            case 'customerBalances': return <CustomerBalancesReport asOfDate={endDate} onDataReady={handleDataReady} />;
+            case 'supplierBalances': return <SupplierBalancesReport asOfDate={endDate} onDataReady={handleDataReady} />;
+            default: return <p>الرجاء اختيار تقرير لعرضه.</p>;
+        }
+    };
 
     const handleDataReady = useCallback((props: { data: any[], columns: any[], name: string }) => {
         setReportExportProps(props);
     }, []);
-    
+
     const onExportPDF = () => {
         const input = document.getElementById('printable-report');
         if (input) {
@@ -172,197 +175,158 @@ const Reports: React.FC = () => {
         }
     };
 
-    const isSingleDateReport = ['balanceSheet', 'inventory', 'customerBalances', 'supplierBalances', 'generalJournalReport'].includes(activeTab);
     const isViewButtonDisabled = activeTab === 'itemMovement' && !selectedInventoryId;
-
-    const renderReport = () => {
-        const props = { startDate, endDate, onDataReady: handleDataReady };
-        switch (activeTab) {
-            case 'sales': return <SalesReport {...props} customerId={selectedCustomerId} />;
-            case 'saleReturns': return <SaleReturnsReport {...props} customerId={selectedCustomerId} />;
-            case 'purchases': return <PurchasesReport {...props} supplierId={selectedSupplierId} />;
-            case 'purchaseReturns': return <PurchaseReturnsReport {...props} supplierId={selectedSupplierId} />;
-            case 'profitAndLoss': return <ProfitAndLoss {...props} />;
-            case 'balanceSheet': return <BalanceSheet asOfDate={endDate} onDataReady={handleDataReady} />;
-            case 'generalJournalReport': return <GeneralJournalReport date={endDate} onDataReady={handleDataReady} />;
-            case 'customerSummary': return <CustomerSummaryReport {...props} />;
-            case 'inventory': return <InventoryReport asOfDate={endDate} onDataReady={handleDataReady} itemId={selectedInventoryId} reportType={inventoryReportType} />;
-            case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
-            case 'netProfitability': return <NetProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
-            case 'customerProfitability': return <CustomerProfitabilityReport {...props} />;
-            case 'expense': return <ExpenseReport {...props} expenseAccountId={selectedExpenseAccountId} />;
-            case 'treasury': return <TreasuryReport {...props} treasuryAccountId={selectedTreasuryId} />;
-            case 'itemMovement': return <ItemMovementReport {...props} itemId={selectedInventoryId} />;
-            case 'customerBalances': return <CustomerBalancesReport asOfDate={endDate} onDataReady={handleDataReady} />;
-            case 'supplierBalances': return <SupplierBalancesReport asOfDate={endDate} onDataReady={handleDataReady} />;
-            default: return <p>الرجاء اختيار تقرير لعرضه.</p>;
-        }
-    };
-
-    const activeReportTab = reportTabs.find(t => t.key === activeTab);
-
-    if (isReportVisible) {
-        return (
-            <div className="fixed inset-0 bg-gray-100 dark:bg-gray-900 z-[60] flex flex-col">
-                <header className="no-print bg-white dark:bg-gray-800 p-3 shadow-md flex justify-between items-center flex-shrink-0">
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => setIsReportVisible(false)} className="p-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
-                           <ArrowUturnLeftIcon className="w-5 h-5 transform rotate-180"/>
-                        </button>
-                        <div className="hidden sm:block">
-                             <h2 className="text-lg font-bold truncate max-w-[200px]">{activeReportTab?.label}</h2>
-                        </div>
-                    </div>
-                     <div className="flex items-center gap-2">
-                        <button onClick={onExportPDF} className="flex items-center gap-1 px-3 py-2 bg-red-500 text-white rounded-lg text-xs font-bold shadow-sm">
-                            <ArrowDownTrayIcon className="w-4 h-4" /> <span className="hidden xs:inline">PDF</span>
-                        </button>
-                        <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-sm">
-                            <PrinterIcon className="w-4 h-4" /> <span className="hidden xs:inline">طباعة</span>
-                        </button>
-                    </div>
-                </header>
-                <main className="flex-1 overflow-y-auto overflow-x-hidden p-2 md:p-6">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700 overflow-x-auto min-w-full">
-                        {renderReport()}
-                    </div>
-                </main>
-            </div>
-        );
-    }
 
     return (
         <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md border dark:border-gray-700">
-                 <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">مركز التقارير المحاسبية</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
-                    {isSingleDateReport ? (
-                         <div>
-                            <label htmlFor="asOfDate" className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">التاريخ</label>
-                            <input type="date" id="asOfDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
+            {isReportVisible ? (
+                <div className="fixed inset-0 bg-gray-100 dark:bg-gray-900 z-[60] flex flex-col">
+                    <header className="no-print bg-white dark:bg-gray-800 p-3 shadow-md flex justify-between items-center flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setIsReportVisible(false)} className="p-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+                               <ArrowUturnLeftIcon className="w-5 h-5 transform rotate-180"/>
+                            </button>
+                            <h2 className="text-lg font-bold">{reportTabs.find(t => t.key === activeTab)?.label}</h2>
                         </div>
-                    ) : (
-                        <>
-                            <div>
-                                <label htmlFor="startDate" className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">من تاريخ</label>
-                                <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-style w-full" />
-                            </div>
-                            <div>
-                                <label htmlFor="endDate" className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">إلى تاريخ</label>
-                                <input type="date" id="endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
-                            </div>
-                        </>
-                    )}
-                    
-                    {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability' || activeTab === 'netProfitability') && (
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">العميل</label>
-                            <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="input-style w-full">
-                                <option value="">كل العملاء</option>
-                                {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                        <div className="flex items-center gap-2">
+                            <button onClick={onExportPDF} className="btn-secondary-small bg-red-500 text-white hover:bg-red-600 border-none flex items-center gap-2">
+                                <ArrowDownTrayIcon className="w-4 h-4" /> PDF
+                            </button>
+                            <button onClick={() => window.print()} className="btn-primary-small flex items-center gap-2">
+                                <PrinterIcon className="w-4 h-4" /> طباعة
+                            </button>
                         </div>
-                    )}
+                    </header>
+                    <main className="flex-1 overflow-auto p-4 md:p-8">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+                            {renderReport()}
+                        </div>
+                    </main>
+                </div>
+            ) : (
+                <>
+                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md border dark:border-gray-700">
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">مركز التقارير المحاسبية</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                            {['balanceSheet', 'inventory', 'customerBalances', 'supplierBalances', 'generalJournalReport'].includes(activeTab) ? (
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">التاريخ</label>
+                                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">من تاريخ</label>
+                                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-style w-full" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">إلى تاريخ</label>
+                                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
+                                    </div>
+                                </>
+                            )}
+                            
+                            {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">العميل</label>
+                                    <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="input-style w-full">
+                                        <option value="">كل العملاء</option>
+                                        {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
 
-                    {(activeTab === 'purchases' || activeTab === 'purchaseReturns') && (
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">المورد</label>
-                            <select value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)} className="input-style w-full">
-                                <option value="">كل الموردين</option>
-                                {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                        </div>
-                    )}
-
-                    {(activeTab === 'itemMovement' || activeTab === 'inventory' || activeTab === 'salesProfitability' || activeTab === 'netProfitability') && (
-                        <div className="relative">
-                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">البحث عن صنف</label>
-                            <div className="relative">
-                                <input 
-                                    type="text" 
-                                    placeholder="ادخل اسم الصنف..." 
-                                    value={selectedInventoryId ? selectedItemName : itemSearchTerm}
-                                    onChange={(e) => { setItemSearchTerm(e.target.value); setSelectedInventoryId(''); }}
-                                    className={`input-style w-full pr-10 ${selectedInventoryId ? 'bg-blue-50 dark:bg-blue-900/20 font-bold' : ''}`}
-                                />
-                                <MagnifyingGlassIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                {selectedInventoryId && (
-                                    <button 
-                                        onClick={() => { setSelectedInventoryId(''); setItemSearchTerm(''); }}
-                                        className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700"
-                                    >
-                                        <XIcon className="w-4 h-4" />
-                                    </button>
-                                )}
-                            </div>
-                            {itemSearchTerm && !selectedInventoryId && itemSearchResults.length > 0 && (
-                                <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-xl rounded-b-xl border dark:border-gray-700 z-50 mt-1 max-h-60 overflow-y-auto">
-                                    {itemSearchResults.map((item) => (
-                                        <button
-                                            key={item.id}
-                                            onClick={() => { setSelectedInventoryId(item.id); setItemSearchTerm(''); }}
-                                            className="w-full text-right p-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b last:border-b-0 dark:border-gray-700 flex items-center gap-3"
-                                        >
-                                            <BoxIcon className="w-4 h-4 text-gray-400" />
-                                            <div className="min-w-0">
-                                                <p className="font-bold text-sm truncate">{item.name}</p>
-                                                <p className="text-xs text-gray-500">{item.id}</p>
-                                            </div>
-                                        </button>
-                                    ))}
+                            {(activeTab === 'itemMovement' || activeTab === 'inventory' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
+                                <div className="relative">
+                                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
+                                        {['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab) ? 'استثناء أصناف محددة' : 'البحث عن صنف'}
+                                    </label>
+                                    <div className="relative">
+                                        <input 
+                                            type="text" 
+                                            placeholder={['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab) ? "ابحث لإضافة صنف للاستثناء..." : "ادخل اسم الصنف..."} 
+                                            value={['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab) ? itemSearchTerm : (selectedInventoryId ? selectedItemName : itemSearchTerm)}
+                                            onChange={(e) => { 
+                                                setItemSearchTerm(e.target.value); 
+                                                if (!['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab)) setSelectedInventoryId(''); 
+                                            }}
+                                            className="input-style w-full pr-10"
+                                        />
+                                        <MagnifyingGlassIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    </div>
+                                    
+                                    {itemSearchTerm && itemSearchResults.length > 0 && (
+                                        <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-xl rounded-b-xl border dark:border-gray-700 z-50 mt-1 max-h-60 overflow-y-auto">
+                                            {itemSearchResults.map((item) => (
+                                                <button
+                                                    key={item.id}
+                                                    onClick={() => ['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab) ? handleToggleExcludedItem(item.id) : setSelectedInventoryId(item.id)}
+                                                    className="w-full text-right p-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b last:border-b-0 dark:border-gray-700 flex items-center gap-3"
+                                                >
+                                                    <BoxIcon className="w-4 h-4 text-gray-400" />
+                                                    <div className="min-w-0">
+                                                        <p className="font-bold text-sm truncate">{item.name}</p>
+                                                        <p className="text-xs text-gray-500">{item.id}</p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
-                    )}
 
-                    {activeTab === 'inventory' && (
-                        <>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">نوع الجرد</label>
-                                <select value={inventoryReportType} onChange={(e) => setInventoryReportType(e.target.value as any)} className="input-style w-full">
-                                    <option value="all_purchase">كل الأصناف (بالتكلفة)</option>
-                                    <option value="stock_purchase">أصناف بالمخزن (بالتكلفة)</option>
-                                    <option value="stock_sale">أصناف بالمخزن (بالبيع)</option>
-                                </select>
+                        {activeTab === 'netProfitabilityByCustomer' && excludedItemsList.length > 0 && (
+                            <div className="mt-4 flex flex-wrap gap-2 animate-fade-in">
+                                <span className="text-xs font-bold text-gray-400 self-center ml-2">أصناف مستثناة:</span>
+                                {excludedItemsList.map(item => (
+                                    <div key={item.id} className="flex items-center gap-2 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 px-3 py-1 rounded-full text-xs font-bold border border-red-200 dark:border-red-800">
+                                        <span>{item.name}</span>
+                                        <button onClick={() => handleToggleExcludedItem(item.id)} className="hover:text-red-900">
+                                            <XIcon className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                                <button onClick={() => setExcludedItemIds([])} className="text-xs text-gray-500 hover:underline">مسح الكل</button>
                             </div>
-                        </>
-                    )}
-                </div>
-            </div>
-
-            <div className="space-y-4">
-                {Object.entries(groupedTabs).map(([category, tabs]) => (
-                    <div key={category} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border dark:border-gray-700">
-                        <h3 className="text-xs font-extrabold text-blue-500 dark:text-blue-400 uppercase tracking-widest mb-3">{category}</h3>
-                        <div className="flex flex-wrap gap-2">
-                            {(tabs as typeof reportTabs).map(tab => (
-                                <button
-                                    key={tab.key}
-                                    onClick={() => setActiveTab(tab.key)}
-                                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border ${
-                                        activeTab === tab.key
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                                        : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
+                        )}
                     </div>
-                ))}
-            </div>
-            
-            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex justify-center sticky bottom-14 z-10 sm:relative sm:bottom-0">
-                 <button
-                    onClick={() => setIsReportVisible(true)}
-                    disabled={isViewButtonDisabled}
-                    className="w-full sm:w-auto px-10 py-3 bg-blue-600 text-white font-bold text-lg rounded-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-xl disabled:bg-gray-400"
-                >
-                    <EyeIcon className="w-6 h-6" />
-                    عرض التقرير النهائي
-                </button>
-            </div>
+
+                    <div className="space-y-4">
+                        {Object.entries(groupedTabs).map(([category, tabs]) => (
+                            <div key={category} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border dark:border-gray-700">
+                                <h3 className="text-xs font-extrabold text-blue-500 uppercase tracking-widest mb-3">{category}</h3>
+                                <div className="flex flex-wrap gap-2">
+                                    {(tabs as typeof reportTabs).map(tab => (
+                                        <button
+                                            key={tab.key}
+                                            onClick={() => setActiveTab(tab.key)}
+                                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border ${
+                                                activeTab === tab.key
+                                                ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                                                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex justify-center sticky bottom-14 z-10 sm:relative sm:bottom-0">
+                         <button
+                            onClick={() => setIsReportVisible(true)}
+                            disabled={isViewButtonDisabled}
+                            className="w-full sm:w-auto px-10 py-3 bg-blue-600 text-white font-bold text-lg rounded-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-xl disabled:bg-gray-400"
+                        >
+                            <EyeIcon className="w-6 h-6" />
+                            عرض التقرير النهائي
+                        </button>
+                    </div>
+                </>
+            )}
         </div>
     );
 };

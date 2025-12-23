@@ -18,7 +18,7 @@ interface ProfitabilityGroup {
     groupKey: string;
     itemId: string;
     itemName: string;
-    customerName: string; // إضافة اسم العميل للمجموعة
+    customerName: string;
     unitCostBase: number;
     unitPriceBase: number;
     soldQuantityBase: number;
@@ -55,7 +55,6 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
 
         const initGroup = (invItem: InventoryItem, basePrice: number, customerName: string) => {
             const priceKey = basePrice.toFixed(2);
-            // المفتاح الآن يتكون من الصنف + السعر + اسم العميل لضمان الفصل
             const key = `${invItem.id}_${priceKey}_${customerName}`;
             if (!itemGroups[key]) {
                 itemGroups[key] = {
@@ -127,7 +126,6 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                 const basePrice = line.price / factor;
                 const cost = baseQty * inventoryItem.purchasePrice; 
 
-                // المرتجعات تحتاج لنفس السعر والعميل لتخصم من السطر الصحيح
                 const group = initGroup(inventoryItem, basePrice, ret.customer);
                 group.returnedQuantityBase += baseQty;
                 group.returnsValue += line.total;
@@ -154,7 +152,6 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                     margin
                 };
             })
-            // تصفية الأسطر التي أصبحت صفرية تماماً بعد المرتجعات (اختياري)
             .filter(g => g.soldQuantityBase !== 0 || g.returnedQuantityBase !== 0)
             .sort((a, b) => a.customerName.localeCompare(b.customerName) || a.itemName.localeCompare(b.itemName));
 
@@ -164,9 +161,14 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
         { header: 'العميل', accessor: 'customerName', sortable: true },
         { header: 'الصنف', accessor: 'itemName', sortable: true },
         { 
-            header: 'سعر الوحدة', 
+            header: 'سعر الشراء', 
+            accessor: 'unitCostBase', 
+            render: (row: any) => <span className="text-gray-500 font-mono">{row.unitCostBase.toLocaleString()}</span> 
+        },
+        { 
+            header: 'سعر البيع', 
             accessor: 'unitPriceBase', 
-            render: (row: any) => <span className="font-bold text-blue-600">{row.unitPriceBase.toLocaleString()}</span> 
+            render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span> 
         },
         { header: 'الكمية المباعة', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString() },
         { 

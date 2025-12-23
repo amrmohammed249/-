@@ -15,7 +15,7 @@ import PurchaseReturnsReport from './PurchaseReturnsReport';
 import { AccountNode, InventoryItem } from '../../types';
 import TreasuryReport from './TreasuryReport';
 import ItemMovementReport from './ItemMovementReport';
-import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon, BoxIcon, TrashIcon } from '../icons';
+import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon, BoxIcon, TrashIcon, BanknotesIcon, ShoppingCartIcon, ClipboardDocumentListIcon } from '../icons';
 import CustomerBalancesReport from './CustomerBalancesReport';
 import SupplierBalancesReport from './SupplierBalancesReport';
 import CustomerProfitabilityReport from './CustomerProfitabilityReport';
@@ -49,16 +49,6 @@ const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category
     { key: 'itemMovement', label: 'حركة صنف', isTable: true, category: 'تقارير المخزون' },
 ];
 
-const flattenAccounts = (nodes: AccountNode[]): AccountNode[] => {
-    return nodes.reduce<AccountNode[]>((acc, node) => {
-        acc.push(node);
-        if (node.children && node.children.length > 0) {
-            acc.push(...flattenAccounts(node.children));
-        }
-        return acc;
-    }, []);
-};
-
 const Reports: React.FC = () => {
     const { currentUser, financialYear, customers, suppliers, inventory, chartOfAccounts, treasuriesList } = useContext(DataContext);
     const [isReportVisible, setIsReportVisible] = useState(false);
@@ -74,11 +64,7 @@ const Reports: React.FC = () => {
     const [selectedExpenseAccountId, setSelectedExpenseAccountId] = useState<string>('');
     const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>('');
     const [itemSearchTerm, setItemSearchTerm] = useState('');
-    const [inventoryReportType, setInventoryReportType] = useState<'all_purchase' | 'stock_purchase' | 'stock_sale'>('all_purchase');
-    
-    const [isExpenseDropdownOpen, setIsExpenseDropdownOpen] = useState(false);
-    const [expenseSearchTerm, setExpenseSearchTerm] = useState('');
-    const expenseDropdownRef = useRef<HTMLDivElement>(null);
+    const [inventoryReportType, setInventoryReportType] = useState<'all_purchase' | 'stock_purchase' | 'stock_sale'>('stock_purchase');
     
     const [reportExportProps, setReportExportProps] = useState<{ data: any[], columns: any[], name: string }>({ data: [], columns: [], name: '' });
 
@@ -100,7 +86,6 @@ const Reports: React.FC = () => {
         setSelectedExpenseAccountId('');
         setSelectedTreasuryId('');
         setItemSearchTerm('');
-        setExpenseSearchTerm('');
     }, [activeTab]);
 
     const itemSearchResults = useMemo(() => {
@@ -117,42 +102,6 @@ const Reports: React.FC = () => {
         if (!selectedInventoryId) return '';
         return inventory.find(i => i.id === selectedInventoryId)?.name || '';
     }, [selectedInventoryId, inventory]);
-
-    const excludedItemsList = useMemo(() => {
-        return inventory.filter(i => excludedItemIds.includes(i.id));
-    }, [excludedItemIds, inventory]);
-
-    const handleToggleExcludedItem = (id: string) => {
-        setExcludedItemIds(prev => 
-            prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-        );
-        setItemSearchTerm('');
-    };
-
-    const renderReport = () => {
-        const props = { startDate, endDate, onDataReady: handleDataReady };
-        switch (activeTab) {
-            case 'sales': return <SalesReport {...props} customerId={selectedCustomerId} />;
-            case 'saleReturns': return <SaleReturnsReport {...props} customerId={selectedCustomerId} />;
-            case 'purchases': return <PurchasesReport {...props} supplierId={selectedSupplierId} />;
-            case 'purchaseReturns': return <PurchaseReturnsReport {...props} supplierId={selectedSupplierId} />;
-            case 'profitAndLoss': return <ProfitAndLoss {...props} />;
-            case 'balanceSheet': return <BalanceSheet asOfDate={endDate} onDataReady={handleDataReady} />;
-            case 'generalJournalReport': return <GeneralJournalReport date={endDate} onDataReady={handleDataReady} />;
-            case 'customerSummary': return <CustomerSummaryReport {...props} />;
-            case 'inventory': return <InventoryReport asOfDate={endDate} onDataReady={handleDataReady} itemId={selectedInventoryId} reportType={inventoryReportType} />;
-            case 'salesProfitability': return <SalesProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} />;
-            case 'netProfitability': return <NetProfitabilityReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} excludedItemIds={excludedItemIds} />;
-            case 'netProfitabilityByCustomer': return <NetProfitabilityByCustomerReport {...props} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} excludedItemIds={excludedItemIds} />;
-            case 'customerProfitability': return <CustomerProfitabilityReport {...props} />;
-            case 'expense': return <ExpenseReport {...props} expenseAccountId={selectedExpenseAccountId} />;
-            case 'treasury': return <TreasuryReport {...props} treasuryAccountId={selectedTreasuryId} />;
-            case 'itemMovement': return <ItemMovementReport {...props} itemId={selectedInventoryId} />;
-            case 'customerBalances': return <CustomerBalancesReport asOfDate={endDate} onDataReady={handleDataReady} />;
-            case 'supplierBalances': return <SupplierBalancesReport asOfDate={endDate} onDataReady={handleDataReady} />;
-            default: return <p>الرجاء اختيار تقرير لعرضه.</p>;
-        }
-    };
 
     const handleDataReady = useCallback((props: { data: any[], columns: any[], name: string }) => {
         setReportExportProps(props);
@@ -174,6 +123,61 @@ const Reports: React.FC = () => {
             });
         }
     };
+
+    const handleToggleExcludedItem = (id: string) => {
+        setExcludedItemIds(prev => 
+            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+        );
+        setItemSearchTerm('');
+    };
+
+    const renderReport = () => {
+        const commonProps = { onDataReady: handleDataReady };
+        switch (activeTab) {
+            case 'profitAndLoss':
+                return <ProfitAndLoss startDate={startDate} endDate={endDate} {...commonProps} />;
+            case 'balanceSheet':
+                return <BalanceSheet asOfDate={endDate} {...commonProps} />;
+            case 'generalJournalReport':
+                return <GeneralJournalReport date={endDate} {...commonProps} />;
+            case 'treasury':
+                return <TreasuryReport startDate={startDate} endDate={endDate} treasuryAccountId={selectedTreasuryId} {...commonProps} />;
+            case 'expense':
+                return <ExpenseReport startDate={startDate} endDate={endDate} expenseAccountId={selectedExpenseAccountId} {...commonProps} />;
+            case 'sales':
+                return <SalesReport startDate={startDate} endDate={endDate} customerId={selectedCustomerId} {...commonProps} />;
+            case 'saleReturns':
+                return <SaleReturnsReport startDate={startDate} endDate={endDate} customerId={selectedCustomerId} {...commonProps} />;
+            case 'purchases':
+                return <PurchasesReport startDate={startDate} endDate={endDate} supplierId={selectedSupplierId} {...commonProps} />;
+            case 'purchaseReturns':
+                return <PurchaseReturnsReport startDate={startDate} endDate={endDate} supplierId={selectedSupplierId} {...commonProps} />;
+            case 'customerBalances':
+                return <CustomerBalancesReport asOfDate={endDate} {...commonProps} />;
+            case 'supplierBalances':
+                return <SupplierBalancesReport asOfDate={endDate} {...commonProps} />;
+            case 'salesProfitability':
+                return <SalesProfitabilityReport startDate={startDate} endDate={endDate} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} {...commonProps} />;
+            case 'netProfitability':
+                return <NetProfitabilityReport startDate={startDate} endDate={endDate} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} excludedItemIds={excludedItemIds} {...commonProps} />;
+            case 'netProfitabilityByCustomer':
+                return <NetProfitabilityByCustomerReport startDate={startDate} endDate={endDate} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} excludedItemIds={excludedItemIds} {...commonProps} />;
+            case 'customerProfitability':
+                return <CustomerProfitabilityReport startDate={startDate} endDate={endDate} {...commonProps} />;
+            case 'customerSummary':
+                return <CustomerSummaryReport startDate={startDate} endDate={endDate} {...commonProps} />;
+            case 'inventory':
+                return <InventoryReport asOfDate={endDate} itemId={selectedInventoryId} reportType={inventoryReportType} {...commonProps} />;
+            case 'itemMovement':
+                return <ItemMovementReport startDate={startDate} endDate={endDate} itemId={selectedInventoryId} {...commonProps} />;
+            default:
+                return null;
+        }
+    };
+
+    if (!currentUser || (currentUser.role !== 'مدير النظام' && currentUser.role !== 'محاسب')) {
+        return <AccessDenied />;
+    }
 
     const isViewButtonDisabled = activeTab === 'itemMovement' && !selectedInventoryId;
 
@@ -210,7 +214,7 @@ const Reports: React.FC = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
                             {['balanceSheet', 'inventory', 'customerBalances', 'supplierBalances', 'generalJournalReport'].includes(activeTab) ? (
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">التاريخ</label>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">حتى تاريخ</label>
                                     <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-style w-full" />
                                 </div>
                             ) : (
@@ -226,6 +230,35 @@ const Reports: React.FC = () => {
                                 </>
                             )}
                             
+                            {activeTab === 'inventory' && (
+                                <div className="md:col-span-2">
+                                    <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">خيارات الجرد وزاوية العرض</label>
+                                    <div className="flex bg-gray-100 dark:bg-gray-700/50 p-1 rounded-xl border dark:border-gray-600 gap-1">
+                                        <button 
+                                            onClick={() => setInventoryReportType('stock_purchase')}
+                                            className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all ${inventoryReportType === 'stock_purchase' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:bg-white dark:hover:bg-gray-700'}`}
+                                        >
+                                            <BanknotesIcon className="w-5 h-5 mb-1" />
+                                            <span className="text-[10px] font-bold">الرصيد المتوفر (تكلفة)</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => setInventoryReportType('stock_sale')}
+                                            className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all ${inventoryReportType === 'stock_sale' ? 'bg-green-600 text-white shadow-lg' : 'text-gray-500 hover:bg-white dark:hover:bg-gray-700'}`}
+                                        >
+                                            <ShoppingCartIcon className="w-5 h-5 mb-1" />
+                                            <span className="text-[10px] font-bold">الرصيد المتوفر (بيع)</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => setInventoryReportType('all_purchase')}
+                                            className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all ${inventoryReportType === 'all_purchase' ? 'bg-gray-800 text-white shadow-lg' : 'text-gray-500 hover:bg-white dark:hover:bg-gray-700'}`}
+                                        >
+                                            <BoxIcon className="w-5 h-5 mb-1" />
+                                            <span className="text-[10px] font-bold">كل الأصناف (تكلفة)</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">العميل</label>
@@ -236,7 +269,7 @@ const Reports: React.FC = () => {
                                 </div>
                             )}
 
-                            {(activeTab === 'itemMovement' || activeTab === 'inventory' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
+                            {(activeTab === 'itemMovement' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
                                 <div className="relative">
                                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
                                         {['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab) ? 'استثناء أصناف محددة' : 'البحث عن صنف'}
@@ -275,21 +308,6 @@ const Reports: React.FC = () => {
                                 </div>
                             )}
                         </div>
-
-                        {activeTab === 'netProfitabilityByCustomer' && excludedItemsList.length > 0 && (
-                            <div className="mt-4 flex flex-wrap gap-2 animate-fade-in">
-                                <span className="text-xs font-bold text-gray-400 self-center ml-2">أصناف مستثناة:</span>
-                                {excludedItemsList.map(item => (
-                                    <div key={item.id} className="flex items-center gap-2 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 px-3 py-1 rounded-full text-xs font-bold border border-red-200 dark:border-red-800">
-                                        <span>{item.name}</span>
-                                        <button onClick={() => handleToggleExcludedItem(item.id)} className="hover:text-red-900">
-                                            <XIcon className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                                <button onClick={() => setExcludedItemIds([])} className="text-xs text-gray-500 hover:underline">مسح الكل</button>
-                            </div>
-                        )}
                     </div>
 
                     <div className="space-y-4">

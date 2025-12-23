@@ -7,7 +7,6 @@ export interface AccountNode {
   code: string;
   balance?: number;
   children?: AccountNode[];
-  // Fix: Add isArchived property to AccountNode type.
   isArchived?: boolean;
 }
 
@@ -22,7 +21,7 @@ export interface UnitDefinition {
 export interface PackingUnit {
   id: string;
   name: string;
-  factor: number; // How many base units are in this packing unit
+  factor: number;
   purchasePrice: number;
   salePrice: number;
 }
@@ -31,23 +30,23 @@ export interface InventoryItem {
   id: string;
   name: string;
   barcode?: string;
-  baseUnit: string; // The smallest unit for tracking stock (e.g., 'كيلو', 'قطعة')
-  units: PackingUnit[]; // Array of bigger units (e.g., 'شوال', 'كرتونة')
+  baseUnit: string;
+  units: PackingUnit[];
   category: string;
-  purchasePrice: number; // Price for the base unit
-  salePrice: number; // Price for the base unit
-  stock: number; // Always in baseUnit
+  purchasePrice: number;
+  salePrice: number;
+  stock: number;
   isArchived?: boolean;
 }
 
 export interface LineItem {
   itemId: string;
   itemName: string;
-  unitId: string; // Can be 'base' or a PackingUnit.id
-  unitName: string; // e.g., 'كيلو' or 'شوال'
-  quantity: number; // Quantity of the selected unit
-  price: number; // Price of the selected unit
-  discount: number; // Discount amount for this line
+  unitId: string;
+  unitName: string;
+  quantity: number;
+  price: number;
+  discount: number;
   total: number;
 }
 
@@ -134,8 +133,8 @@ export interface PurchaseReturn {
 export interface InventoryAdjustmentLineItem {
   itemId: string;
   itemName: string;
-  quantity: number; // always in base unit
-  cost: number; // purchase price per base unit
+  quantity: number;
+  cost: number;
   total: number;
 }
 
@@ -158,7 +157,7 @@ export interface TreasuryTransaction {
   type: 'سند قبض' | 'سند صرف';
   description: string;
   amount: number;
-  balance: number; // This will likely represent the balance of the specific treasury
+  balance: number;
   partyType?: 'customer' | 'supplier' | 'account';
   partyId?: string;
   accountName?: string;
@@ -176,6 +175,7 @@ export interface Customer {
   address: string;
   balance: number;
   isArchived?: boolean;
+  linkedSupplierId?: string; // حقل الربط
 }
 
 export interface Supplier {
@@ -186,6 +186,7 @@ export interface Supplier {
   address: string;
   balance: number;
   isArchived?: boolean;
+  linkedCustomerId?: string; // حقل الربط
 }
 
 export interface User {
@@ -213,7 +214,6 @@ export interface JournalEntry {
   status: 'مرحل' | 'تحت المراجعة';
   lines: JournalLine[];
   isArchived?: boolean;
-  // New fields for linking manual entries to parties (Credit/Debit Notes)
   relatedPartyId?: string;
   relatedPartyType?: 'customer' | 'supplier';
   relatedPartyName?: string;
@@ -265,20 +265,16 @@ export type InvoiceComponentType = 'logo' | 'companyInfo' | 'spacer' | 'invoiceT
 
 export interface InvoiceLayoutItem {
   id: InvoiceComponentType;
-  name: string; // For display in DnD list
+  name: string;
 }
 
 
 export interface PrintSettings {
-  // Base settings
   logo: string | null;
   taxId: string;
   commercialRegNo: string;
-  
-  // Customizer settings
   primaryColor: string;
   secondaryColor: string;
-  
   fontSizes: {
     companyName: string;
     invoiceTitle: string;
@@ -289,20 +285,16 @@ export interface PrintSettings {
   };
   logoSize: number;
   logoAlignment: 'flex-start' | 'center' | 'flex-end';
-
   text: {
     invoiceTitle: string;
     footerText: string;
   };
-  
   layout: InvoiceComponentType[];
-
   itemsTableColumns: {
     id: 'index' | 'itemName' | 'unit' | 'quantity' | 'price' | 'total';
     label: string;
     enabled: boolean;
   }[];
-  
   visibility: {
     [key in InvoiceComponentType]?: boolean;
   };

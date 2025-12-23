@@ -15,7 +15,7 @@ import PurchaseReturnsReport from './PurchaseReturnsReport';
 import { AccountNode, InventoryItem } from '../../types';
 import TreasuryReport from './TreasuryReport';
 import ItemMovementReport from './ItemMovementReport';
-import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon } from '../icons';
+import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon, BoxIcon } from '../icons';
 import CustomerBalancesReport from './CustomerBalancesReport';
 import SupplierBalancesReport from './SupplierBalancesReport';
 import CustomerProfitabilityReport from './CustomerProfitabilityReport';
@@ -138,9 +138,14 @@ const Reports: React.FC = () => {
         if (itemSearchTerm.length < 1) return [];
         const term = itemSearchTerm.toLowerCase();
         return inventory.filter((i: InventoryItem) => 
-            !i.isArchived && (i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term))
+            !i.isArchived && (i.name.toLowerCase().includes(term) || i.id.toLowerCase().includes(term) || i.barcode?.includes(term))
         ).slice(0, 10);
     }, [inventory, itemSearchTerm]);
+
+    const selectedItemName = useMemo(() => {
+        if (!selectedInventoryId) return '';
+        return inventory.find(i => i.id === selectedInventoryId)?.name || '';
+    }, [selectedInventoryId, inventory]);
 
     if (currentUser.role !== 'مدير النظام' && currentUser.role !== 'محاسب') {
         return <AccessDenied />;
@@ -268,6 +273,48 @@ const Reports: React.FC = () => {
                             </select>
                         </div>
                     )}
+
+                    {(activeTab === 'itemMovement' || activeTab === 'inventory' || activeTab === 'salesProfitability' || activeTab === 'netProfitability') && (
+                        <div className="relative">
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">البحث عن صنف</label>
+                            <div className="relative">
+                                <input 
+                                    type="text" 
+                                    placeholder="ادخل اسم الصنف..." 
+                                    value={selectedInventoryId ? selectedItemName : itemSearchTerm}
+                                    onChange={(e) => { setItemSearchTerm(e.target.value); setSelectedInventoryId(''); }}
+                                    className={`input-style w-full pr-10 ${selectedInventoryId ? 'bg-blue-50 dark:bg-blue-900/20 font-bold' : ''}`}
+                                />
+                                <MagnifyingGlassIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                {selectedInventoryId && (
+                                    <button 
+                                        onClick={() => { setSelectedInventoryId(''); setItemSearchTerm(''); }}
+                                        className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700"
+                                    >
+                                        <XIcon className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                            {itemSearchTerm && !selectedInventoryId && itemSearchResults.length > 0 && (
+                                <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-xl rounded-b-xl border dark:border-gray-700 z-50 mt-1 max-h-60 overflow-y-auto">
+                                    {itemSearchResults.map((item) => (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => { setSelectedInventoryId(item.id); setItemSearchTerm(''); }}
+                                            className="w-full text-right p-3 hover:bg-blue-50 dark:hover:bg-gray-700 border-b last:border-b-0 dark:border-gray-700 flex items-center gap-3"
+                                        >
+                                            <BoxIcon className="w-4 h-4 text-gray-400" />
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-sm truncate">{item.name}</p>
+                                                <p className="text-xs text-gray-500">{item.id}</p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {activeTab === 'inventory' && (
                         <>
                             <div>

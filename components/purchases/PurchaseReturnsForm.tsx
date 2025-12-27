@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
@@ -15,8 +14,8 @@ interface PurchaseReturnsFormProps {
 }
 
 const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, windowState, onStateChange }) => {
-    const { suppliers, inventory, addPurchaseReturn, showToast, sequences, scannedItem, generalSettings, purchases } = useContext(DataContext);
-    const { visibleWindowId } = useContext(WindowContext);
+    const { suppliers, inventory, addPurchaseReturn, updatePurchaseReturn, showToast, sequences, scannedItem, generalSettings, purchases } = useContext(DataContext);
+    const { visibleWindowId, closeWindow } = useContext(WindowContext);
     
     const productSearchRef = useRef<HTMLInputElement>(null);
     const supplierSearchRef = useRef<HTMLInputElement>(null);
@@ -24,7 +23,7 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
 
     const setState = onStateChange!;
     const state = windowState;
-    const { activeReturn, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing, itemErrors } = state || {};
+    const { activeReturn, items, supplier, productSearchTerm, supplierSearchTerm, isProcessing, itemErrors, isEditMode } = state || {};
 
     const [isAddSupplierModalOpen, setAddSupplierModalOpen] = useState(false);
     const [returnToView, setReturnToView] = useState<PurchaseReturn | null>(null);
@@ -150,7 +149,8 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
         setState(p => ({...p, isProcessing: true}));
 
         try {
-            const newReturnData: Omit<PurchaseReturn, 'id' | 'journalEntryId'> = {
+            const newReturnData: PurchaseReturn = {
+                ...activeReturn,
                 supplier: supplier?.name,
                 date: activeReturn.date!,
                 items: items,
@@ -159,18 +159,26 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
                 total: totals.grandTotal,
             };
             
-            const createdReturn = addPurchaseReturn(newReturnData);
-            showToast(`تم إنشاء مرتجع المشتريات ${createdReturn.id} بنجاح.`);
-            if (print) {
-                setReturnToView(createdReturn);
+            let resultReturn;
+            if (isEditMode) {
+                resultReturn = updatePurchaseReturn(newReturnData);
+                showToast(`تم تعديل المرتجع ${resultReturn.id} بنجاح.`);
+                if (windowId) closeWindow(windowId);
+            } else {
+                resultReturn = addPurchaseReturn(newReturnData);
+                showToast(`تم إنشاء مرتجع المشتريات ${resultReturn.id} بنجاح.`);
+                resetForm();
             }
-            resetForm();
+
+            if (print) {
+                setReturnToView(resultReturn);
+            }
         } catch (error: any) {
             showToast(error.message || 'حدث خطأ أثناء حفظ المرتجع', 'error');
         } finally {
             setState(p => ({...p, isProcessing: false}));
         }
-    }, [items, supplier, activeReturn, totals, itemErrors, addPurchaseReturn, showToast, resetForm, setState]);
+    }, [items, supplier, activeReturn, totals, itemErrors, addPurchaseReturn, updatePurchaseReturn, isEditMode, showToast, resetForm, setState, windowId, closeWindow]);
 
     const handleItemUpdate = (index: number, field: 'quantity' | 'price' | 'discount' | 'unitId', value: string) => {
         setState(prev => {
@@ -204,6 +212,21 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
                 }
         
                 let availableStock = inventoryItem.stock;
+                
+                // If editing, we consider the stock that was originally returned
+                if (isEditMode) {
+                    const originalReturn = activeReturn as PurchaseReturn;
+                    const originalItem = originalReturn.items.find(i => i.itemId === item.itemId);
+                    if (originalItem) {
+                        let originalQuantityInBaseUnit = originalItem.quantity;
+                        if (originalItem.unitId !== 'base') {
+                            const packingUnit = inventoryItem.units.find(u => u.id === originalItem.unitId);
+                            if (packingUnit) originalQuantityInBaseUnit *= packingUnit.factor;
+                        }
+                        // Reversing the "subtraction" of stock done by return means ADDING it back to calculate available
+                        availableStock += originalQuantityInBaseUnit;
+                    }
+                }
 
                 if (!generalSettings.allowNegativeStock && quantityInBaseUnit > availableStock) {
                     newErrors[item.itemId] = `المخزون غير كافٍ (المتاح: ${availableStock})`;
@@ -240,7 +263,7 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
 
     const supplierSearchResults = useMemo(() => {
         if (!supplierSearchTerm || supplierSearchTerm.length < 1) return [];
-        return suppliers.filter((c: Supplier) => !c.isArchived && c.name.toLowerCase().includes(supplierSearchTerm.toLowerCase())).slice(0, 5);
+        return suppliers.filter((c: Supplier) => !c.isArchived && (c.name.toLowerCase().includes(supplierSearchTerm.toLowerCase()))).slice(0, 5);
     }, [supplierSearchTerm, suppliers]);
     
     useEffect(() => { setHighlightedProductIndex(-1); }, [productSearchTerm]);
@@ -285,7 +308,7 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
         <div className="flex flex-col h-full bg-[--bg] text-[--text] font-sans">
             <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold">{'مرتجع مشتريات جديد'}</h1>
+                    <h1 className="text-xl font-bold">{isEditMode ? 'تعديل مرتجع مشتريات' : 'مرتجع مشتريات جديد'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeReturn.id}</span>
                     <input type="date" value={activeReturn.date || ''} onChange={e => setState(p => ({...p, activeReturn: {...p.activeReturn, date: e.target.value}}))} className="input-style w-36"/>
                 </div>
@@ -362,8 +385,8 @@ const PurchaseReturnsForm: React.FC<PurchaseReturnsFormProps> = ({ windowId, win
                         <div className="border-t-2 border-dashed pt-3 mt-4"><div className="flex justify-between items-center text-3xl font-bold text-[--accent]"><span>الإجمالي</span><span className="font-mono">{totals.grandTotal.toLocaleString()}</span></div></div>
                     </div>
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-md p-4 space-y-3">
-                        <button onClick={() => handleFinalize(true)} disabled={isProcessing || Object.keys(itemErrors || {}).length > 0} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50">حفظ وطباعة الإشعار</button>
-                        <button onClick={resetForm} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">مرتجع جديد</button>
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing || Object.keys(itemErrors || {}).length > 0} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50">{isProcessing ? 'جاري الحفظ...' : (isEditMode ? 'حفظ وطباعة التعديلات' : 'حفظ وطباعة الإشعار')}</button>
+                        <button onClick={() => isEditMode ? closeWindow(windowId!) : resetForm()} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'إلغاء' : 'مرتجع جديد'}</button>
                     </div>
                 </aside>
             </div>

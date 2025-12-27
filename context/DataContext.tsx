@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useEffect, useCallback, useMemo, useReducer } from 'react';
 import { get, set } from './idb-keyval';
 import * as seedData from '../data/initialSeedData';
@@ -460,6 +459,20 @@ function dataReducer(state: AppState, action: Action): AppState {
                 activityLog: [log, ...state.activityLog],
             };
         }
+        
+        case 'UPDATE_SALE_RETURN': {
+            const { updatedSaleReturn, updatedInventory, updatedCustomers, journal, chartOfAccounts, log } = action.payload;
+             return {
+                ...state,
+                saleReturns: state.saleReturns.map(s => s.id === updatedSaleReturn.id ? updatedSaleReturn : s),
+                inventory: updatedInventory,
+                customers: updatedCustomers,
+                journal,
+                chartOfAccounts,
+                sequences: { ...state.sequences, journal: state.sequences.journal + 1 },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
 
         case 'ARCHIVE_SALE_RETURN': {
             const { updatedSaleReturns, updatedInventory, updatedCustomers, updatedJournal, chartOfAccounts, log } = action.payload;
@@ -484,6 +497,20 @@ function dataReducer(state: AppState, action: Action): AppState {
                 journal: [journalEntry, ...state.journal],
                 chartOfAccounts: updatedChartOfAccounts,
                 sequences: { ...state.sequences, purchaseReturn: state.sequences.purchaseReturn + 1, journal: state.sequences.journal + 1 },
+                activityLog: [log, ...state.activityLog],
+            };
+        }
+        
+        case 'UPDATE_PURCHASE_RETURN': {
+            const { updatedPurchaseReturn, updatedInventory, updatedSuppliers, journal, chartOfAccounts, log } = action.payload;
+             return {
+                ...state,
+                purchaseReturns: state.purchaseReturns.map(p => p.id === updatedPurchaseReturn.id ? updatedPurchaseReturn : p),
+                inventory: updatedInventory,
+                suppliers: updatedSuppliers,
+                journal,
+                chartOfAccounts,
+                sequences: { ...state.sequences, journal: state.sequences.journal + 1 },
                 activityLog: [log, ...state.activityLog],
             };
         }
@@ -737,10 +764,12 @@ interface DataContextType {
     convertQuoteToPurchase: (quoteId: string) => void;
 
     addSaleReturn: (returnData: Omit<SaleReturn, 'id' | 'journalEntryId'>) => SaleReturn;
+    updateSaleReturn: (returnData: SaleReturn) => SaleReturn;
     deleteSaleReturn: (returnId: string) => { success: boolean, message: string };
     unarchiveSaleReturn: (id: string) => void;
 
     addPurchaseReturn: (returnData: Omit<PurchaseReturn, 'id' | 'journalEntryId'>) => PurchaseReturn;
+    updatePurchaseReturn: (returnData: PurchaseReturn) => PurchaseReturn;
     deletePurchaseReturn: (returnId: string) => { success: boolean, message: string };
     unarchivePurchaseReturn: (id: string) => void;
 
@@ -2027,8 +2056,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             status: 'مرحل',
             lines: [] 
         });
-        const customerAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1103');
-        const salesAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '4101');
         const updatedJournal = state.journal.filter(j => j.id !== originalSale.journalEntryId);
         
         const log = {
@@ -2444,8 +2471,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             status: 'مرحل',
             lines: [] 
         });
-        const supplierAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '2101');
-        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
         const updatedJournal = state.journal.filter(j => j.id !== originalPurchase.journalEntryId);
         
         const log = {
@@ -2500,7 +2525,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         });
 
         // 3. Update Supplier Balance (Decrease balance by invoice value - effectively reversing the credit)
-        const updatedSuppliers = state.suppliers.map(s => {
+        const updatedSuppliers = state.customers.map(s => {
             if (s.name === purchase.supplier) {
                 return { ...s, balance: s.balance - (purchase.total - (purchase.paidAmount || 0)) };
             }
@@ -2777,6 +2802,121 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
 
         return newReturn;
     };
+    const updateSaleReturn = (returnData: SaleReturn): SaleReturn => {
+        const originalReturn = state.saleReturns.find(sr => sr.id === returnData.id);
+        if (!originalReturn) {
+            showToast('لم يتم العثور على المرتجع الأصلي.', 'error');
+            throw new Error('Original sale return not found');
+        }
+
+        // 1. Reverse the effect of the OLD return
+        // a) Archive old JE and reverse GL impact
+        if (originalReturn.journalEntryId) {
+            archiveJournalEntry(originalReturn.journalEntryId);
+        }
+
+        let updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        let updatedCustomers = JSON.parse(JSON.stringify(state.customers));
+        let updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+
+        // b) Reverse stock impact (old return added stock, so we subtract it)
+        originalReturn.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+
+        // c) Reverse customer balance (old return decreased debt, so we increase it back)
+        updatedCustomers = updatedCustomers.map((c: Customer) => {
+            if (c.name === originalReturn.customer) {
+                return { ...c, balance: c.balance + originalReturn.total };
+            }
+            return c;
+        });
+
+        // 2. Apply the effect of the NEW return
+        // a) New stock impact (adding back returned stock)
+        returnData.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+
+        // b) New customer balance impact (decreasing debt)
+        updatedCustomers = updatedCustomers.map((c: Customer) => {
+            if (c.name === returnData.customer) {
+                return { ...c, balance: c.balance - returnData.total };
+            }
+            return c;
+        });
+
+        // c) Construct and add new Journal Entry
+        const salesReturnAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '4104');
+        const customerAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1103');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+        const cogsAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '4204');
+
+        const cogsValue = returnData.items.reduce((sum, line) => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === line.itemId);
+            if (!item) return sum;
+            let quantityInBaseUnit = line.quantity;
+            if (line.unitId !== 'base') {
+                const packingUnit = item.units.find((u: PackingUnit) => u.id === line.unitId);
+                if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+            }
+            return sum + (quantityInBaseUnit * item.purchasePrice);
+        }, 0);
+
+        const journalLines: JournalLine[] = [
+            { accountId: salesReturnAccount!.id, accountName: salesReturnAccount!.name, debit: returnData.total, credit: 0 },
+            { accountId: customerAccount!.id, accountName: customerAccount!.name, debit: 0, credit: returnData.total },
+            { accountId: inventoryAccount!.id, accountName: inventoryAccount!.name, debit: cogsValue, credit: 0 },
+            { accountId: cogsAccount!.id, accountName: cogsAccount!.name, debit: 0, credit: cogsValue },
+        ];
+
+        const journalEntry: JournalEntry = {
+            id: `JE-${state.sequences.journal}`,
+            date: returnData.date,
+            description: `تعديل مرتجع مبيعات رقم ${returnData.id}`,
+            debit: returnData.total + cogsValue,
+            credit: returnData.total + cogsValue,
+            status: 'مرحل',
+            lines: journalLines,
+        };
+        returnData.journalEntryId = journalEntry.id;
+        
+        journalLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'تعديل مرتجع مبيعات',
+            details: `تم تعديل مرتجع المبيعات رقم #${returnData.id}.`
+        };
+
+        const updatedJournal = state.journal.filter(j => j.id !== originalReturn.journalEntryId);
+
+        dispatch({ type: 'UPDATE_SALE_RETURN', payload: { updatedSaleReturn: returnData, updatedInventory, updatedCustomers, journal: [journalEntry, ...updatedJournal], chartOfAccounts: updatedChartOfAccounts, log } });
+        
+        showToast('تم تعديل مرتجع المبيعات بنجاح.');
+        return returnData;
+    };
     const deleteSaleReturn = (returnId: string): { success: boolean; message: string } => {
         const saleReturnToDelete = state.saleReturns.find(sr => sr.id === returnId);
         if (!saleReturnToDelete) {
@@ -2954,6 +3094,102 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
     
         showToast('تمت إضافة مرتجع المشتريات بنجاح.');
         return newReturn;
+    };
+    const updatePurchaseReturn = (returnData: PurchaseReturn): PurchaseReturn => {
+        const originalReturn = state.purchaseReturns.find(pr => pr.id === returnData.id);
+        if (!originalReturn) {
+            showToast('لم يتم العثور على المرتجع الأصلي.', 'error');
+            throw new Error('Original purchase return not found');
+        }
+
+        // 1. Reverse old impact
+        if (originalReturn.journalEntryId) {
+            archiveJournalEntry(originalReturn.journalEntryId);
+        }
+
+        let updatedInventory = JSON.parse(JSON.stringify(state.inventory));
+        let updatedSuppliers = JSON.parse(JSON.stringify(state.suppliers));
+        let updatedChartOfAccounts = JSON.parse(JSON.stringify(state.chartOfAccounts));
+
+        // Old return SUBTRACTED stock, so we ADD it back
+        originalReturn.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock += quantityInBaseUnit;
+            }
+        });
+
+        // Old return decreased debt, so we increase it back
+        updatedSuppliers = updatedSuppliers.map((s: Supplier) => {
+            if (s.name === originalReturn.supplier) {
+                return { ...s, balance: s.balance + originalReturn.total };
+            }
+            return s;
+        });
+
+        // 2. Apply NEW effect
+        returnData.items.forEach(lineItem => {
+            const item = updatedInventory.find((i: InventoryItem) => i.id === lineItem.itemId);
+            if (item) {
+                let quantityInBaseUnit = lineItem.quantity;
+                if (lineItem.unitId !== 'base') {
+                    const packingUnit = item.units.find((u: PackingUnit) => u.id === lineItem.unitId);
+                    if (packingUnit) quantityInBaseUnit *= packingUnit.factor;
+                }
+                item.stock -= quantityInBaseUnit;
+            }
+        });
+
+        updatedSuppliers = updatedSuppliers.map((s: Supplier) => {
+            if (s.name === returnData.supplier) {
+                return { ...s, balance: s.balance - returnData.total };
+            }
+            return s;
+        });
+
+        const supplierAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '2101');
+        const inventoryAccount = findNodeRecursive(updatedChartOfAccounts, 'code', '1104');
+
+        const journalLines: JournalLine[] = [
+            { accountId: supplierAccount!.id, accountName: supplierAccount!.name, debit: returnData.total, credit: 0 },
+            { accountId: inventoryAccount!.id, accountName: inventoryAccount!.name, debit: 0, credit: returnData.total },
+        ];
+
+        const journalEntry: JournalEntry = {
+            id: `JE-${state.sequences.journal}`,
+            date: returnData.date,
+            description: `تعديل مرتجع مشتريات رقم ${returnData.id}`,
+            debit: returnData.total,
+            credit: returnData.total,
+            status: 'مرحل',
+            lines: journalLines,
+        };
+        returnData.journalEntryId = journalEntry.id;
+        
+        journalLines.forEach(line => {
+            updateBalancesRecursively(updatedChartOfAccounts, line.accountId, line.debit - line.credit);
+        });
+
+        const log = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            userId: currentUser!.id,
+            username: currentUser!.name,
+            action: 'تعديل مرتجع مشتريات',
+            details: `تم تعديل مرتجع المشتريات رقم #${returnData.id}.`
+        };
+
+        const updatedJournal = state.journal.filter(j => j.id !== originalReturn.journalEntryId);
+
+        dispatch({ type: 'UPDATE_PURCHASE_RETURN', payload: { updatedPurchaseReturn: returnData, updatedInventory, updatedSuppliers, journal: [journalEntry, ...updatedJournal], chartOfAccounts: updatedChartOfAccounts, log } });
+        
+        showToast('تم تعديل مرتجع المشتريات بنجاح.');
+        return returnData;
     };
     const deletePurchaseReturn = (returnId: string): { success: boolean; message: string } => {
         const purchaseReturnToDelete = state.purchaseReturns.find(pr => pr.id === returnId);
@@ -3347,9 +3583,11 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
         cancelPurchaseQuote,
         convertQuoteToPurchase,
         addSaleReturn,
+        updateSaleReturn,
         deleteSaleReturn,
         unarchiveSaleReturn,
         addPurchaseReturn,
+        updatePurchaseReturn,
         deletePurchaseReturn,
         unarchivePurchaseReturn,
         addTreasuryTransaction,

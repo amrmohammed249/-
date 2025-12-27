@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
@@ -15,8 +14,8 @@ interface SaleReturnsFormProps {
 }
 
 const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState, onStateChange }) => {
-    const { customers, inventory, addSaleReturn, showToast, sequences, scannedItem, sales } = useContext(DataContext);
-    const { visibleWindowId } = useContext(WindowContext);
+    const { customers, inventory, addSaleReturn, updateSaleReturn, showToast, sequences, scannedItem, sales } = useContext(DataContext);
+    const { visibleWindowId, closeWindow } = useContext(WindowContext);
     
     const productSearchRef = useRef<HTMLInputElement>(null);
     const customerSearchRef = useRef<HTMLInputElement>(null);
@@ -24,7 +23,7 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
     
     const setState = onStateChange!;
     const state = windowState;
-    const { activeReturn, items, customer, productSearchTerm, customerSearchTerm, isProcessing } = state || {};
+    const { activeReturn, items, customer, productSearchTerm, customerSearchTerm, isProcessing, isEditMode } = state || {};
 
     const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
     const [returnToView, setReturnToView] = useState<SaleReturn | null>(null);
@@ -152,7 +151,8 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
         setState(p => ({...p, isProcessing: true}));
 
         try {
-            const newReturnData: Omit<SaleReturn, 'id' | 'journalEntryId'> = {
+            const newReturnData: SaleReturn = {
+                ...activeReturn,
                 customer: customer?.name,
                 date: activeReturn.date!,
                 items: items,
@@ -161,18 +161,26 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
                 total: totals.grandTotal,
             };
 
-            const createdReturn = addSaleReturn(newReturnData);
-            showToast(`تم إنشاء مرتجع المبيعات ${createdReturn.id} بنجاح.`);
-            if (print) {
-                setReturnToView(createdReturn);
+            let resultReturn;
+            if (isEditMode) {
+                resultReturn = updateSaleReturn(newReturnData);
+                showToast(`تم تعديل المرتجع ${resultReturn.id} بنجاح.`);
+                if (windowId) closeWindow(windowId);
+            } else {
+                resultReturn = addSaleReturn(newReturnData);
+                showToast(`تم إنشاء مرتجع المبيعات ${resultReturn.id} بنجاح.`);
+                resetForm();
             }
-            resetForm();
+
+            if (print) {
+                setReturnToView(resultReturn);
+            }
         } catch (error: any) {
             showToast(error.message || 'حدث خطأ أثناء حفظ المرتجع', 'error');
         } finally {
             setState(p => ({...p, isProcessing: false}));
         }
-    }, [items, customer, activeReturn, totals, addSaleReturn, showToast, resetForm, setState]);
+    }, [items, customer, activeReturn, totals, addSaleReturn, updateSaleReturn, isEditMode, showToast, resetForm, setState, windowId, closeWindow]);
 
     const handleItemUpdate = (index: number, field: 'quantity' | 'price' | 'discount' | 'unitId', value: string) => {
         setState(prev => {
@@ -266,7 +274,7 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
         <div className="flex flex-col h-full bg-[--bg] text-[--text] font-sans">
             <header className="flex-shrink-0 bg-[--panel] dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{'مرتجع مبيعات جديد'}</h1>
+                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{isEditMode ? 'تعديل مرتجع مبيعات' : 'مرتجع مبيعات جديد'}</h1>
                     <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeReturn.id}</span>
                     <input type="date" value={activeReturn.date || ''} onChange={e => setState(p => ({...p, activeReturn: {...p.activeReturn, date: e.target.value}}))} className="input-style w-36"/>
                 </div>
@@ -352,8 +360,8 @@ const SaleReturnsForm: React.FC<SaleReturnsFormProps> = ({ windowId, windowState
                         </div>
                     </div>
                     <div className="bg-[--panel] dark:bg-gray-800 rounded-lg shadow-[--shadow] p-4 space-y-3">
-                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : 'حفظ وطباعة الإشعار'}</button>
-                        <button onClick={resetForm} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">مرتجع جديد</button>
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-[--accent] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-wait">{isProcessing ? 'جاري الحفظ...' : (isEditMode ? 'حفظ وطباعة التعديلات' : 'حفظ وطباعة الإشعار')}</button>
+                        <button onClick={() => isEditMode ? closeWindow(windowId!) : resetForm()} className="w-full text-md p-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600">{isEditMode ? 'إلغاء' : 'مرتجع جديد'}</button>
                     </div>
                 </aside>
             </div>

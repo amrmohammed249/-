@@ -6,11 +6,11 @@ import PageHeader from '../shared/PageHeader';
 import DataTable from '../shared/DataTable';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import PurchaseReturnView from './PurchaseReturnView';
-import { PlusIcon, ArrowUturnLeftIcon } from '../icons';
+import { PlusIcon, ArrowUturnLeftIcon, PencilIcon } from '../icons';
 import type { PurchaseReturn } from '../../types';
 
 const PurchaseReturns: React.FC = () => {
-  const { purchaseReturns, deletePurchaseReturn, showToast, sequences } = useContext(DataContext);
+  const { purchaseReturns, deletePurchaseReturn, showToast, sequences, suppliers } = useContext(DataContext);
   const { openWindow } = useContext(WindowContext);
   const navigate = useNavigate();
 
@@ -21,6 +21,25 @@ const PurchaseReturns: React.FC = () => {
   const handleView = (purchaseReturn: PurchaseReturn) => {
     setReturnToDelete(purchaseReturn);
     setViewModalOpen(true);
+  };
+
+  const handleEdit = (purchaseReturn: PurchaseReturn) => {
+    const supplier = suppliers.find((s: any) => s.name === purchaseReturn.supplier);
+    openWindow({
+        path: '/purchases-returns/new',
+        title: `تعديل مرتجع مشتريات ${purchaseReturn.id}`,
+        icon: <PencilIcon />,
+        state: {
+            isEditMode: true,
+            activeReturn: purchaseReturn,
+            items: JSON.parse(JSON.stringify(purchaseReturn.items)),
+            supplier: supplier || null,
+            productSearchTerm: '',
+            supplierSearchTerm: '',
+            isProcessing: false,
+            itemErrors: {},
+        }
+    });
   };
   
   const handleDelete = (purchaseReturn: PurchaseReturn) => {
@@ -80,8 +99,9 @@ const PurchaseReturns: React.FC = () => {
       <DataTable 
         columns={columns} 
         data={purchaseReturns}
-        actions={['view', 'delete']}
+        actions={['view', 'edit', 'delete']}
         onView={handleView}
+        onEdit={handleEdit}
         onDelete={handleDelete}
         searchableColumns={['id', 'supplier', 'date', 'originalPurchaseId']}
       />

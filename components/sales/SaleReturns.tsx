@@ -8,10 +8,10 @@ import ConfirmationModal from '../shared/ConfirmationModal';
 import SaleReturnView from './SaleReturnView';
 import { PlusIcon } from '../icons/PlusIcon';
 import type { SaleReturn } from '../../types';
-import { ArrowUturnLeftIcon } from '../icons';
+import { ArrowUturnLeftIcon, PencilIcon } from '../icons';
 
 const SaleReturns: React.FC = () => {
-  const { saleReturns, deleteSaleReturn, showToast, sequences } = useContext(DataContext);
+  const { saleReturns, deleteSaleReturn, showToast, sequences, customers } = useContext(DataContext);
   const { openWindow } = useContext(WindowContext);
   const navigate = useNavigate();
 
@@ -22,6 +22,24 @@ const SaleReturns: React.FC = () => {
   const handleView = (saleReturn: SaleReturn) => {
     setReturnToDelete(saleReturn);
     setViewModalOpen(true);
+  };
+
+  const handleEdit = (saleReturn: SaleReturn) => {
+    const customer = customers.find((c: any) => c.name === saleReturn.customer);
+    openWindow({
+        path: '/sales-returns/new',
+        title: `تعديل مرتجع مبيعات ${saleReturn.id}`,
+        icon: <PencilIcon />,
+        state: {
+            isEditMode: true,
+            activeReturn: saleReturn,
+            items: JSON.parse(JSON.stringify(saleReturn.items)),
+            customer: customer || null,
+            productSearchTerm: '',
+            customerSearchTerm: '',
+            isProcessing: false,
+        }
+    });
   };
 
   const handleDelete = (saleReturn: SaleReturn) => {
@@ -80,8 +98,9 @@ const SaleReturns: React.FC = () => {
       <DataTable 
         columns={columns} 
         data={saleReturns}
-        actions={['view', 'delete']}
+        actions={['view', 'edit', 'delete']}
         onView={handleView}
+        onEdit={handleEdit}
         onDelete={handleDelete}
         searchableColumns={['id', 'customer', 'date', 'originalSaleId']}
       />

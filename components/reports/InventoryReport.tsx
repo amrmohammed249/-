@@ -18,15 +18,15 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
         const targetDate = new Date(asOfDate);
         targetDate.setHours(23, 59, 59, 999);
 
-        // 1. حساب الأرصدة التاريخية
+        // 1. خوارزمية حساب الأرصدة التاريخية (Backtracking)
         const processedItems = inventory.map((item: InventoryItem) => {
-            const getQtyBase = (line: LineItem, invItem: InventoryItem) => {
+            const getQtyBase = (line: any, invItem: InventoryItem) => {
                 if (line.unitId === 'base') return line.quantity;
                 const pUnit = invItem.units.find((u: PackingUnit) => u.id === line.unitId);
                 return pUnit ? line.quantity * pUnit.factor : line.quantity;
             };
 
-            // حساب كافة الحركات المستقبلية بعد التاريخ المحدد لعكس أثرها
+            // حساب كافة الحركات التي تمت بعد التاريخ المستهدف
             const futureSales = sales.filter(s => !s.isArchived && new Date(s.date) > targetDate)
                 .flatMap(s => s.items).filter(i => i.itemId === item.id).reduce((sum, i) => sum + getQtyBase(i, item), 0);
             
@@ -43,13 +43,13 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
                 .flatMap(adj => adj.items.filter(i => i.itemId === item.id).map(i => adj.type === 'إضافة' ? i.quantity : -i.quantity))
                 .reduce((sum, qty) => sum + qty, 0);
 
-            // التاريخي = الحالي - (المشتريات المستقبلية - المبيعات المستقبلية + مرتجع بيع مستقبلي - مرتجع شراء مستقبلي + تسويات مستقبلية)
+            // الرصيد التاريخي = الرصيد الحالي - (صافي التغير بعد التاريخ المستهدف)
             const futureNetChange = (futurePurchases + futureSaleReturns + (futureAdjustments > 0 ? futureAdjustments : 0)) 
                                   - (futureSales + futurePurchaseReturns + (futureAdjustments < 0 ? Math.abs(futureAdjustments) : 0));
             
             const historyStock = item.stock - futureNetChange;
 
-            // تنسيق الكمية المفصلة (كرتونة و كيلو)
+            // حساب الوحدات الكبرى (مثل: كرتونة و قطعة)
             let detailedQty = '';
             if (item.units && item.units.length > 0) {
                 const sortedUnits = [...item.units].sort((a, b) => b.factor - a.factor);
@@ -74,13 +74,13 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
             };
         });
 
-        // 2. الفلترة حسب النوع
+        // 2. تطبيق فلترة نوع التقرير
         let filteredData = processedItems;
-        let title = "تقرير أرصدة المخزون (كل الأصناف)";
+        let title = "تقرير جرد المخزون (كل الأصناف)";
 
         if (reportType === 'stock_purchase' || reportType === 'stock_sale') {
             filteredData = processedItems.filter(i => i.stock > 0);
-            title = reportType === 'stock_sale' ? "أرصدة المخزون المتوفرة (بسعر البيع)" : "أرصدة المخزون المتوفرة (بسعر التكلفة)";
+            title = reportType === 'stock_sale' ? "أرصدة المخزون المتوفرة (بقيمة البيع)" : "أرصدة المخزون المتوفرة (بتكلفة الشراء)";
         }
 
         if (itemId) {
@@ -91,16 +91,14 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
             { header: 'كود الصنف', accessor: 'id', sortable: true },
             { header: 'اسم الصنف', accessor: 'name', sortable: true },
             { 
-                header: 'الكمية المتوفرة', 
+                header: 'الكمية (أساسية)', 
                 accessor: 'stock', 
-                render: (row: any) => (
-                    <div className="flex flex-col">
-                        <span className="font-mono font-bold text-gray-900 dark:text-white">{row.stock} {row.baseUnit}</span>
-                        {row.detailedQty && (
-                            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">{row.detailedQty}</span>
-                        )}
-                    </div>
-                )
+                render: (row: any) => <span className="font-mono font-bold text-gray-900 dark:text-white">{row.stock} {row.baseUnit}</span> 
+            },
+            { 
+                header: 'الكمية (وحدات كبرى)', 
+                accessor: 'detailedQty',
+                render: (row: any) => <span className="text-blue-600 dark:text-blue-400 font-bold">{row.detailedQty || '-'}</span>
             },
             { 
                 header: 'سعر التكلفة', 
@@ -143,7 +141,7 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
                     <div>
                         <h3 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{reportTitle}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                           حالة الجرد محسوبة حتى نهاية يوم: <span className="font-bold text-blue-600 underline">{asOfDate}</span>
+                           حالة المخزون محسوبة حتى تاريخ: <span className="font-bold text-blue-600 underline">{asOfDate}</span>
                         </p>
                     </div>
                 </div>
@@ -156,12 +154,12 @@ const InventoryReport: React.FC<ReportProps> = ({ asOfDate, itemId, onDataReady,
                 />
                 
                 <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 no-print">
-                    <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border dark:border-gray-600">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase mb-1">إجمالي عدد الأصناف</p>
+                    <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-lg border dark:border-gray-600 text-center">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase mb-1">عدد الأصناف في التقرير</p>
                         <p className="text-2xl font-bold">{reportData.length}</p>
                     </div>
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 md:col-span-2">
-                        <p className="text-xs text-blue-600 dark:text-blue-400 font-bold uppercase mb-1">إجمالي القيمة المالية للمخزون الظاهر</p>
+                    <div className="p-4 bg-blue-100 dark:bg-blue-900/40 rounded-lg border border-blue-200 dark:border-blue-800 md:col-span-2 text-center">
+                        <p className="text-xs text-blue-600 dark:text-blue-400 font-bold uppercase mb-1">إجمالي القيمة المالية للمخزون المعروض</p>
                         <p className="text-2xl font-bold font-mono text-blue-900 dark:text-blue-100">
                             {reportData.reduce((s, i) => s + i.inventoryValue, 0).toLocaleString()} ج.م
                         </p>

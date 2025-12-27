@@ -1427,7 +1427,8 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             const salesTotal = state.sales.filter(s => s.customer === c.name && !s.isArchived).reduce((sum, s) => sum + s.total, 0);
             const returnsTotal = state.saleReturns.filter(sr => sr.customer === c.name && !sr.isArchived).reduce((sum, sr) => sum + sr.total, 0);
             const paymentsTotal = state.treasury.filter(t => t.partyId === c.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
-            c.balance = customerOpeningBalance + salesTotal - returnsTotal - paymentsTotal;
+            const totalRefunds = state.treasury.filter((t: TreasuryTransaction) => t.partyType === 'customer' && t.partyId === c.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+            c.balance = customerOpeningBalance + salesTotal + totalRefunds - returnsTotal - paymentsTotal;
         });
 
         newSuppliers.forEach((s: Supplier) => {
@@ -1435,7 +1436,8 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             const purchasesTotal = state.purchases.filter(p => p.supplier === s.name && !p.isArchived).reduce((sum, p) => sum + p.total, 0);
             const returnsTotal = state.purchaseReturns.filter(pr => pr.supplier === s.name && !pr.isArchived).reduce((sum, pr) => sum + pr.total, 0);
             const paymentsTotal = state.treasury.filter(t => t.partyId === s.id && t.type === 'سند صرف' && !t.isArchived).reduce((sum, t) => sum + Math.abs(t.amount), 0);
-            s.balance = supplierOpeningBalance + purchasesTotal - returnsTotal - paymentsTotal;
+            const totalRefunds = state.treasury.filter((t: TreasuryTransaction) => t.partyType === 'supplier' && t.partyId === s.id && t.type === 'سند قبض' && !t.isArchived).reduce((sum, t) => sum + t.amount, 0);
+            s.balance = supplierOpeningBalance + purchasesTotal + totalRefunds - returnsTotal - paymentsTotal;
         });
         
         // Re-calculate balances for manual journal entries linked to parties
@@ -2805,7 +2807,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
     const updateSaleReturn = (returnData: SaleReturn): SaleReturn => {
         const originalReturn = state.saleReturns.find(sr => sr.id === returnData.id);
         if (!originalReturn) {
-            showToast('لم يتم العثور على المرتجع الأصلي.', 'error');
+            showToast('لم يتم العثور على المرتجع الأصلي للتعديل.', 'error');
             throw new Error('Original sale return not found');
         }
 
@@ -2981,20 +2983,20 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             updatedJournal = state.journal.map(e => e.id === entryToArchive.id ? { ...e, isArchived: true } : e);
         }
         
-        // 4. Remove the sale return (it's not archived, it's deleted)
-        const updatedSaleReturns = state.saleReturns.filter(sr => sr.id !== returnId);
+        // 4. Update the sale returns list (mark as archived)
+        const updatedSaleReturns = state.saleReturns.map(sr => sr.id === returnId ? { ...sr, isArchived: true } : sr);
 
         const log = {
             id: `log-${Date.now()}`,
             timestamp: new Date().toISOString(),
             userId: currentUser!.id,
             username: currentUser!.name,
-            action: 'حذف مرتجع مبيعات',
-            details: `تم حذف مرتجع المبيعات رقم #${returnId}.`
+            action: 'أرشفة مرتجع مبيعات',
+            details: `تمت أرشفة مرتجع المبيعات رقم #${returnId}.`
         };
         
         dispatch({
-            type: 'ARCHIVE_SALE_RETURN', // Re-using this action type to update state
+            type: 'ARCHIVE_SALE_RETURN',
             payload: {
                 updatedSaleReturns,
                 updatedInventory,
@@ -3005,7 +3007,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             }
         });
     
-        return { success: true, message: 'تم الحذف بنجاح.' };
+        return { success: true, message: 'تمت الأرشفة بنجاح.' };
     };
     const unarchiveSaleReturn = (id: string): void => {};
 
@@ -3098,7 +3100,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
     const updatePurchaseReturn = (returnData: PurchaseReturn): PurchaseReturn => {
         const originalReturn = state.purchaseReturns.find(pr => pr.id === returnData.id);
         if (!originalReturn) {
-            showToast('لم يتم العثور على المرتجع الأصلي.', 'error');
+            showToast('لم يتم العثور على المرتجع الأصلي للتعديل.', 'error');
             throw new Error('Original purchase return not found');
         }
 
@@ -3202,22 +3204,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             return { success: false, message: 'لم يتم العثور على المورد المرتبط بالمرتجع.' };
         }
     
-        // Check if it's the last transaction for the supplier
-        const supplierTransactions = [
-            ...state.purchases.filter(p => p.supplier === supplier.name && !p.isArchived).map(p => ({ date: p.date, id: p.id, type: 'purchase' })),
-            ...state.purchaseReturns.filter(pr => pr.supplier === supplier.name && !pr.isArchived).map(pr => ({ date: pr.date, id: pr.id, type: 'purchaseReturn' })),
-            ...state.treasury.filter(t => t.partyType === 'supplier' && t.partyId === supplier.id && !t.isArchived).map(t => ({ date: t.date, id: t.id, type: 'treasury' })),
-        ].sort((a, b) => {
-            const dateA = new Date(a.date).getTime();
-            const dateB = new Date(b.date).getTime();
-            if (dateA !== dateB) return dateB - dateA;
-            return b.id.localeCompare(a.id);
-        });
-    
-        if (supplierTransactions.length > 0 && (supplierTransactions[0].id !== returnId || supplierTransactions[0].type !== 'purchaseReturn')) {
-            return { success: false, message: 'لا يمكن حذف المرتجع لأنه ليس آخر حركة مالية للمورد. يجب التعامل مع الحركات الأحدث أولاً.' };
-        }
-    
         // 1. Reverse inventory
         const updatedInventory = JSON.parse(JSON.stringify(state.inventory));
         purchaseReturnToDelete.items.forEach(lineItem => {
@@ -3253,16 +3239,16 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             updatedJournal = state.journal.map(e => e.id === entryToArchive.id ? { ...e, isArchived: true } : e);
         }
     
-        // 4. Remove the purchase return
-        const updatedPurchaseReturns = state.purchaseReturns.filter(pr => pr.id !== returnId);
+        // 4. Update the purchase returns list (mark as archived)
+        const updatedPurchaseReturns = state.purchaseReturns.map(pr => pr.id === returnId ? { ...pr, isArchived: true } : pr);
     
         const log = {
             id: `log-${Date.now()}`,
             timestamp: new Date().toISOString(),
             userId: currentUser!.id,
             username: currentUser!.name,
-            action: 'حذف مرتجع مشتريات',
-            details: `تم حذف مرتجع المشتريات رقم #${returnId}.`
+            action: 'أرشفة مرتجع مشتريات',
+            details: `تمت أرشفة مرتجع المشتريات رقم #${returnId}.`
         };
     
         dispatch({
@@ -3277,7 +3263,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
             }
         });
     
-        return { success: true, message: 'تم الحذف بنجاح.' };
+        return { success: true, message: 'تمت الأرشفة بنجاح.' };
     };
     const unarchivePurchaseReturn = (id: string): void => {};
 

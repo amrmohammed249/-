@@ -2,9 +2,9 @@ import React, { useState, useContext } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
 import AccessDenied from '../shared/AccessDenied';
-import { Sale } from '../../types';
+import { Sale, SaleReturn, PurchaseReturn } from '../../types';
 
-type ArchiveTab = 'customers' | 'suppliers' | 'sales' | 'purchases' | 'inventory' | 'journal' | 'users';
+type ArchiveTab = 'customers' | 'suppliers' | 'sales' | 'purchases' | 'saleReturns' | 'purchaseReturns' | 'inventory' | 'journal' | 'users';
 
 const Archive: React.FC = () => {
     const [activeTab, setActiveTab] = useState<ArchiveTab>('customers');
@@ -13,6 +13,8 @@ const Archive: React.FC = () => {
         archivedSuppliers, unarchiveSupplier,
         archivedSales, unarchiveSale,
         archivedPurchases, unarchivePurchase,
+        archivedSaleReturns, unarchiveSaleReturn,
+        archivedPurchaseReturns, unarchivePurchaseReturn,
         archivedInventory, unarchiveItem,
         archivedJournal, unarchiveJournalEntry,
         archivedUsers, unarchiveUser,
@@ -51,6 +53,20 @@ const Archive: React.FC = () => {
         { header: 'الإجمالي', accessor: 'total', render: (row: any) => `${row.total.toLocaleString()} جنيه مصري` },
     ];
 
+    const saleReturnsColumns = [
+        { header: 'رقم المرتجع', accessor: 'id' },
+        { header: 'العميل', accessor: 'customer' },
+        { header: 'التاريخ', accessor: 'date' },
+        { header: 'الإجمالي', accessor: 'total', render: (row: SaleReturn) => `${row.total.toLocaleString()} جنيه مصري` },
+    ];
+
+    const purchaseReturnsColumns = [
+        { header: 'رقم المرتجع', accessor: 'id' },
+        { header: 'المورد', accessor: 'supplier' },
+        { header: 'التاريخ', accessor: 'date' },
+        { header: 'الإجمالي', accessor: 'total', render: (row: PurchaseReturn) => `${row.total.toLocaleString()} جنيه مصري` },
+    ];
+
     const inventoryColumns = [
         { header: 'كود الصنف', accessor: 'id' },
         { header: 'اسم الصنف', accessor: 'name' },
@@ -74,6 +90,8 @@ const Archive: React.FC = () => {
         { key: 'suppliers', label: 'الموردين', data: archivedSuppliers, columns: supplierColumns, onUnarchive: unarchiveSupplier, searchable: ['id', 'name', 'contact'] },
         { key: 'sales', label: 'المبيعات', data: archivedSales, columns: salesColumns, onUnarchive: unarchiveSale, searchable: ['id', 'customer', 'date'] },
         { key: 'purchases', label: 'المشتريات', data: archivedPurchases, columns: purchasesColumns, onUnarchive: unarchivePurchase, searchable: ['id', 'supplier', 'date'] },
+        { key: 'saleReturns', label: 'مردودات مبيعات', data: archivedSaleReturns, columns: saleReturnsColumns, onUnarchive: unarchiveSaleReturn, searchable: ['id', 'customer', 'date'] },
+        { key: 'purchaseReturns', label: 'مردودات مشتريات', data: archivedPurchaseReturns, columns: purchaseReturnsColumns, onUnarchive: unarchivePurchaseReturn, searchable: ['id', 'supplier', 'date'] },
         { key: 'inventory', label: 'المخزون', data: archivedInventory, columns: inventoryColumns, onUnarchive: unarchiveItem, searchable: ['id', 'name'] },
         { key: 'journal', label: 'القيود اليومية', data: archivedJournal, columns: journalColumns, onUnarchive: unarchiveJournalEntry, searchable: ['id', 'date', 'description'] },
         { key: 'users', label: 'المستخدمين', data: archivedUsers, columns: userColumns, onUnarchive: unarchiveUser, searchable: ['name', 'username', 'role'] },

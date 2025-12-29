@@ -1,10 +1,10 @@
-
 import React, { useContext } from 'react';
 import Modal from '../shared/Modal';
 import { DataContext } from '../../context/DataContext';
 import { PriceQuote } from '../../types';
 import { PrinterIcon } from '../icons/PrinterIcon';
 import { ArrowDownTrayIcon } from '../icons/ArrowDownTrayIcon';
+import { PhotoIcon } from '../icons/PhotoIcon';
 
 declare var jspdf: any;
 declare var html2canvas: any;
@@ -31,7 +31,6 @@ const QuoteView: React.FC<QuoteViewProps> = ({ isOpen, onClose, quote }) => {
         backgroundColor: isDarkMode ? '#111827' : '#ffffff' 
       })
       .then(canvas => {
-          // Use JPEG with 0.7 quality to reduce file size
           const imgData = canvas.toDataURL('image/jpeg', 0.7);
           const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
           const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -40,6 +39,20 @@ const QuoteView: React.FC<QuoteViewProps> = ({ isOpen, onClose, quote }) => {
           pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
           pdf.save(`بيان-أسعار-${quote.id}.pdf`);
         });
+    }
+  };
+
+  const handleExportImage = () => {
+    const input = document.getElementById('printable-quote');
+    if (input) {
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
+      .then(canvas => {
+          const link = document.createElement('a');
+          link.download = `عرض-سعر-${quote.id}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+      });
     }
   };
 
@@ -53,7 +66,8 @@ const QuoteView: React.FC<QuoteViewProps> = ({ isOpen, onClose, quote }) => {
     <Modal isOpen={isOpen} onClose={onClose} title={`بيان أسعار: ${quote.id}`} size="4xl">
       <div className="no-print mb-6 flex flex-wrap gap-2 justify-end">
         <ActionButton icon={<PrinterIcon className="w-5 h-5" />} label="طباعة" onClick={handlePrint} />
-        <ActionButton icon={<ArrowDownTrayIcon className="w-5 h-5" />} label="تصدير PDF" onClick={handleExportPDF} />
+        <ActionButton icon={<ArrowDownTrayIcon className="w-5 h-5" />} label="PDF" onClick={handleExportPDF} />
+        <ActionButton icon={<PhotoIcon className="w-5 h-5 text-green-500" />} label="صورة" onClick={handleExportImage} />
       </div>
 
       <div id="printable-quote" className="p-8 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-200 rounded-sm shadow-lg">

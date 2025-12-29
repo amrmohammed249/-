@@ -1,4 +1,3 @@
-
 import React, { useState, useContext, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DataContext } from '../../context/DataContext';
 import AccessDenied from '../shared/AccessDenied';
@@ -15,7 +14,7 @@ import PurchaseReturnsReport from './PurchaseReturnsReport';
 import { AccountNode, InventoryItem } from '../../types';
 import TreasuryReport from './TreasuryReport';
 import ItemMovementReport from './ItemMovementReport';
-import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon, BoxIcon, TrashIcon, BanknotesIcon, ShoppingCartIcon, ClipboardDocumentListIcon } from '../icons';
+import { EyeIcon, PrinterIcon, ArrowDownTrayIcon, ArrowUturnLeftIcon, XIcon, MagnifyingGlassIcon, BoxIcon, TrashIcon, BanknotesIcon, ShoppingCartIcon, ClipboardDocumentListIcon, PhotoIcon } from '../icons';
 import CustomerBalancesReport from './CustomerBalancesReport';
 import SupplierBalancesReport from './SupplierBalancesReport';
 import CustomerProfitabilityReport from './CustomerProfitabilityReport';
@@ -124,6 +123,20 @@ const Reports: React.FC = () => {
         }
     };
 
+    const onExportImage = () => {
+        const input = document.getElementById('printable-report');
+        if (input) {
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
+            .then(canvas => {
+                const link = document.createElement('a');
+                link.download = `${reportExportProps.name}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+    };
+
     const handleToggleExcludedItem = (id: string) => {
         setExcludedItemIds(prev => 
             prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
@@ -193,6 +206,9 @@ const Reports: React.FC = () => {
                             <h2 className="text-lg font-bold">{reportTabs.find(t => t.key === activeTab)?.label}</h2>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button onClick={onExportImage} className="btn-secondary-small bg-green-600 text-white hover:bg-green-700 border-none flex items-center gap-2">
+                                <PhotoIcon className="w-4 h-4" /> صورة
+                            </button>
                             <button onClick={onExportPDF} className="btn-secondary-small bg-red-500 text-white hover:bg-red-600 border-none flex items-center gap-2">
                                 <ArrowDownTrayIcon className="w-4 h-4" /> PDF
                             </button>

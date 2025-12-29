@@ -1,4 +1,3 @@
-
 export * from './ArrowDownOnSquareIcon';
 export * from './ArrowDownTrayIcon';
 export * from './ArrowLeftOnRectangleIcon';
@@ -50,6 +49,7 @@ export * from './OfficeBuildingIcon';
 export * from './PencilIcon';
 export * from './PencilSquareIcon';
 export * from './PhoneIcon';
+export * from './PhotoIcon';
 export * from './PlusIcon';
 export * from './PrinterIcon';
 export * from './QuestionMarkCircleIcon';

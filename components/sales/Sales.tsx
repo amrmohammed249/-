@@ -134,6 +134,12 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
     }, [items, activeInvoice?.status, paidAmount]);
 
     const handleProductSelect = useCallback((product: InventoryItem) => {
+        // التحقق من المخزون قبل الإضافة
+        if (!generalSettings.allowNegativeStock && product.stock <= 0) {
+            showToast(`لا يمكن إضافة "${product.name}". المخزون الحالي صفر.`, 'error');
+            return;
+        }
+
         let initialPrice = product.salePrice;
         const foundPrice = getLastPriceForItem(product.id);
         if (foundPrice) initialPrice = foundPrice.price;
@@ -142,6 +148,11 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
             const existingItem = currentItems.find(item => item.itemId === product.id);
             let newItems;
             if (existingItem) {
+                // التحقق من المخزون عند زيادة الكمية بالضغط المتكرر
+                if (!generalSettings.allowNegativeStock && (existingItem.quantity + 1) > product.stock) {
+                    showToast(`وصلت للحد الأقصى المتاح من "${product.name}" (${product.stock}).`, 'warning');
+                    return prev;
+                }
                 newItems = currentItems.map(item =>
                     item.itemId === product.id ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.price - item.discount } : item
                 );
@@ -153,7 +164,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         });
         setHighlightedProductIndex(-1);
         productSearchRef.current?.focus();
-    }, [setState, getLastPriceForItem]);
+    }, [setState, getLastPriceForItem, generalSettings.allowNegativeStock, showToast]);
     
     useEffect(() => {
         const isCurrentWindow = windowId ? visibleWindowId === windowId : !visibleWindowId;
@@ -169,6 +180,13 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
         if (activeInvoice.status === 'جزئية' && (paidAmountValue <= 0 || paidAmountValue >= totals.grandTotal)) {
             showToast('المبلغ المدفوع جزئياً يجب أن يكون أكبر من صفر وأقل من الإجمالي.', 'error'); return;
         }
+        
+        // منع الحفظ النهائي في حالة وجود أخطاء كمية
+        if (Object.keys(itemErrors || {}).length > 0) {
+            showToast('يرجى تصحيح الكميات المتجاوزة للمخزون أولاً.', 'error');
+            return;
+        }
+
         setState(p => ({...p, isProcessing: true}));
         try {
             if (isEditMode) {
@@ -191,7 +209,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
             else { if(windowId) closeWindow(windowId); else navigate('/sales'); }
         } catch (error: any) { showToast(error.message || 'حدث خطأ أثناء حفظ الفاتورة', 'error'); } 
         finally { setState(p => ({...p, isProcessing: false})); }
-    }, [isEditMode, items, customer, activeInvoice, totals, paidAmountValue, addSale, updateSale, showToast, navigate, resetInvoice, windowId, closeWindow, setState, addTreasuryTransaction, treasuriesList]);
+    }, [isEditMode, items, customer, activeInvoice, totals, addSale, updateSale, showToast, navigate, resetInvoice, windowId, closeWindow, setState, addTreasuryTransaction, treasuriesList, itemErrors]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -218,9 +236,11 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                 else { const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === value); if (packingUnit) { item.unitName = packingUnit.name; item.price = packingUnit.salePrice; } }
             } else { const numValue = parseFloat(value) || 0; (item as any)[field] = numValue; }
             let newErrors = {...(prev.itemErrors || {})};
+            
             if (field === 'quantity' || field === 'unitId') {
                  let quantityInBaseUnit = item.quantity;
                  if (item.unitId !== 'base') { const packingUnit = inventoryItem.units.find(u => u.id === item.unitId); if(packingUnit) quantityInBaseUnit *= packingUnit.factor; }
+                
                 let availableStock = inventoryItem.stock;
                 if (isEditMode) {
                     const originalSale = sales.find((s: Sale) => s.id === id);
@@ -231,8 +251,14 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                         availableStock += origQty;
                     }
                 }
-                if (!generalSettings.allowNegativeStock && quantityInBaseUnit > availableStock) newErrors[item.itemId] = `المتاح: ${availableStock}`;
-                else delete newErrors[item.itemId];
+                
+                if (!generalSettings.allowNegativeStock && quantityInBaseUnit > availableStock) {
+                    newErrors[item.itemId] = `المتاح: ${availableStock}`;
+                    // إظهار تنبيه فوري
+                    showToast(`تنبيه: الكمية المدخلة للصنف "${item.itemName}" تتجاوز المتاح في المخزن (${availableStock}).`, 'error');
+                } else {
+                    delete newErrors[item.itemId];
+                }
             }
             item.total = (item.quantity * item.price) - item.discount;
             newItems[index] = item;
@@ -357,7 +383,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                                 const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
                                 const error = (itemErrors || {})[item.itemId];
                                 return (
-                                    <div key={item.itemId + index} className="p-3 bg-white dark:bg-gray-800" onFocus={() => setActiveLineIndex(index)}>
+                                    <div key={item.itemId + index} className={`p-3 border-r-4 ${error ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-transparent bg-white dark:bg-gray-800'}`} onFocus={() => setActiveLineIndex(index)}>
                                         <div className="flex justify-between items-start mb-2">
                                             <span className="font-bold text-sm text-gray-900 dark:text-white truncate flex-1 ml-4">{item.itemName}</span>
                                             <button onClick={() => handleItemRemove(index)} className="text-red-400 p-1"><TrashIcon className="w-5 h-5"/></button>
@@ -365,8 +391,8 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                                         <div className="grid grid-cols-2 gap-3">
                                             <div className="relative">
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase">الكمية</label>
-                                                <input type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} className={`input-style w-full text-center text-sm py-1.5 ${error ? 'border-red-500' : ''}`} />
-                                                {error && <p className="text-[10px] text-red-500 absolute top-full left-0">{error}</p>}
+                                                <input type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} className={`input-style w-full text-center text-sm py-1.5 ${error ? 'border-red-500 ring-1 ring-red-500' : ''}`} />
+                                                {error && <p className="text-[10px] font-bold text-red-600 absolute top-full left-0">{error}</p>}
                                             </div>
                                             <div>
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase">الوحدة</label>
@@ -402,9 +428,12 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                                     const isMatchingLastPrice = lastPriceData !== null && Math.abs(item.price - lastPriceData.price) < 0.01;
                                     const priceInputClass = `input-style w-full text-center ${isMatchingLastPrice ? 'bg-green-50 text-green-700 border-green-500 font-bold focus:ring-green-500' : ''}`;
                                     return (
-                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/20" onFocus={() => setActiveLineIndex(index)}>
+                                        <tr key={item.itemId + index} className={`border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/20 ${error ? 'bg-red-50 dark:bg-red-900/10' : ''}`} onFocus={() => setActiveLineIndex(index)}>
                                             <td className="px-2 py-2 text-xs font-mono text-center">{item.itemId}</td><td className="px-2 py-2 font-semibold truncate">{item.itemName}</td>
-                                            <td className="px-2 py-2"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].quantity = el; }} type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'quantity')} className={`input-style w-full text-center ${error ? 'border-red-500' : ''}`} /></td>
+                                            <td className="px-2 py-2 relative">
+                                                <input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].quantity = el; }} type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'quantity')} className={`input-style w-full text-center ${error ? 'border-red-500 ring-1 ring-red-500' : ''}`} />
+                                                {error && <span className="absolute bottom-0 right-0 left-0 text-[9px] text-red-600 font-bold text-center translate-y-1/2 bg-white dark:bg-gray-800 px-1 border border-red-500 rounded z-10">{error}</span>}
+                                            </td>
                                             <td className="px-2 py-2"><select ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].unit = el; }} value={item.unitId} onChange={e => handleItemUpdate(index, 'unitId', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'unit')} className="input-style w-full">{unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}</select></td>
                                             <td className="px-2 py-2"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].price = el; }} type="number" value={item.price} onChange={e => handleItemUpdate(index, 'price', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'price')} className={priceInputClass} /></td>
                                             <td className="px-2 py-2"><input type="number" value={item.discount} onChange={e => handleItemUpdate(index, 'discount', e.target.value)} className="input-style w-full text-center"/></td>
@@ -416,7 +445,7 @@ const Sales: React.FC<SalesProps> = ({ windowId, windowState, onStateChange }) =
                             </tbody>
                         </table>
                     </div>
-                    {lastPriceInfo && activeLineIndex !== null && items[activeLineIndex] && (
+                    {lastPriceInfo && activeLineIndex !== null && (
                         <div className="p-2 sm:p-3 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800 flex items-center gap-2 text-xs sm:text-sm text-blue-800 dark:text-blue-200">
                             <InformationCircleIcon className="w-4 h-4 sm:w-5 h-5 text-blue-500 shrink-0" />
                             <span className="truncate">{lastPriceInfo}</span>

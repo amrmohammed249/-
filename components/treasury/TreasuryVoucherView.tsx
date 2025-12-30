@@ -64,10 +64,10 @@ const TreasuryVoucherView: React.FC<ViewProps> = ({ isOpen, onClose, transaction
     let party = null, pBalance = null, cBalance = null;
     if (transaction.partyType === 'customer') {
         party = customers.find(c => c.id === transaction.partyId);
-        if (party) { cBalance = party.balance; pBalance = transaction.type === 'سند صرف' ? cBalance - amount : cBalance + amount; }
+        if (party) { cBalance = party.balance; pBalance = transaction.type === 'سند قبض' ? cBalance + amount : cBalance - amount; }
     } else if (transaction.partyType === 'supplier') {
         party = suppliers.find(s => s.id === transaction.partyId);
-        if (party) { cBalance = party.balance; pBalance = transaction.type === 'سند صرف' ? cBalance + amount : cBalance - amount; }
+        if (party) { cBalance = party.balance; pBalance = transaction.type === 'سند صرف' ? cBalance - amount : cBalance + amount; }
     }
     return { previousBalance: pBalance, currentBalance: cBalance };
   }, [transaction, customers, suppliers]);
@@ -94,8 +94,11 @@ const TreasuryVoucherView: React.FC<ViewProps> = ({ isOpen, onClose, transaction
   const handleExportImage = () => {
     const input = document.getElementById('printable-voucher');
     if (input) {
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
+      html2canvas(input, { 
+        scale: 1.5, 
+        useCORS: true, 
+        backgroundColor: '#ffffff' 
+      })
       .then(canvas => {
           const link = document.createElement('a');
           link.download = `سند-${transaction.id}.png`;

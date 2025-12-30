@@ -126,14 +126,17 @@ const Reports: React.FC = () => {
     const onExportImage = () => {
         const input = document.getElementById('printable-report');
         if (input) {
-            const isDarkMode = document.documentElement.classList.contains('dark');
-            html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
-            .then(canvas => {
-                const link = document.createElement('a');
-                link.download = `${reportExportProps.name}.png`;
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-            });
+          html2canvas(input, { 
+            scale: 1.5, 
+            useCORS: true, 
+            backgroundColor: '#ffffff' 
+          })
+          .then(canvas => {
+              const link = document.createElement('a');
+              link.download = `${reportExportProps.name}.png`;
+              link.href = canvas.toDataURL('image/png');
+              link.click();
+          });
         }
     };
 

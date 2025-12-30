@@ -50,7 +50,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
       const updateScale = () => {
         if (containerRef.current) {
           const containerWidth = containerRef.current.parentElement?.clientWidth || 0;
-          const invoiceWidth = 800;
+          const invoiceWidth = 800; 
           if (containerWidth < invoiceWidth && containerWidth > 0) {
             const newScale = (containerWidth - 40) / invoiceWidth;
             setScale(newScale);
@@ -87,8 +87,12 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
   const handleExportImage = () => {
     const input = document.getElementById('printable-invoice');
     if (input) {
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
+      // استخدام scale: 1.5 لضمان جودة عالية وحجم ملف أقل من 150KB
+      html2canvas(input, { 
+        scale: 1.5, 
+        useCORS: true, 
+        backgroundColor: '#ffffff' 
+      })
       .then(canvas => {
           const link = document.createElement('a');
           link.download = `فاتورة-${sale.id}.png`;

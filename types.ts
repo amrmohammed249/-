@@ -74,6 +74,7 @@ export interface PriceQuote {
   total: number;
   status: 'جديد' | 'تم تحويله' | 'ملغي';
   isArchived?: boolean;
+  hidePrices?: boolean; // حقل جديد للتحكم في عرض الأسعار
 }
 
 export interface Purchase {

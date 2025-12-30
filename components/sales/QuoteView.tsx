@@ -1,3 +1,4 @@
+
 import React, { useContext } from 'react';
 import Modal from '../shared/Modal';
 import { DataContext } from '../../context/DataContext';
@@ -37,7 +38,7 @@ const QuoteView: React.FC<QuoteViewProps> = ({ isOpen, onClose, quote }) => {
           const imgProps = pdf.getImageProperties(imgData);
           const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
           pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-          pdf.save(`بيان-أسعار-${quote.id}.pdf`);
+          pdf.save(`${quote.hidePrices ? 'بيان-كميات' : 'عرض-سعر'}-${quote.id}.pdf`);
         });
     }
   };
@@ -49,7 +50,7 @@ const QuoteView: React.FC<QuoteViewProps> = ({ isOpen, onClose, quote }) => {
       html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
       .then(canvas => {
           const link = document.createElement('a');
-          link.download = `عرض-سعر-${quote.id}.png`;
+          link.download = `${quote.hidePrices ? 'بيان-كميات' : 'عرض-سعر'}-${quote.id}.png`;
           link.href = canvas.toDataURL('image/png');
           link.click();
       });
@@ -62,67 +63,94 @@ const QuoteView: React.FC<QuoteViewProps> = ({ isOpen, onClose, quote }) => {
     </button>
   );
 
+  const isPriceHidden = !!quote.hidePrices;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`بيان أسعار: ${quote.id}`} size="4xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={`${isPriceHidden ? 'بيان كميات' : 'بيان أسعار'}: ${quote.id}`} size="4xl">
       <div className="no-print mb-6 flex flex-wrap gap-2 justify-end">
         <ActionButton icon={<PrinterIcon className="w-5 h-5" />} label="طباعة" onClick={handlePrint} />
         <ActionButton icon={<ArrowDownTrayIcon className="w-5 h-5" />} label="PDF" onClick={handleExportPDF} />
         <ActionButton icon={<PhotoIcon className="w-5 h-5 text-green-500" />} label="صورة" onClick={handleExportImage} />
       </div>
 
-      <div id="printable-quote" className="p-8 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-200 rounded-sm shadow-lg">
-        <header className="flex justify-between items-start pb-6 border-b">
+      <div id="printable-quote" className="p-8 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-200 rounded-sm shadow-lg border">
+        <header className="flex justify-between items-start pb-6 border-b-2 border-gray-800">
           <div>
             {printSettings.logo && <img src={printSettings.logo} alt="شعار الشركة" className="h-20 w-auto mb-4 object-contain"/>}
             <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">{companyInfo.name}</h1>
-            <p className="text-sm">{companyInfo.address}</p>
-            <p className="text-sm">{companyInfo.phone}</p>
+            <p className="text-sm font-semibold">{companyInfo.address}</p>
+            <p className="text-sm font-semibold">الهاتف: {companyInfo.phone}</p>
           </div>
           <div className="text-left">
-            <h2 className="text-3xl font-bold uppercase">بيان أسعار</h2>
-            <p className="text-sm">رقم: <span className="font-mono">{quote.id}</span></p>
-            <p className="text-sm">التاريخ: {new Date(quote.date).toLocaleDateString('ar-EG')}</p>
+            <h2 className={`text-3xl font-bold uppercase ${isPriceHidden ? 'text-gray-700 dark:text-gray-300' : 'text-blue-600'}`}>{isPriceHidden ? 'بيان كميات' : 'بيان أسعار'}</h2>
+            <p className="font-bold text-lg">رقم: <span className="font-mono">{quote.id}</span></p>
+            <p className="text-sm font-semibold">التاريخ: {new Date(quote.date).toLocaleDateString('ar-EG')}</p>
           </div>
         </header>
 
-        <section className="my-6">
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">مقدم إلى</h3>
-            <p className="font-bold">{customer?.name}</p>
-            <p className="text-sm">{customer?.address}</p>
-            <p className="text-sm">{customer?.phone}</p>
+        <section className="my-8">
+            <h3 className="text-xs font-bold text-gray-400 uppercase mb-2 tracking-widest">إلى السيد / السادة</h3>
+            <p className="text-xl font-bold">{customer?.name || quote.customer || 'عميل عام / غير محدد'}</p>
+            {customer && (
+              <>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{customer?.address}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{customer?.phone}</p>
+              </>
+            )}
         </section>
 
         <section>
-          <table className="w-full text-right">
-            <thead className="bg-gray-100 dark:bg-gray-800">
-              <tr>
-                <th className="p-3 font-semibold">الصنف</th>
-                <th className="p-3 font-semibold text-center">الكمية</th>
-                <th className="p-3 font-semibold text-center">سعر الوحدة</th>
-                <th className="p-3 font-semibold text-left">الإجمالي</th>
+          <table className="w-full text-right border-collapse">
+            <thead>
+              <tr className="bg-gray-800 text-white">
+                <th className="p-3 font-bold border border-gray-700 w-12 text-center">م</th>
+                <th className="p-3 font-bold border border-gray-700">الصنف / البيان</th>
+                {isPriceHidden ? (
+                    <th className="p-3 font-bold border border-gray-700 text-center">الكمية والبيان</th>
+                ) : (
+                    <>
+                        <th className="p-3 font-bold border border-gray-700 text-center">الكمية</th>
+                        <th className="p-3 font-bold border border-gray-700 text-center">الوحدة</th>
+                        <th className="p-3 font-bold border border-gray-700 text-center">سعر الوحدة</th>
+                        <th className="p-3 font-bold border border-gray-700 text-left">الإجمالي</th>
+                    </>
+                )}
               </tr>
             </thead>
             <tbody>
               {quote.items.map((item, index) => (
                 <tr key={index} className="border-b dark:border-gray-700">
-                  <td className="p-3">{item.itemName}</td>
-                  <td className="p-3 text-center">{item.quantity}</td>
-                  <td className="p-3 text-center">{item.price.toLocaleString()} جنيه</td>
-                  <td className="p-3 text-left">{item.total.toLocaleString()} جنيه</td>
+                  <td className="p-3 text-center border border-gray-200 dark:border-gray-700 font-mono text-xs">{index + 1}</td>
+                  <td className="p-3 border border-gray-200 dark:border-gray-700 font-bold">{item.itemName}</td>
+                  {isPriceHidden ? (
+                      <td className="p-3 text-center border border-gray-200 dark:border-gray-700 font-bold text-lg bg-gray-50/50 dark:bg-gray-800/50">
+                        {item.unitId === 'aggregated' ? item.unitName : `${item.quantity} ${item.unitName}`}
+                      </td>
+                  ) : (
+                      <>
+                        <td className="p-3 text-center border border-gray-200 dark:border-gray-700 font-bold text-lg">{item.quantity}</td>
+                        <td className="p-3 text-center border border-gray-200 dark:border-gray-700">{item.unitName}</td>
+                        <td className="p-3 text-center border border-gray-200 dark:border-gray-700 font-mono">{item.price.toLocaleString()}</td>
+                        <td className="p-3 text-left border border-gray-200 dark:border-gray-700 font-bold font-mono">{item.total.toLocaleString()}</td>
+                      </>
+                  )}
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-                <tr className="font-bold text-lg">
-                    <td colSpan={3} className="p-3 text-left border-t-2">الإجمالي</td>
-                    <td className="p-3 text-left border-t-2">{quote.total.toLocaleString()} جنيه</td>
-                </tr>
-            </tfoot>
+            {!isPriceHidden && (
+                <tfoot>
+                    <tr className="font-bold text-xl bg-gray-50 dark:bg-gray-800">
+                        <td colSpan={4} className="p-4 text-left border border-gray-200 dark:border-gray-700">الإجمالي النهائي</td>
+                        <td colSpan={2} className="p-4 text-left border border-gray-200 dark:border-gray-700 text-blue-600 dark:text-blue-400 font-mono">{quote.total.toLocaleString()} جنيه</td>
+                    </tr>
+                </tfoot>
+            )}
           </table>
         </section>
 
-        <footer className="text-center text-xs text-gray-500 dark:text-gray-400 mt-12 pt-6 border-t dark:border-gray-700">
-           <p>هذا بيان أسعار وليس فاتورة. الأسعار صالحة لمدة 15 يوماً.</p>
+        <footer className="text-center text-xs text-gray-500 dark:text-gray-400 mt-16 pt-6 border-t border-dotted dark:border-gray-700">
+           <p className="font-bold mb-2">{isPriceHidden ? 'هذا البيان للأصناف والكميات المطلوبة فقط ولا يترتب عليه أي التزامات مالية.' : 'هذا بيان أسعار مبدئي وليس فاتورة رسمية. الأسعار صالحة لمدة محدودة.'}</p>
+           <p>{companyInfo.name} - {companyInfo.phone}</p>
         </footer>
       </div>
     </Modal>

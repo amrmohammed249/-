@@ -1,3 +1,4 @@
+
 export * from './ArrowDownOnSquareIcon';
 export * from './ArrowDownTrayIcon';
 export * from './ArrowLeftOnRectangleIcon';
@@ -62,3 +63,5 @@ export * from './UploadIcon';
 export * from './UserIcon';
 export * from './UsersIcon';
 export * from './XIcon';
+export * from './Squares2X2Icon';
+export * from './ListBulletIcon';

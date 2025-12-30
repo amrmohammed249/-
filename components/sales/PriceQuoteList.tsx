@@ -5,8 +5,8 @@ import PageHeader from '../shared/PageHeader';
 import DataTable from '../shared/DataTable';
 import ConfirmationModal from '../shared/ConfirmationModal';
 import QuoteView from './QuoteView';
-import { PriceQuote } from '../../types';
-import { DocumentPlusIcon, EyeIcon, ArrowPathIcon, TrashIcon, PencilIcon } from '../icons';
+import { PriceQuote, LineItem } from '../../types';
+import { DocumentPlusIcon, EyeIcon, ArrowPathIcon, TrashIcon, PencilIcon, TableCellsIcon, Squares2X2Icon, ListBulletIcon } from '../icons';
 
 const StatusBadge: React.FC<{ status: PriceQuote['status'] }> = ({ status }) => {
     const statusClasses = {
@@ -24,12 +24,13 @@ const PriceQuoteList: React.FC = () => {
     const [quoteToView, setQuoteToView] = useState<PriceQuote | null>(null);
     const [quoteToCancel, setQuoteToCancel] = useState<PriceQuote | null>(null);
     const [quoteToConvert, setQuoteToConvert] = useState<PriceQuote | null>(null);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
     const handleEdit = (quote: PriceQuote) => {
         const customer = customers.find((c: any) => c.name === quote.customer);
         openWindow({
             path: '/price-quotes',
-            title: `تعديل بيان أسعار ${quote.id}`,
+            title: `تعديل ${quote.hidePrices ? 'بيان كميات' : 'عرض سعر'} ${quote.id}`,
             icon: <PencilIcon />,
             state: {
                 isEditMode: true,
@@ -61,9 +62,111 @@ const PriceQuoteList: React.FC = () => {
     const confirmCancel = () => {
         if (quoteToCancel) {
             cancelPriceQuote(quoteToCancel.id);
-            showToast('تم إلغاء بيان الأسعار بنجاح.');
+            showToast('تم إلغاء البيان بنجاح.');
         }
         setQuoteToCancel(null);
+    };
+
+    const handleToggleSelect = (id: string) => {
+        const newSelected = new Set(selectedIds);
+        if (newSelected.has(id)) newSelected.delete(id);
+        else newSelected.add(id);
+        setSelectedIds(newSelected);
+    };
+
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            setSelectedIds(new Set(priceQuotes.map(q => q.id)));
+        } else {
+            setSelectedIds(new Set());
+        }
+    };
+
+    const handleMergeQuotes = (strategy: 'byItem' | 'byPrice') => {
+        if (selectedIds.size < 2) {
+            showToast('يرجى اختيار عرضي سعر على الأقل للدمج.', 'warning');
+            return;
+        }
+
+        const selectedQuotes = priceQuotes.filter(q => selectedIds.has(q.id));
+        
+        let finalItems: LineItem[] = [];
+
+        if (strategy === 'byItem') {
+            // منطق التجميع الكمي الذكي (دمج الوحدات المختلفة لنفس الصنف في نص واحد)
+            const itemGroups = new Map<string, { itemName: string, units: Map<string, { qty: number, name: string }> }>();
+
+            selectedQuotes.forEach(quote => {
+                quote.items.forEach(item => {
+                    if (!itemGroups.has(item.itemId)) {
+                        itemGroups.set(item.itemId, { itemName: item.itemName, units: new Map() });
+                    }
+                    const group = itemGroups.get(item.itemId)!;
+                    const unitKey = item.unitId;
+                    if (!group.units.has(unitKey)) {
+                        group.units.set(unitKey, { qty: 0, name: item.unitName });
+                    }
+                    group.units.get(unitKey)!.qty += item.quantity;
+                });
+            });
+
+            finalItems = Array.from(itemGroups.entries()).map(([itemId, data]) => {
+                const descriptiveStrings = Array.from(data.units.values())
+                    .filter(u => u.qty > 0)
+                    .map(u => `${u.qty} ${u.name}`);
+                
+                return {
+                    itemId,
+                    itemName: data.itemName,
+                    quantity: 1, // placeholder
+                    unitId: 'aggregated',
+                    unitName: descriptiveStrings.join(' و '), // النتيجة: "1 شوال و 10 كيلو"
+                    price: 0,
+                    discount: 0,
+                    total: 0
+                };
+            });
+        } else {
+            // التجميع المالي التقليدي (حسب السعر)
+            const mergedMap = new Map<string, LineItem>();
+            selectedQuotes.forEach(quote => {
+                quote.items.forEach(item => {
+                    const key = `${item.itemId}_${item.unitId}_${item.price}`;
+                    if (mergedMap.has(key)) {
+                        const existing = mergedMap.get(key)!;
+                        existing.quantity += item.quantity;
+                        existing.total = (existing.quantity * existing.price) - existing.discount;
+                    } else {
+                        mergedMap.set(key, JSON.parse(JSON.stringify(item)));
+                    }
+                });
+            });
+            finalItems = Array.from(mergedMap.values());
+        }
+        
+        const mergeId = `QT-MRG-${Date.now().toString().slice(-4)}`;
+        
+        openWindow({ 
+            path: '/price-quotes', 
+            title: strategy === 'byItem' ? 'بيان كميات مجمع' : 'عرض سعر مجمع', 
+            icon: <TableCellsIcon />,
+            state: {
+                isEditMode: false,
+                activeQuote: {
+                    id: mergeId,
+                    date: new Date().toISOString().slice(0, 10),
+                    hidePrices: strategy === 'byItem', 
+                },
+                items: finalItems,
+                customer: null,
+                productSearchTerm: '',
+                customerSearchTerm: '',
+                isProcessing: false,
+            }
+        });
+
+        setSelectedIds(new Set());
+        showToast(`تم تجميع الأصناف من ${selectedQuotes.length} مستند بنجاح.`);
     };
 
     const renderActions = (row: PriceQuote) => (
@@ -76,9 +179,11 @@ const PriceQuoteList: React.FC = () => {
                     <button onClick={() => handleEdit(row)} className="text-gray-400 hover:text-green-500" title="تعديل">
                         <PencilIcon className="w-5 h-5"/>
                     </button>
-                    <button onClick={() => handleConvert(row)} className="text-gray-400 hover:text-green-500" title="تحويل إلى فاتورة">
-                        <ArrowPathIcon className="w-5 h-5"/>
-                    </button>
+                    {!row.hidePrices && (
+                        <button onClick={() => handleConvert(row)} className="text-gray-400 hover:text-green-500" title="تحويل إلى فاتورة">
+                            <ArrowPathIcon className="w-5 h-5"/>
+                        </button>
+                    )}
                     <button onClick={() => setQuoteToCancel(row)} className="text-gray-400 hover:text-red-500" title="إلغاء">
                         <TrashIcon className="w-5 h-5"/>
                     </button>
@@ -88,19 +193,41 @@ const PriceQuoteList: React.FC = () => {
     );
     
     const columns = useMemo(() => [
+        { 
+            header: (
+                <input 
+                    type="checkbox" 
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    onChange={handleSelectAll}
+                    checked={selectedIds.size === priceQuotes.length && priceQuotes.length > 0}
+                />
+            ), 
+            accessor: 'selection',
+            sortable: false,
+            render: (row: PriceQuote) => (
+                <input 
+                    type="checkbox" 
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => handleToggleSelect(row.id)}
+                    onClick={(e) => e.stopPropagation()}
+                />
+            )
+        },
         { header: 'الرقم', accessor: 'id', sortable: true },
+        { header: 'النوع', accessor: 'hidePrices', render: (row: PriceQuote) => row.hidePrices ? 'بيان كميات' : 'عرض سعر', sortable: true },
         { header: 'العميل', accessor: 'customer', sortable: true },
         { header: 'التاريخ', accessor: 'date', sortable: true },
-        { header: 'الإجمالي', accessor: 'total', render: (row: PriceQuote) => `${row.total.toLocaleString()} جنيه`, sortable: true },
+        { header: 'الإجمالي', accessor: 'total', render: (row: PriceQuote) => row.hidePrices ? '-' : `${row.total.toLocaleString()} ج.م`, sortable: true },
         { header: 'الحالة', accessor: 'status', render: (row: PriceQuote) => <StatusBadge status={row.status} />, sortable: true },
         { header: 'الإجراءات', accessor: 'actions', render: renderActions },
-    ], []);
+    ], [priceQuotes, selectedIds]);
 
     return (
         <div className="space-y-6">
             <PageHeader 
                 title="قائمة بيانات الأسعار" 
-                buttonText="إنشاء بيان أسعار جديد"
+                buttonText="إنشاء عرض سعر جديد"
                 onButtonClick={() => openWindow({ 
                     path: '/price-quotes', 
                     title: 'إنشاء بيان أسعار', 
@@ -110,6 +237,7 @@ const PriceQuoteList: React.FC = () => {
                         activeQuote: {
                             id: `QT-${String(sequences.priceQuote).padStart(3, '0')}`,
                             date: new Date().toISOString().slice(0, 10),
+                            hidePrices: false
                         },
                         items: [],
                         customer: null,
@@ -120,10 +248,39 @@ const PriceQuoteList: React.FC = () => {
                 })}
                 buttonIcon={<DocumentPlusIcon />}
             />
+
+            {selectedIds.size > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl gap-4 shadow-sm animate-fade-in-out">
+                    <div className="flex flex-col">
+                         <span className="text-blue-700 dark:text-blue-300 font-bold">تجميع ({selectedIds.size}) مستندات</span>
+                         <span className="text-[10px] text-gray-500">سيتم دمج الأصناف المتشابهة تلقائياً</span>
+                    </div>
+                    <div className="flex gap-2 w-full sm:w-auto">
+                        <button 
+                            onClick={() => handleMergeQuotes('byItem')}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 font-bold shadow-md transition-all text-xs"
+                            title="سيتم دمج الوحدات لنفس الصنف في سطر واحد (مثال: 1 شوال و 10 كيلو)"
+                        >
+                            <Squares2X2Icon className="w-4 h-4" />
+                            تجميع وصفي (بدون أسعار)
+                        </button>
+                        <button 
+                            onClick={() => handleMergeQuotes('byPrice')}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-md transition-all text-xs"
+                            title="تجميع مالي دقيق يعتمد على تساوى الصنف والسعر"
+                        >
+                            <ListBulletIcon className="w-4 h-4" />
+                            تجميع مالي (حسب السعر)
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <DataTable 
                 columns={columns} 
                 data={priceQuotes}
                 searchableColumns={['id', 'customer', 'date', 'status']}
+                onRowClick={(row) => handleToggleSelect(row.id)}
             />
 
             {quoteToView && (

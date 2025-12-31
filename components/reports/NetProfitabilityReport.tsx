@@ -1,4 +1,3 @@
-
 import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -12,6 +11,7 @@ interface ReportProps {
     itemCategoryId?: string;
     excludedItemIds?: string[]; // Prop جديد للاستثناء
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
+    noPagination?: boolean;
 }
 
 interface ProfitabilityGroup {
@@ -35,7 +35,7 @@ interface ProfitabilityGroup {
     margin?: number;
 }
 
-const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, itemId, itemCategoryId, excludedItemIds = [], onDataReady }) => {
+const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, itemId, itemCategoryId, excludedItemIds = [], onDataReady, noPagination }) => {
     const { sales, saleReturns, inventory, customers } = useContext(DataContext);
 
     const profitabilityData = useMemo(() => {
@@ -157,31 +157,35 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
     }, [sales, saleReturns, inventory, customers, startDate, endDate, customerId, itemId, itemCategoryId, excludedItemIds]);
 
     const columns = useMemo(() => [
-        { header: 'الصنف', accessor: 'itemName' },
+        { header: 'الصنف', accessor: 'itemName', sortable: true },
         { 
-            header: 'تكلفة الوحدة (أساسي)', 
+            header: 'تكلفة/أساسي', 
             accessor: 'unitCostBase', 
-            render: (row: any) => <span className="text-gray-500 font-mono">{row.unitCostBase.toLocaleString()}</span> 
+            render: (row: any) => <span className="font-mono">{row.unitCostBase.toLocaleString()}</span>,
+            sortable: true
         },
         { 
-            header: 'سعر بيع الوحدة (أساسي)', 
+            header: 'سعر/أساسي', 
             accessor: 'unitPriceBase', 
-            render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span> 
+            render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span>,
+            sortable: true
         },
-        { header: 'الكمية (أساسي)', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString() },
-        { header: 'المبيعات (إجمالي)', accessor: 'grossSalesValue', render: (row: any) => `${row.grossSalesValue.toLocaleString()}` },
-        { header: 'التكلفة (إجمالي)', accessor: 'grossCostValue', render: (row: any) => `${row.grossCostValue.toLocaleString()}` },
+        { header: 'الكمية', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString(), sortable: true },
+        { header: 'إجمالي بيع', accessor: 'grossSalesValue', render: (row: any) => `${row.grossSalesValue.toLocaleString()}`, sortable: true },
+        { header: 'إجمالي تكلفة', accessor: 'grossCostValue', render: (row: any) => `${row.grossCostValue.toLocaleString()}`, sortable: true },
         { 
-            header: 'مرتجع (قيمة)', 
+            header: 'مرتجع', 
             accessor: 'returnsValue', 
-            render: (row: any) => row.returnsValue > 0 ? <span className="text-red-500">({row.returnsValue.toLocaleString()})</span> : '-' 
+            render: (row: any) => row.returnsValue > 0 ? <span className="text-red-500">({row.returnsValue.toLocaleString()})</span> : '-',
+            sortable: true
         },
         { 
-            header: 'صافي الربح', 
+            header: 'صافي ربح', 
             accessor: 'netProfit', 
-            render: (row: any) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span> 
+            render: (row: any) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span>,
+            sortable: true
         },
-        { header: 'الهامش', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(1)}%` },
+        { header: '%', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(1)}%`, sortable: true },
     ], []);
     
     const calculateFooter = useCallback((data: any[]) => {
@@ -194,10 +198,10 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
         return {
             itemName: 'الإجماليات',
             soldQuantityBase: soldQuantityBase.toLocaleString(),
-            grossSalesValue: `${grossSales.toLocaleString()} جنيه`,
-            grossCostValue: `${grossCost.toLocaleString()} جنيه`,
-            returnsValue: `${returnsVal.toLocaleString()} جنيه`,
-            netProfit: `${netProfit.toLocaleString()} جنيه`,
+            grossSalesValue: `${grossSales.toLocaleString()}`,
+            grossCostValue: `${grossCost.toLocaleString()}`,
+            returnsValue: `${returnsVal.toLocaleString()}`,
+            netProfit: `${netProfit.toLocaleString()}`,
         };
     }, []);
 
@@ -209,14 +213,11 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
 
     return (
         <div id="printable-report">
-            <div className="p-6">
+            <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
                     <div>
                         <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير صافي الربحية التفصيلي</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">الفترة من {startDate} إلى {endDate}</p>
-                        {excludedItemIds.length > 0 && (
-                            <p className="text-xs text-red-500 font-bold mt-1">ملاحظة: تم استثناء {excludedItemIds.length} صنف من هذه الحسابات.</p>
-                        )}
                     </div>
                 </div>
                 <DataTable 
@@ -224,6 +225,8 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
                     data={profitabilityData} 
                     calculateFooter={calculateFooter}
                     searchableColumns={['itemName']}
+                    noPagination={noPagination}
+                    condensed={true}
                 />
             </div>
         </div>

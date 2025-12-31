@@ -70,13 +70,21 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
   const handleExportPDF = () => {
     const input = document.getElementById('printable-invoice');
     if (input) {
+      // فرض العرض للالتقاط
+      const originalWidth = input.style.width;
+      input.style.width = '800px';
+
       html2canvas(input, { 
         scale: 2, 
         useCORS: true, 
-        backgroundColor: '#ffffff' 
+        backgroundColor: '#ffffff',
+        windowWidth: 800,
+        height: input.scrollHeight,
+        scrollY: 0
       })
       .then(canvas => {
-          const imgData = canvas.toDataURL('image/jpeg', 1.0);
+          input.style.width = originalWidth;
+          const imgData = canvas.toDataURL('image/jpeg', 0.9);
           const pdf = new jspdf.jsPDF('p', 'pt', 'a4');
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -94,7 +102,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
 
           // إضافة الصفحات التالية إذا كانت الفاتورة طويلة
           while (heightLeft > 0) {
-              position -= pdfHeight;
+              position = heightLeft - imgHeightInPt;
               pdf.addPage();
               pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
               heightLeft -= pdfHeight;
@@ -109,9 +117,10 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
     const input = document.getElementById('printable-invoice');
     if (input) {
       html2canvas(input, { 
-        scale: 1.5, 
+        scale: 2, 
         useCORS: true, 
-        backgroundColor: '#ffffff' 
+        backgroundColor: '#ffffff',
+        windowWidth: 800
       })
       .then(canvas => {
           const link = document.createElement('a');
@@ -145,6 +154,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
          <style>{`
             :root { --invoice-primary-color: ${printSettings.primaryColor}; --invoice-secondary-color: ${printSettings.secondaryColor}; }
             #printable-invoice td, #printable-invoice th { padding: 8px 12px; }
+            @media print {
+               #printable-invoice td, #printable-invoice th { padding: 4px 6px !important; }
+            }
          `}</style>
 
         <header className="flex justify-between items-start pb-6 border-b dark:border-gray-600">

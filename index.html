@@ -51,7 +51,7 @@
 
       @media print {
         @page {
-          margin: 1cm;
+          margin: 0.3cm;
           size: A4 portrait;
         }
         html, body {
@@ -59,6 +59,7 @@
           overflow: visible !important;
           background-color: #fff !important;
           width: 100% !important;
+          font-size: 9pt !important;
         }
         body * {
           visibility: hidden;
@@ -86,15 +87,40 @@
           overflow: visible !important;
           display: block !important;
           height: auto !important;
+          background-color: white !important;
         }
+        
+        /* ضغط الجداول للطباعة بشكل مكثف */
+        table { 
+          width: 100% !important;
+          border-collapse: collapse !important;
+          table-layout: auto !important;
+        }
+        th, td {
+          padding: 2px 4px !important;
+          border: 0.5pt solid #ccc !important;
+          font-size: 8pt !important;
+          line-height: 1.1 !important;
+          white-space: nowrap !important; /* منع التفاف النص لتقليل ارتفاع الصفوف */
+        }
+        /* السماح بالتفاف اسم الصنف فقط لضمان العرض */
+        td:nth-child(1), td:nth-child(2) {
+          white-space: normal !important;
+          min-width: 80px;
+        }
+
+        thead { display: table-header-group !important; }
+        tfoot { display: table-footer-group !important; }
+        tr { page-break-inside: avoid !important; }
+
         .no-print {
           display: none !important;
         }
-        /* منع قص الجداول */
-        table { page-break-inside: auto; }
-        tr { page-break-inside: avoid; page-break-after: auto; }
-        thead { display: table-header-group; }
-        tfoot { display: table-footer-group; }
+
+        .p-6, .p-8, .p-4 { padding: 4px !important; }
+        .mb-4, .mb-6, .mb-8 { margin-bottom: 4px !important; }
+        .mt-4, .mt-6, .mt-8 { margin-top: 4px !important; }
+        h3 { font-size: 11pt !important; margin-bottom: 2px !important; }
       }
     </style>
   <script type="importmap">

@@ -1,4 +1,3 @@
-
 import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -12,6 +11,7 @@ interface ReportProps {
     itemCategoryId?: string;
     excludedItemIds?: string[];
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
+    noPagination?: boolean;
 }
 
 interface ProfitabilityGroup {
@@ -36,7 +36,7 @@ interface ProfitabilityGroup {
     margin?: number;
 }
 
-const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, itemId, itemCategoryId, excludedItemIds = [], onDataReady }) => {
+const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, itemId, itemCategoryId, excludedItemIds = [], onDataReady, noPagination }) => {
     const { sales, saleReturns, inventory, customers } = useContext(DataContext);
 
     const profitabilityData = useMemo(() => {
@@ -161,32 +161,37 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
         { header: 'العميل', accessor: 'customerName', sortable: true },
         { header: 'الصنف', accessor: 'itemName', sortable: true },
         { 
-            header: 'سعر الشراء', 
+            header: 'سعر شراء', 
             accessor: 'unitCostBase', 
-            render: (row: any) => <span className="text-gray-500 font-mono">{row.unitCostBase.toLocaleString()}</span> 
+            render: (row: any) => <span className="font-mono">{row.unitCostBase.toLocaleString()}</span>,
+            sortable: true
         },
         { 
-            header: 'سعر البيع', 
+            header: 'سعر بيع', 
             accessor: 'unitPriceBase', 
-            render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span> 
+            render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span>,
+            sortable: true
         },
-        { header: 'الكمية المباعة', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString() },
+        { header: 'الكمية', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString(), sortable: true },
         { 
-            header: 'قيمة المبيعات', 
+            header: 'مبيعات', 
             accessor: 'grossSalesValue', 
-            render: (row: any) => row.grossSalesValue.toLocaleString() 
+            render: (row: any) => row.grossSalesValue.toLocaleString(),
+            sortable: true 
         },
         { 
-            header: 'قيمة المرتجع', 
+            header: 'مرتجع', 
             accessor: 'returnsValue', 
-            render: (row: any) => row.returnsValue > 0 ? <span className="text-red-500">({row.returnsValue.toLocaleString()})</span> : '-' 
+            render: (row: any) => row.returnsValue > 0 ? <span className="text-red-500">({row.returnsValue.toLocaleString()})</span> : '-',
+            sortable: true
         },
         { 
-            header: 'صافي الربح', 
+            header: 'صافي ربح', 
             accessor: 'netProfit', 
-            render: (row: any) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span> 
+            render: (row: any) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span>,
+            sortable: true
         },
-        { header: 'الهامش %', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(1)}%` },
+        { header: '%', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(1)}%`, sortable: true },
     ], []);
     
     const calculateFooter = useCallback((data: any[]) => {
@@ -196,9 +201,9 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
         
         return {
             itemName: 'الإجماليات',
-            grossSalesValue: `${grossSales.toLocaleString()} جنيه`,
-            returnsValue: `${returnsVal.toLocaleString()} جنيه`,
-            netProfit: `${netProfit.toLocaleString()} جنيه`,
+            grossSalesValue: `${grossSales.toLocaleString()}`,
+            returnsValue: `${returnsVal.toLocaleString()}`,
+            netProfit: `${netProfit.toLocaleString()}`,
         };
     }, []);
 
@@ -210,7 +215,7 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
 
     return (
         <div id="printable-report">
-            <div className="p-6">
+            <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
                     <div>
                         <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير ربحية الأصناف حسب العميل</h3>
@@ -222,6 +227,8 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                     data={profitabilityData} 
                     calculateFooter={calculateFooter}
                     searchableColumns={['itemName', 'customerName']}
+                    noPagination={noPagination}
+                    condensed={true}
                 />
             </div>
         </div>

@@ -97,6 +97,10 @@ const Reports: React.FC = () => {
         ).slice(0, 10);
     }, [inventory, itemSearchTerm, excludedItemIds]);
 
+    const excludedItemsList = useMemo(() => {
+        return inventory.filter(i => excludedItemIds.includes(i.id));
+    }, [inventory, excludedItemIds]);
+
     const selectedItemName = useMemo(() => {
         if (!selectedInventoryId) return '';
         return inventory.find(i => i.id === selectedInventoryId)?.name || '';
@@ -109,7 +113,8 @@ const Reports: React.FC = () => {
     const onExportPDF = () => {
         const input = document.getElementById('printable-report');
         if (input) {
-            // ضمان عرض كافة العناصر قبل الالتقاط
+            const originalWidth = input.style.width;
+            input.style.width = '800px'; 
             input.style.height = 'auto';
             input.style.overflow = 'visible';
 
@@ -117,11 +122,14 @@ const Reports: React.FC = () => {
                 scale: 2, 
                 useCORS: true, 
                 backgroundColor: '#ffffff',
-                windowWidth: input.scrollWidth,
-                windowHeight: input.scrollHeight
+                windowWidth: 800,
+                width: input.scrollWidth,
+                height: input.scrollHeight,
+                scrollY: 0
             })
             .then(canvas => {
-                const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                input.style.width = originalWidth;
+                const imgData = canvas.toDataURL('image/jpeg', 0.9);
                 const pdf = new jspdf.jsPDF('p', 'pt', 'a4');
                 const pdfWidth = pdf.internal.pageSize.getWidth();
                 const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -133,11 +141,9 @@ const Reports: React.FC = () => {
                 let heightLeft = imgHeightInPt;
                 let position = 0;
 
-                // الصفحة الأولى
                 pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
                 heightLeft -= pdfHeight;
 
-                // الصفحات التالية بتقسيم دقيق
                 while (heightLeft > 0) {
                     position = heightLeft - imgHeightInPt;
                     pdf.addPage();
@@ -154,9 +160,10 @@ const Reports: React.FC = () => {
         const input = document.getElementById('printable-report');
         if (input) {
           html2canvas(input, { 
-            scale: 1.5, 
+            scale: 2, 
             useCORS: true, 
-            backgroundColor: '#ffffff' 
+            backgroundColor: '#ffffff',
+            windowWidth: 800
           })
           .then(canvas => {
               const link = document.createElement('a');
@@ -175,7 +182,6 @@ const Reports: React.FC = () => {
     };
 
     const renderReport = () => {
-        // نمرر noPagination=true لضمان عرض كل الصفوف في المعاينة والطباعة
         const commonProps = { onDataReady: handleDataReady, noPagination: true };
         switch (activeTab) {
             case 'profitAndLoss':
@@ -258,7 +264,7 @@ const Reports: React.FC = () => {
                 <>
                     <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md border dark:border-gray-700">
                         <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">مركز التقارير المحاسبية</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-start">
                             {['balanceSheet', 'inventory', 'customerBalances', 'supplierBalances', 'generalJournalReport'].includes(activeTab) ? (
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">حتى تاريخ</label>
@@ -335,6 +341,27 @@ const Reports: React.FC = () => {
                                         <MagnifyingGlassIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     </div>
                                     
+                                    {['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab) && excludedItemIds.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            <span className="text-[10px] font-extrabold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded border border-red-100 dark:border-red-800 shrink-0">
+                                                - تم استثناء {excludedItemIds.length} صنف -
+                                            </span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {excludedItemsList.map(item => (
+                                                    <button 
+                                                        key={item.id} 
+                                                        onClick={() => handleToggleExcludedItem(item.id)}
+                                                        className="text-[9px] font-bold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded hover:bg-red-100 hover:text-red-600 flex items-center gap-1 transition-colors"
+                                                        title="انقر للإزالة من الاستثناء"
+                                                    >
+                                                        {item.name}
+                                                        <XIcon className="w-2.5 h-2.5" />
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {itemSearchTerm && itemSearchResults.length > 0 && (
                                         <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-xl rounded-b-xl border dark:border-gray-700 z-50 mt-1 max-h-60 overflow-y-auto">
                                             {itemSearchResults.map((item) => (

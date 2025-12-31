@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { PrinterIcon } from '../icons/PrinterIcon';
 import { ArrowDownTrayIcon } from '../icons/ArrowDownTrayIcon';
@@ -15,20 +14,33 @@ const ReportToolbar: React.FC<ReportToolbarProps> = ({ reportName }) => {
     const onExportPDF = () => {
         const input = document.getElementById('printable-report');
         if (input) {
-            const isDarkMode = document.documentElement.classList.contains('dark');
             html2canvas(input, { 
                 scale: 2, 
                 useCORS: true, 
-                backgroundColor: isDarkMode ? '#111827' : '#ffffff' 
+                backgroundColor: '#ffffff' 
             })
             .then(canvas => {
-                // Use JPEG with 0.7 quality to reduce file size
-                const imgData = canvas.toDataURL('image/jpeg', 0.7);
-                const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                const pdf = new jspdf.jsPDF('p', 'pt', 'a4');
                 const pdfWidth = pdf.internal.pageSize.getWidth();
-                const imgProps = pdf.getImageProperties(imgData);
-                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const imgWidth = canvas.width;
+                const imgHeight = canvas.height;
+                const ratio = pdfWidth / imgWidth;
+                const imgHeightInPt = imgHeight * ratio;
+                
+                let heightLeft = imgHeightInPt;
+                let position = 0;
+
+                pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
+                heightLeft -= pdfHeight;
+
+                while (heightLeft > 0) {
+                    position -= pdfHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
+                    heightLeft -= pdfHeight;
+                }
                 pdf.save(`${reportName}.pdf`);
             });
         }

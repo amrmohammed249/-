@@ -51,6 +51,11 @@
       }
 
       @media print {
+        html, body {
+          height: auto !important;
+          overflow: visible !important;
+          background-color: #fff !important;
+        }
         body * {
           visibility: hidden;
         }
@@ -67,9 +72,10 @@
           top: 0;
           width: 100%;
           margin: 0;
-          padding: 1rem;
+          padding: 0;
           box-shadow: none;
           border: none;
+          overflow: visible !important;
         }
         .no-print {
           display: none !important;

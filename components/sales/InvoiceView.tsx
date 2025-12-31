@@ -70,15 +70,36 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
   const handleExportPDF = () => {
     const input = document.getElementById('printable-invoice');
     if (input) {
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      html2canvas(input, { scale: 2, useCORS: true, backgroundColor: isDarkMode ? '#111827' : '#ffffff' })
+      html2canvas(input, { 
+        scale: 2, 
+        useCORS: true, 
+        backgroundColor: '#ffffff' 
+      })
       .then(canvas => {
-          const imgData = canvas.toDataURL('image/jpeg', 0.7);
-          const pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+          const imgData = canvas.toDataURL('image/jpeg', 1.0);
+          const pdf = new jspdf.jsPDF('p', 'pt', 'a4');
           const pdfWidth = pdf.internal.pageSize.getWidth();
-          const imgProps = pdf.getImageProperties(imgData);
-          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+          const pdfHeight = pdf.internal.pageSize.getHeight();
+          const imgWidth = canvas.width;
+          const imgHeight = canvas.height;
+          const ratio = pdfWidth / imgWidth;
+          const imgHeightInPt = imgHeight * ratio;
+          
+          let heightLeft = imgHeightInPt;
+          let position = 0;
+
+          // إضافة الصفحة الأولى
+          pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
+          heightLeft -= pdfHeight;
+
+          // إضافة الصفحات التالية إذا كانت الفاتورة طويلة
+          while (heightLeft > 0) {
+              position -= pdfHeight;
+              pdf.addPage();
+              pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
+              heightLeft -= pdfHeight;
+          }
+          
           pdf.save(`فاتورة-${sale.id}.pdf`);
         });
     }
@@ -87,7 +108,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ isOpen, onClose, sale, custom
   const handleExportImage = () => {
     const input = document.getElementById('printable-invoice');
     if (input) {
-      // استخدام scale: 1.5 لضمان جودة عالية وحجم ملف أقل من 150KB
       html2canvas(input, { 
         scale: 1.5, 
         useCORS: true, 

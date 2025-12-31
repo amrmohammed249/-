@@ -6,10 +6,11 @@ interface ReportProps {
     startDate: string;
     endDate: string;
     customerId?: string;
+    noPagination?: boolean;
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
 
-const SalesReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, onDataReady }) => {
+const SalesReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, noPagination, onDataReady }) => {
     const { sales, customers } = useContext(DataContext);
 
     const filteredSales = useMemo(() => {
@@ -54,7 +55,7 @@ const SalesReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, on
     return (
         <div id="printable-report">
             <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex justify-between items-center mb-4 text-right">
                     <div>
                         <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير المبيعات</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -68,6 +69,7 @@ const SalesReport: React.FC<ReportProps> = ({ startDate, endDate, customerId, on
                     data={filteredSales} 
                     calculateFooter={calculateFooter}
                     searchableColumns={['id', 'customer', 'date', 'status']}
+                    noPagination={noPagination}
                 />
             </div>
         </div>

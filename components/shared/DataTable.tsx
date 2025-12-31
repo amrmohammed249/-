@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { PencilIcon, TrashIcon, EyeIcon, ArrowUturnLeftIcon, MagnifyingGlassIcon, ArrowsUpDownIcon, ChevronUpIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons';
 
@@ -24,6 +23,7 @@ interface DataTableProps {
   rowClassName?: (row: any) => string;
   searchableColumns?: string[];
   calculateFooter?: (data: any[]) => { [key: string]: string | number };
+  noPagination?: boolean;
 }
 
 const ITEMS_PER_PAGE = 25;
@@ -41,6 +41,7 @@ const DataTable: React.FC<DataTableProps> = ({
   rowClassName,
   searchableColumns = [],
   calculateFooter,
+  noPagination = false,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,14 +82,16 @@ const DataTable: React.FC<DataTableProps> = ({
   }, [filteredData, sortConfig]);
 
   const paginatedData = useMemo(() => {
+    if (noPagination) return sortedData;
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     return sortedData.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-  }, [sortedData, currentPage]);
+  }, [sortedData, currentPage, noPagination]);
   
   const totalPages = Math.ceil(sortedData.length / ITEMS_PER_PAGE);
   const footerData = useMemo(() => calculateFooter ? calculateFooter(sortedData) : null, [sortedData, calculateFooter]);
 
   const requestSort = (key: string) => {
+    if (noPagination) return;
     let direction: 'ascending' | 'descending' = 'ascending';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
       direction = 'descending';
@@ -112,8 +115,8 @@ const DataTable: React.FC<DataTableProps> = ({
   
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden border border-gray-200 dark:border-gray-700">
-        {searchableColumns.length > 0 && (
-             <div className="p-4 border-b dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800">
+        {searchableColumns.length > 0 && !noPagination && (
+             <div className="p-4 border-b dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 no-print">
                 <div className="relative">
                     <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                         <MagnifyingGlassIcon className="w-5 h-5 text-gray-400" />
@@ -129,28 +132,31 @@ const DataTable: React.FC<DataTableProps> = ({
             </div>
         )}
 
-      {/* Desktop Table View */}
-      <div className="hidden md:block overflow-x-auto">
+      <div className="overflow-x-auto">
         <table className="w-full text-sm text-right text-gray-500 dark:text-gray-400">
           <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300">
             <tr>
               {columns.map((col, index) => (
                 <th key={index} scope="col" className="px-6 py-4">
-                  <button onClick={() => col.sortable !== false && requestSort(col.accessor)} className="flex items-center gap-1 font-bold">
+                  <button 
+                    onClick={() => col.sortable !== false && requestSort(col.accessor)} 
+                    className={`flex items-center gap-1 font-bold ${noPagination ? 'cursor-default' : ''}`}
+                    disabled={noPagination}
+                   >
                       {col.header}
-                      {col.sortable !== false && getSortIcon(col.accessor)}
+                      {!noPagination && col.sortable !== false && getSortIcon(col.accessor)}
                   </button>
                 </th>
               ))}
-              {actions.length > 0 && <th scope="col" className="px-6 py-4 text-center">الإجراءات</th>}
+              {actions.length > 0 && <th scope="col" className="px-6 py-4 text-center no-print">الإجراءات</th>}
             </tr>
           </thead>
           <tbody>
             {paginatedData.map((row, rowIndex) => (
               <tr 
                 key={row.id || rowIndex} 
-                className={`bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors ${rowClassName ? rowClassName(row) : ''} ${onRowClick ? 'cursor-pointer' : ''}`}
-                onClick={() => onRowClick && onRowClick(row)}
+                className={`bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors ${rowClassName ? rowClassName(row) : ''} ${onRowClick && !noPagination ? 'cursor-pointer' : ''}`}
+                onClick={() => !noPagination && onRowClick && onRowClick(row)}
               >
                 {columns.map((col, colIndex) => (
                   <td key={colIndex} className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">
@@ -158,7 +164,7 @@ const DataTable: React.FC<DataTableProps> = ({
                   </td>
                 ))}
                 {actions.length > 0 && (
-                  <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-6 py-4 text-center no-print" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-center items-center space-x-2 space-x-reverse">
                       {actions.includes('view') && onView && <button onClick={() => onView(row)} className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-full transition-colors" title="عرض"><EyeIcon className="w-5 h-5"/></button>}
                       {actions.includes('edit') && onEdit && <button onClick={() => onEdit(row)} className="p-1.5 text-green-500 hover:bg-green-100 rounded-full transition-colors" title="تعديل"><PencilIcon className="w-5 h-5"/></button>}
@@ -179,65 +185,15 @@ const DataTable: React.FC<DataTableProps> = ({
                               {(footerData as any)[col.accessor] || ''}
                           </td>
                       ))}
-                      {actions.length > 0 && <td className="px-6 py-4 border-t-2 border-gray-300 dark:border-gray-500"></td>}
+                      {actions.length > 0 && <td className="px-6 py-4 border-t-2 border-gray-300 dark:border-gray-500 no-print"></td>}
                   </tr>
               </tfoot>
           )}
         </table>
       </div>
 
-      {/* Mobile Card View */}
-      <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-700">
-        {paginatedData.map((row, rowIndex) => (
-          <div 
-            key={row.id || rowIndex} 
-            className={`p-4 bg-white dark:bg-gray-800 ${onRowClick ? 'active:bg-gray-100 dark:active:bg-gray-700' : ''} ${rowClassName ? rowClassName(row) : ''}`}
-            onClick={() => onRowClick && onRowClick(row)}
-          >
-            <div className="space-y-3">
-              {columns.map((col, colIndex) => (
-                <div key={colIndex} className="flex justify-between items-start gap-4">
-                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase min-w-[80px]">
-                    {col.header}:
-                  </span>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white text-left break-words">
-                    {col.render ? col.render(row) : row[col.accessor]}
-                  </span>
-                </div>
-              ))}
-              
-              {actions.length > 0 && (
-                <div className="pt-3 flex justify-end gap-3 border-t dark:border-gray-700 mt-2" onClick={(e) => e.stopPropagation()}>
-                    {actions.includes('view') && onView && <button onClick={() => onView(row)} className="flex items-center gap-1 text-blue-500 font-bold text-xs"><EyeIcon className="w-4 h-4"/> عرض</button>}
-                    {actions.includes('edit') && onEdit && <button onClick={() => onEdit(row)} className="flex items-center gap-1 text-green-500 font-bold text-xs"><PencilIcon className="w-4 h-4"/> تعديل</button>}
-                    {actions.includes('archive') && onArchive && <button onClick={() => onArchive(row)} className="flex items-center gap-1 text-red-500 font-bold text-xs"><TrashIcon className="w-4 h-4"/> أرشفة</button>}
-                    {actions.includes('delete') && onDelete && <button onClick={() => onDelete(row)} className="flex items-center gap-1 text-red-600 font-bold text-xs"><TrashIcon className="w-4 h-4"/> حذف</button>}
-                    {actions.includes('unarchive') && onUnarchive && <button onClick={() => onUnarchive(row)} className="flex items-center gap-1 text-blue-500 font-bold text-xs"><ArrowUturnLeftIcon className="w-4 h-4"/> استعادة</button>}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {paginatedData.length === 0 && (
-            <div className="p-10 text-center text-gray-500 dark:text-gray-400">
-                لا توجد نتائج تطابق بحثك.
-            </div>
-        )}
-        {footerData && (
-            <div className="p-4 bg-gray-50 dark:bg-gray-900 border-t-2 border-blue-500 space-y-2">
-                <p className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase mb-2">ملخص الإجماليات:</p>
-                {columns.map((col, index) => (footerData as any)[col.accessor] ? (
-                    <div key={index} className="flex justify-between text-sm font-bold">
-                        <span>{col.header}:</span>
-                        <span>{(footerData as any)[col.accessor]}</span>
-                    </div>
-                ) : null)}
-            </div>
-        )}
-      </div>
-
-      {totalPages > 1 && (
-        <div className="p-4 border-t dark:border-gray-700 flex items-center justify-between flex-wrap gap-4 bg-gray-50/50 dark:bg-gray-800/50">
+      {!noPagination && totalPages > 1 && (
+        <div className="p-4 border-t dark:border-gray-700 flex items-center justify-between flex-wrap gap-4 bg-gray-50/50 dark:bg-gray-800/50 no-print">
             <span className="text-xs md:text-sm text-gray-500 dark:text-gray-400">
                 إظهار <span className="font-bold text-gray-900 dark:text-white">{paginatedData.length}</span> من <span className="font-bold text-gray-900 dark:text-white">{sortedData.length}</span>
             </span>

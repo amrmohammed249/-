@@ -34,7 +34,6 @@
         background-color: #0d1117;
       }
       
-      /* تحسين استجابة المعاينة على الموبايل */
       .invoice-scaler {
         transform-origin: top right;
         transition: transform 0.2s ease;
@@ -51,13 +50,22 @@
       }
 
       @media print {
+        @page {
+          margin: 1cm;
+          size: A4 portrait;
+        }
         html, body {
           height: auto !important;
           overflow: visible !important;
           background-color: #fff !important;
+          width: 100% !important;
         }
         body * {
           visibility: hidden;
+        }
+        #root {
+          display: block !important;
+          position: relative !important;
         }
         #printable-invoice, #printable-invoice *,
         #printable-report, #printable-report *,
@@ -67,19 +75,26 @@
           visibility: visible;
         }
         #printable-invoice, #printable-report, #printable-sale-return, #printable-purchase-return, #printable-voucher {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          margin: 0;
-          padding: 0;
-          box-shadow: none;
-          border: none;
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
           overflow: visible !important;
+          display: block !important;
+          height: auto !important;
         }
         .no-print {
           display: none !important;
         }
+        /* منع قص الجداول */
+        table { page-break-inside: auto; }
+        tr { page-break-inside: avoid; page-break-after: auto; }
+        thead { display: table-header-group; }
+        tfoot { display: table-footer-group; }
       }
     </style>
   <script type="importmap">

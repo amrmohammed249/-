@@ -109,13 +109,19 @@ const Reports: React.FC = () => {
     const onExportPDF = () => {
         const input = document.getElementById('printable-report');
         if (input) {
+            // ضمان عرض كافة العناصر قبل الالتقاط
+            input.style.height = 'auto';
+            input.style.overflow = 'visible';
+
             html2canvas(input, { 
                 scale: 2, 
                 useCORS: true, 
-                backgroundColor: '#ffffff' 
+                backgroundColor: '#ffffff',
+                windowWidth: input.scrollWidth,
+                windowHeight: input.scrollHeight
             })
             .then(canvas => {
-                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                const imgData = canvas.toDataURL('image/jpeg', 0.95);
                 const pdf = new jspdf.jsPDF('p', 'pt', 'a4');
                 const pdfWidth = pdf.internal.pageSize.getWidth();
                 const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -131,15 +137,15 @@ const Reports: React.FC = () => {
                 pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
                 heightLeft -= pdfHeight;
 
-                // الصفحات التالية إذا لزم الأمر
+                // الصفحات التالية بتقسيم دقيق
                 while (heightLeft > 0) {
-                    position -= pdfHeight;
+                    position = heightLeft - imgHeightInPt;
                     pdf.addPage();
                     pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeightInPt);
                     heightLeft -= pdfHeight;
                 }
                 
-                pdf.save(`${reportExportProps.name}.pdf`);
+                pdf.save(`${reportExportProps.name || 'report'}.pdf`);
             });
         }
     };
@@ -169,7 +175,8 @@ const Reports: React.FC = () => {
     };
 
     const renderReport = () => {
-        const commonProps = { onDataReady: handleDataReady };
+        // نمرر noPagination=true لضمان عرض كل الصفوف في المعاينة والطباعة
+        const commonProps = { onDataReady: handleDataReady, noPagination: true };
         switch (activeTab) {
             case 'profitAndLoss':
                 return <ProfitAndLoss startDate={startDate} endDate={endDate} {...commonProps} />;
@@ -242,7 +249,7 @@ const Reports: React.FC = () => {
                         </div>
                     </header>
                     <main className="flex-1 overflow-auto p-4 md:p-8">
-                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg mx-auto max-w-[210mm]">
                             {renderReport()}
                         </div>
                     </main>

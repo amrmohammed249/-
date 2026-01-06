@@ -10,15 +10,6 @@ interface ReportProps {
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
 }
 
-interface CustomerProfitability {
-    customerId: string;
-    customerName: string;
-    totalSales: number;
-    totalCogs: number;
-    profit: number;
-    margin: number;
-}
-
 const CustomerProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, onDataReady }) => {
     const { sales, saleReturns, inventory, customers } = useContext(DataContext);
 
@@ -29,124 +20,62 @@ const CustomerProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate
 
         const customerData: Record<string, { totalSales: number; totalCogs: number }> = {};
 
-        // 1. Process Sales
-        const filteredSales = sales.filter((sale: Sale) => {
-            const saleDate = new Date(sale.date);
-            return saleDate >= start && saleDate <= end && !sale.isArchived;
-        });
-
-        filteredSales.forEach(sale => {
-            if (!customerData[sale.customer]) {
-                customerData[sale.customer] = { totalSales: 0, totalCogs: 0 };
-            }
+        // 1. مبيعات العملاء مع تجميد التكلفة
+        sales.filter(s => !s.isArchived && new Date(s.date) >= start && new Date(s.date) <= end).forEach(sale => {
+            if (!customerData[sale.customer]) customerData[sale.customer] = { totalSales: 0, totalCogs: 0 };
             customerData[sale.customer].totalSales += sale.total;
-            (sale.items || []).forEach((line: LineItem) => {
-                const inventoryItem = inventory.find((i: InventoryItem) => i.id === line.itemId);
-                if (!inventoryItem) return;
-                let quantityInBaseUnits = line.quantity;
-                if (line.unitId !== 'base') {
-                    const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === line.unitId);
-                    if (packingUnit && packingUnit.factor > 0) {
-                        quantityInBaseUnits *= packingUnit.factor;
-                    }
-                }
-                const cogs = quantityInBaseUnits * inventoryItem.purchasePrice;
-                customerData[sale.customer].totalCogs += cogs;
+            sale.items.forEach((line: LineItem) => {
+                const invItem = inventory.find(i => i.id === line.itemId);
+                if (!invItem) return;
+                const factor = line.unitId === 'base' ? 1 : (invItem.units.find(u=>u.id===line.unitId)?.factor || 1);
+                const frozenCost = line.purchasePriceAtSale !== undefined ? line.purchasePriceAtSale : invItem.purchasePrice;
+                customerData[sale.customer].totalCogs += (line.quantity * factor * frozenCost);
             });
         });
 
-        // 2. Process Sale Returns
-        const filteredSaleReturns = saleReturns.filter((sr: SaleReturn) => {
-            const returnDate = new Date(sr.date);
-            return returnDate >= start && returnDate <= end && !sr.isArchived;
-        });
-
-        filteredSaleReturns.forEach(sr => {
-            if (!customerData[sr.customer]) {
-                // This can happen if a customer only has returns in the period
-                customerData[sr.customer] = { totalSales: 0, totalCogs: 0 };
-            }
-            // Subtract return value from total sales
+        // 2. مرتجعات العملاء
+        saleReturns.filter(r => !r.isArchived && new Date(r.date) >= start && new Date(r.date) <= end).forEach(sr => {
+            if (!customerData[sr.customer]) customerData[sr.customer] = { totalSales: 0, totalCogs: 0 };
             customerData[sr.customer].totalSales -= sr.total;
-            
-            // Subtract COGS of returned items
-            (sr.items || []).forEach((line: LineItem) => {
-                 const inventoryItem = inventory.find((i: InventoryItem) => i.id === line.itemId);
-                if (!inventoryItem) return;
-                let quantityInBaseUnits = line.quantity;
-                if (line.unitId !== 'base') {
-                    const packingUnit = inventoryItem.units.find((u: PackingUnit) => u.id === line.unitId);
-                    if (packingUnit && packingUnit.factor > 0) {
-                        quantityInBaseUnits *= packingUnit.factor;
-                    }
-                }
-                const cogsReversal = quantityInBaseUnits * inventoryItem.purchasePrice;
-                customerData[sr.customer].totalCogs -= cogsReversal;
+            sr.items.forEach((line: LineItem) => {
+                const invItem = inventory.find(i => i.id === line.itemId);
+                if (!invItem) return;
+                const factor = line.unitId === 'base' ? 1 : (invItem.units.find(u=>u.id===line.unitId)?.factor || 1);
+                const frozenCost = line.purchasePriceAtSale !== undefined ? line.purchasePriceAtSale : invItem.purchasePrice;
+                customerData[sr.customer].totalCogs -= (line.quantity * factor * frozenCost);
             });
         });
 
-
-        return Object.entries(customerData).map(([customerName, data]: [string, { totalSales: number; totalCogs: number }]) => {
-            const customer = customers.find((c: Customer) => c.name === customerName);
+        return Object.entries(customerData).map(([customerName, data]) => {
             const profit = data.totalSales - data.totalCogs;
             const margin = data.totalSales > 0 ? (profit / data.totalSales) * 100 : 0;
-            
-            return {
-                customerId: customer?.id || customerName,
-                customerName,
-                totalSales: data.totalSales,
-                totalCogs: data.totalCogs,
-                profit,
-                margin,
-            };
-        });
-
+            return { customerName, totalSales: data.totalSales, totalCogs: data.totalCogs, profit, margin };
+        }).sort((a,b) => b.profit - a.profit);
     }, [sales, saleReturns, inventory, customers, startDate, endDate]);
 
     const columns = useMemo(() => [
         { header: 'العميل', accessor: 'customerName', sortable: true },
-        { header: 'صافي المبيعات', accessor: 'totalSales', render: (row: any) => `${row.totalSales.toLocaleString()} جنيه`, sortable: true },
-        { header: 'صافي التكلفة', accessor: 'totalCogs', render: (row: any) => `${row.totalCogs.toLocaleString()} جنيه`, sortable: true },
-        { header: 'إجمالي الربح', accessor: 'profit', render: (row: any) => `${row.profit.toLocaleString()} جنيه`, sortable: true },
-        { header: 'هامش الربح', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(2)}%`, sortable: true },
+        { header: 'صافي مبيعاته', accessor: 'totalSales', render: (row: any) => `${row.totalSales.toLocaleString()} ج.م`, sortable: true },
+        { header: 'تكلفة مبيعاته', accessor: 'totalCogs', render: (row: any) => `${row.totalCogs.toLocaleString()} ج.م`, sortable: true },
+        { header: 'الربح المحقق', accessor: 'profit', render: (row: any) => <span className="font-bold text-blue-600">{row.profit.toLocaleString()} ج.م</span>, sortable: true },
+        { header: '%', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(1)}%`, sortable: true },
     ], []);
     
-    const calculateFooter = useCallback((data: any[]) => {
-        const totalSales = data.reduce((sum, item) => sum + item.totalSales, 0);
-        const totalCogs = data.reduce((sum, item) => sum + item.totalCogs, 0);
+    const calculateFooter = (data: any[]) => {
         const totalProfit = data.reduce((sum, item) => sum + item.profit, 0);
-        
-        return {
-            customerName: `الإجمالي (${data.length} عميل)`,
-            totalSales: `${totalSales.toLocaleString()} جنيه`,
-            totalCogs: `${totalCogs.toLocaleString()} جنيه`,
-            profit: `${totalProfit.toLocaleString()} جنيه`,
-        };
-    }, []);
+        return { customerName: 'إجمالي الربح من العملاء', profit: `${totalProfit.toLocaleString()} ج.م` };
+    };
 
-    const reportName = `Customer-Profitability-${startDate}-to-${endDate}`;
-    
-    useEffect(() => {
-        onDataReady({ data: profitabilityData, columns, name: reportName });
-    }, [profitabilityData, onDataReady, columns, reportName]);
+    useEffect(() => { onDataReady({ data: profitabilityData, columns, name: `Customer-Profitability` }); }, [profitabilityData, onDataReady, columns]);
 
     return (
         <div id="printable-report">
             <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                    <div>
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير ربحية العملاء</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                            الفترة من {startDate} إلى {endDate}
-                        </p>
-                    </div>
+                <div className="mb-4">
+                    <h3 className="text-xl font-bold">تقرير ربحية العملاء (المتوسط المرجح)</h3>
+                    <p className="text-sm text-gray-500">يقيس مدى مساهمة كل عميل في الأرباح بناءً على تكلفة الأصناف المسحوبة فعلياً.</p>
                 </div>
-                <DataTable 
-                    columns={columns} 
-                    data={profitabilityData} 
-                    calculateFooter={calculateFooter}
-                    searchableColumns={['customerName']}
-                />
+                <DataTable columns={columns} data={profitabilityData} calculateFooter={calculateFooter} searchableColumns={['customerName']} />
             </div>
         </div>
     );

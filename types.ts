@@ -48,6 +48,7 @@ export interface LineItem {
   price: number;
   discount: number;
   total: number;
+  purchasePriceAtSale?: number; // الحقل الجديد لتجميد التكلفة عند البيع
 }
 
 export interface Sale {
@@ -74,7 +75,7 @@ export interface PriceQuote {
   total: number;
   status: 'جديد' | 'تم تحويله' | 'ملغي';
   isArchived?: boolean;
-  hidePrices?: boolean; // حقل جديد للتحكم في عرض الأسعار
+  hidePrices?: boolean;
 }
 
 export interface Purchase {
@@ -176,7 +177,7 @@ export interface Customer {
   address: string;
   balance: number;
   isArchived?: boolean;
-  linkedSupplierId?: string; // حقل الربط
+  linkedSupplierId?: string;
 }
 
 export interface Supplier {
@@ -187,7 +188,7 @@ export interface Supplier {
   address: string;
   balance: number;
   isArchived?: boolean;
-  linkedCustomerId?: string; // حقل الربط
+  linkedCustomerId?: string;
 }
 
 export interface User {

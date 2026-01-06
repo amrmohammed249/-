@@ -1,3 +1,4 @@
+
 import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -53,16 +54,17 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
             return packingUnit ? packingUnit.factor : 1;
         };
 
-        const initGroup = (invItem: InventoryItem, basePrice: number, customerName: string) => {
+        const initGroup = (invItem: InventoryItem, basePrice: number, customerName: string, frozenCost: number) => {
             const priceKey = basePrice.toFixed(2);
-            const key = `${invItem.id}_${priceKey}_${customerName}`;
+            // المفتاح الآن يتضمن التكلفة المجمّدة لضمان عدم خلط الأسعار المختلفة لنفس الصنف
+            const key = `${invItem.id}_${priceKey}_${customerName}_${frozenCost.toFixed(4)}`;
             if (!itemGroups[key]) {
                 itemGroups[key] = {
                     groupKey: key,
                     itemId: invItem.id,
                     itemName: invItem.name,
                     customerName: customerName,
-                    unitCostBase: invItem.purchasePrice,
+                    unitCostBase: frozenCost,
                     unitPriceBase: Number(priceKey),
                     soldQuantityBase: 0,
                     grossSalesValue: 0,
@@ -95,9 +97,15 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                 const factor = getFactor(line, inventoryItem);
                 const baseQty = line.quantity * factor;
                 const basePrice = line.price / factor; 
-                const cost = baseQty * inventoryItem.purchasePrice; 
                 
-                const group = initGroup(inventoryItem, basePrice, sale.customer);
+                // الاعتماد الحصري على التكلفة المجمّدة داخل الفاتورة
+                const frozenCost = (line.purchasePriceAtSale !== undefined && line.purchasePriceAtSale !== 0) 
+                    ? line.purchasePriceAtSale 
+                    : inventoryItem.purchasePrice;
+
+                const cost = baseQty * frozenCost; 
+                
+                const group = initGroup(inventoryItem, basePrice, sale.customer, frozenCost);
                 group.soldQuantityBase += baseQty;
                 group.grossSalesValue += line.total;
                 group.grossCostValue += cost;
@@ -124,9 +132,14 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                 const factor = getFactor(line, inventoryItem);
                 const baseQty = line.quantity * factor;
                 const basePrice = line.price / factor;
-                const cost = baseQty * inventoryItem.purchasePrice; 
+                
+                const frozenCost = (line.purchasePriceAtSale !== undefined && line.purchasePriceAtSale !== 0) 
+                    ? line.purchasePriceAtSale 
+                    : inventoryItem.purchasePrice;
 
-                const group = initGroup(inventoryItem, basePrice, ret.customer);
+                const cost = baseQty * frozenCost; 
+
+                const group = initGroup(inventoryItem, basePrice, ret.customer, frozenCost);
                 group.returnedQuantityBase += baseQty;
                 group.returnsValue += line.total;
                 group.returnsCost += cost;
@@ -139,18 +152,10 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                 const grossProfit = group.grossSalesValue - group.grossCostValue;
                 const profitLost = group.returnsValue - group.returnsCost;
                 const netProfit = grossProfit - profitLost;
-                const netQuantity = group.soldQuantityBase - group.returnedQuantityBase;
                 const netSales = group.grossSalesValue - group.returnsValue;
                 const margin = netSales > 0 ? (netProfit / netSales) * 100 : 0;
 
-                return {
-                    ...group,
-                    netQuantity,
-                    grossProfit,
-                    profitLost,
-                    netProfit,
-                    margin
-                };
+                return { ...group, grossProfit, profitLost, netProfit, margin };
             })
             .filter(g => g.soldQuantityBase !== 0 || g.returnedQuantityBase !== 0)
             .sort((a, b) => a.customerName.localeCompare(b.customerName) || a.itemName.localeCompare(b.itemName));
@@ -161,9 +166,9 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
         { header: 'العميل', accessor: 'customerName', sortable: true },
         { header: 'الصنف', accessor: 'itemName', sortable: true },
         { 
-            header: 'سعر شراء', 
+            header: 'التكلفة التاريخية', 
             accessor: 'unitCostBase', 
-            render: (row: any) => <span className="font-mono">{row.unitCostBase.toLocaleString()}</span>,
+            render: (row: any) => <span className="font-mono text-gray-500">{row.unitCostBase.toLocaleString()}</span>,
             sortable: true
         },
         { 
@@ -173,63 +178,29 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
             sortable: true
         },
         { header: 'الكمية', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString(), sortable: true },
-        { 
-            header: 'مبيعات', 
-            accessor: 'grossSalesValue', 
-            render: (row: any) => row.grossSalesValue.toLocaleString(),
-            sortable: true 
-        },
-        { 
-            header: 'مرتجع', 
-            accessor: 'returnsValue', 
-            render: (row: any) => row.returnsValue > 0 ? <span className="text-red-500">({row.returnsValue.toLocaleString()})</span> : '-',
-            sortable: true
-        },
-        { 
-            header: 'صافي ربح', 
-            accessor: 'netProfit', 
-            render: (row: any) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span>,
-            sortable: true
-        },
+        { header: 'صافي ربح', accessor: 'netProfit', render: (row: any) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span>, sortable: true },
         { header: '%', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(1)}%`, sortable: true },
     ], []);
     
     const calculateFooter = useCallback((data: any[]) => {
         const netProfit = data.reduce((sum, item) => sum + item.netProfit, 0);
         const grossSales = data.reduce((sum, item) => sum + item.grossSalesValue, 0);
-        const returnsVal = data.reduce((sum, item) => sum + item.returnsValue, 0);
-        
-        return {
-            itemName: 'الإجماليات',
-            grossSalesValue: `${grossSales.toLocaleString()}`,
-            returnsValue: `${returnsVal.toLocaleString()}`,
-            netProfit: `${netProfit.toLocaleString()}`,
-        };
+        return { itemName: 'الإجماليات', netProfit: `${netProfit.toLocaleString()}` };
     }, []);
 
-    const reportName = `Profitability-By-Customer-${startDate}-to-${endDate}`;
-    
-    useEffect(() => {
-        onDataReady({ data: profitabilityData, columns, name: reportName });
-    }, [profitabilityData, onDataReady, columns, reportName]);
+    const reportName = `Profitability-By-Customer-Frozen-${startDate}-to-${endDate}`;
+    useEffect(() => { onDataReady({ data: profitabilityData, columns, name: reportName }); }, [profitabilityData, onDataReady, columns, reportName]);
 
     return (
         <div id="printable-report">
             <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
                     <div>
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير ربحية الأصناف حسب العميل</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">الفترة من {startDate} إلى {endDate}</p>
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تحليل الربحية حسب العميل (منطق التجميد)</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">تحليل دقيق يعتمد على تكلفة الصنف المسجلة لحظة كل فاتورة.</p>
                     </div>
                 </div>
-                <DataTable 
-                    columns={columns} 
-                    data={profitabilityData} 
-                    calculateFooter={calculateFooter}
-                    searchableColumns={['itemName', 'customerName']}
-                    noPagination={noPagination}
-                    condensed={true}
-                />
+                <DataTable columns={columns} data={profitabilityData} calculateFooter={calculateFooter} searchableColumns={['itemName', 'customerName']} noPagination={noPagination} condensed={true} />
             </div>
         </div>
     );

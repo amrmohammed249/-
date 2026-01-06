@@ -1,3 +1,4 @@
+
 import React, { useContext, useMemo, useEffect, useCallback } from 'react';
 import { DataContext } from '../../context/DataContext';
 import DataTable from '../shared/DataTable';
@@ -9,7 +10,7 @@ interface ReportProps {
     customerId?: string;
     itemId?: string;
     itemCategoryId?: string;
-    excludedItemIds?: string[]; // Prop جديد للاستثناء
+    excludedItemIds?: string[];
     onDataReady: (props: { data: any[], columns: any[], name: string }) => void;
     noPagination?: boolean;
 }
@@ -52,15 +53,16 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
             return packingUnit ? packingUnit.factor : 1;
         };
 
-        const initGroup = (invItem: InventoryItem, basePrice: number) => {
+        const initGroup = (invItem: InventoryItem, basePrice: number, baseCost: number) => {
             const priceKey = basePrice.toFixed(2);
-            const key = `${invItem.id}_${priceKey}`;
+            const costKey = baseCost.toFixed(4);
+            const key = `${invItem.id}_${priceKey}_${costKey}`;
             if (!itemGroups[key]) {
                 itemGroups[key] = {
                     groupKey: key,
                     itemId: invItem.id,
                     itemName: invItem.name,
-                    unitCostBase: invItem.purchasePrice,
+                    unitCostBase: Number(costKey),
                     unitPriceBase: Number(priceKey),
                     soldQuantityBase: 0,
                     grossSalesValue: 0,
@@ -73,7 +75,7 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
             return itemGroups[key];
         };
 
-        // 1. معالجة المبيعات مع فلترة الاستثناء
+        // 1. معالجة المبيعات - الاعتماد كلياً على التكلفة المجمدة في الفاتورة
         const filteredSales = sales.filter((sale: Sale) => {
             const saleDate = new Date(sale.date);
             const dateMatch = saleDate >= start && saleDate <= end;
@@ -83,7 +85,6 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
 
         filteredSales.forEach((sale: Sale) => {
             sale.items.forEach((line: LineItem) => {
-                // فلترة: تخطي الأصناف المستثناة أو المفلترة
                 if (excludedItemIds.includes(line.itemId)) return;
                 if (itemId && itemId !== line.itemId) return;
 
@@ -94,16 +95,22 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
                 const factor = getFactor(line, inventoryItem);
                 const baseQty = line.quantity * factor;
                 const basePrice = line.price / factor; 
-                const cost = baseQty * inventoryItem.purchasePrice; 
                 
-                const group = initGroup(inventoryItem, basePrice);
+                // استخدام التكلفة المجمدة المسجلة داخل الفاتورة نفسها
+                const frozenCost = (line.purchasePriceAtSale !== undefined && line.purchasePriceAtSale !== 0) 
+                    ? line.purchasePriceAtSale 
+                    : inventoryItem.purchasePrice;
+
+                const costValue = baseQty * frozenCost; 
+                
+                const group = initGroup(inventoryItem, basePrice, frozenCost);
                 group.soldQuantityBase += baseQty;
                 group.grossSalesValue += line.total;
-                group.grossCostValue += cost;
+                group.grossCostValue += costValue;
             });
         });
 
-        // 2. معالجة المرتجعات مع فلترة الاستثناء
+        // 2. معالجة المرتجعات - باستخدام التكلفة المجمدة أيضاً
         const filteredReturns = saleReturns.filter((ret: SaleReturn) => {
             const retDate = new Date(ret.date);
             const dateMatch = retDate >= start && retDate <= end;
@@ -113,7 +120,6 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
 
         filteredReturns.forEach((ret: SaleReturn) => {
             ret.items.forEach((line: LineItem) => {
-                // فلترة: تخطي الأصناف المستثناة
                 if (excludedItemIds.includes(line.itemId)) return;
                 if (itemId && itemId !== line.itemId) return;
 
@@ -124,33 +130,29 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
                 const factor = getFactor(line, inventoryItem);
                 const baseQty = line.quantity * factor;
                 const basePrice = line.price / factor;
-                const cost = baseQty * inventoryItem.purchasePrice; 
+                
+                const frozenCost = (line.purchasePriceAtSale !== undefined && line.purchasePriceAtSale !== 0) 
+                    ? line.purchasePriceAtSale 
+                    : inventoryItem.purchasePrice;
 
-                const group = initGroup(inventoryItem, basePrice);
+                const costValue = baseQty * frozenCost; 
+
+                const group = initGroup(inventoryItem, basePrice, frozenCost);
                 group.returnedQuantityBase += baseQty;
                 group.returnsValue += line.total;
-                group.returnsCost += cost;
+                group.returnsCost += costValue;
             });
         });
 
-        // 3. الحسابات النهائية
         return Object.values(itemGroups)
             .map(group => {
                 const grossProfit = group.grossSalesValue - group.grossCostValue;
                 const profitLost = group.returnsValue - group.returnsCost;
                 const netProfit = grossProfit - profitLost;
-                const netQuantity = group.soldQuantityBase - group.returnedQuantityBase;
                 const netSales = group.grossSalesValue - group.returnsValue;
                 const margin = netSales > 0 ? (netProfit / netSales) * 100 : 0;
 
-                return {
-                    ...group,
-                    netQuantity,
-                    grossProfit,
-                    profitLost,
-                    netProfit,
-                    margin
-                };
+                return { ...group, grossProfit, profitLost, netProfit, margin };
             })
             .sort((a, b) => a.itemName === b.itemName ? b.unitPriceBase - a.unitPriceBase : a.itemName.localeCompare(b.itemName));
 
@@ -159,26 +161,19 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
     const columns = useMemo(() => [
         { header: 'الصنف', accessor: 'itemName', sortable: true },
         { 
-            header: 'تكلفة/أساسي', 
+            header: 'تكلفة تاريخية', 
             accessor: 'unitCostBase', 
-            render: (row: any) => <span className="font-mono">{row.unitCostBase.toLocaleString()}</span>,
+            render: (row: any) => <span className="font-mono text-gray-500">{row.unitCostBase.toLocaleString()}</span>,
             sortable: true
         },
         { 
-            header: 'سعر/أساسي', 
+            header: 'سعر بيع', 
             accessor: 'unitPriceBase', 
             render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span>,
             sortable: true
         },
         { header: 'الكمية', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString(), sortable: true },
         { header: 'إجمالي بيع', accessor: 'grossSalesValue', render: (row: any) => `${row.grossSalesValue.toLocaleString()}`, sortable: true },
-        { header: 'إجمالي تكلفة', accessor: 'grossCostValue', render: (row: any) => `${row.grossCostValue.toLocaleString()}`, sortable: true },
-        { 
-            header: 'مرتجع', 
-            accessor: 'returnsValue', 
-            render: (row: any) => row.returnsValue > 0 ? <span className="text-red-500">({row.returnsValue.toLocaleString()})</span> : '-',
-            sortable: true
-        },
         { 
             header: 'صافي ربح', 
             accessor: 'netProfit', 
@@ -189,45 +184,24 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
     ], []);
     
     const calculateFooter = useCallback((data: any[]) => {
-        const soldQuantityBase = data.reduce((sum, item) => sum + item.soldQuantityBase, 0);
         const grossSales = data.reduce((sum, item) => sum + item.grossSalesValue, 0);
-        const grossCost = data.reduce((sum, item) => sum + item.grossCostValue, 0);
-        const returnsVal = data.reduce((sum, item) => sum + item.returnsValue, 0);
         const netProfit = data.reduce((sum, item) => sum + item.netProfit, 0);
-        
-        return {
-            itemName: 'الإجماليات',
-            soldQuantityBase: soldQuantityBase.toLocaleString(),
-            grossSalesValue: `${grossSales.toLocaleString()}`,
-            grossCostValue: `${grossCost.toLocaleString()}`,
-            returnsValue: `${returnsVal.toLocaleString()}`,
-            netProfit: `${netProfit.toLocaleString()}`,
-        };
+        return { itemName: 'الإجماليات', grossSalesValue: `${grossSales.toLocaleString()}`, netProfit: `${netProfit.toLocaleString()}`, };
     }, []);
 
-    const reportName = `Net-Profitability-Report-${startDate}-to-${endDate}`;
-    
-    useEffect(() => {
-        onDataReady({ data: profitabilityData, columns, name: reportName });
-    }, [profitabilityData, onDataReady, columns, reportName]);
+    const reportName = `Fixed-Profit-Report-${startDate}-to-${endDate}`;
+    useEffect(() => { onDataReady({ data: profitabilityData, columns, name: reportName }); }, [profitabilityData, onDataReady, columns, reportName]);
 
     return (
         <div id="printable-report">
             <div className="p-4">
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex justify-between items-center mb-4 text-right">
                     <div>
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير صافي الربحية التفصيلي</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">الفترة من {startDate} إلى {endDate}</p>
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير صافي الربحية (منطق التكلفة المجمدة)</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">تحليل الربحية بناءً على تكلفة الصنف وقت البيع حصراً.</p>
                     </div>
                 </div>
-                <DataTable 
-                    columns={columns} 
-                    data={profitabilityData} 
-                    calculateFooter={calculateFooter}
-                    searchableColumns={['itemName']}
-                    noPagination={noPagination}
-                    condensed={true}
-                />
+                <DataTable columns={columns} data={profitabilityData} calculateFooter={calculateFooter} searchableColumns={['itemName']} noPagination={noPagination} condensed={true} />
             </div>
         </div>
     );

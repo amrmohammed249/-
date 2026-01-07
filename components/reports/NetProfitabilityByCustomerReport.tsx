@@ -17,6 +17,7 @@ interface ReportProps {
 
 interface ProfitabilityGroup {
     groupKey: string;
+    saleId: string; // إضافة رقم الفاتورة لفك الدمج
     itemId: string;
     itemName: string;
     customerName: string;
@@ -28,7 +29,7 @@ interface ProfitabilityGroup {
     returnedQuantityBase: number;
     returnsValue: number;
     returnsCost: number;
-    latestDate: string; // إضافة حقل التاريخ للفرز
+    latestDate: string;
     netQuantity?: number;
     netSales?: number;
     netCost?: number;
@@ -55,12 +56,14 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
             return packingUnit ? packingUnit.factor : 1;
         };
 
-        const initGroup = (invItem: InventoryItem, basePrice: number, customerName: string, frozenCost: number, txDate: string) => {
+        const initGroup = (invItem: InventoryItem, basePrice: number, customerName: string, frozenCost: number, txDate: string, saleId: string) => {
             const priceKey = basePrice.toFixed(2);
-            const key = `${invItem.id}_${priceKey}_${customerName}_${frozenCost.toFixed(4)}`;
+            // المفتاح الآن يتضمن رقم الفاتورة (saleId) لضمان عدم الدمج بين فواتير مختلفة
+            const key = `${saleId}_${invItem.id}_${priceKey}_${frozenCost.toFixed(4)}`;
             if (!itemGroups[key]) {
                 itemGroups[key] = {
                     groupKey: key,
+                    saleId: saleId,
                     itemId: invItem.id,
                     itemName: invItem.name,
                     customerName: customerName,
@@ -74,11 +77,6 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                     returnsCost: 0,
                     latestDate: txDate,
                 };
-            } else {
-                // تحديث التاريخ ليكون أحدث تاريخ معاملة في المجموعة
-                if (new Date(txDate) > new Date(itemGroups[key].latestDate)) {
-                    itemGroups[key].latestDate = txDate;
-                }
             }
             return itemGroups[key];
         };
@@ -110,7 +108,7 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
 
                 const cost = baseQty * frozenCost; 
                 
-                const group = initGroup(inventoryItem, basePrice, sale.customer, frozenCost, sale.date);
+                const group = initGroup(inventoryItem, basePrice, sale.customer, frozenCost, sale.date, sale.id);
                 group.soldQuantityBase += baseQty;
                 group.grossSalesValue += line.total;
                 group.grossCostValue += cost;
@@ -144,7 +142,8 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
 
                 const cost = baseQty * frozenCost; 
 
-                const group = initGroup(inventoryItem, basePrice, ret.customer, frozenCost, ret.date);
+                // المرتجع قد لا يكون له "رقم فاتورة أصلية" في بعض الحالات، نستخدم رقم المرتجع نفسه كمميز
+                const group = initGroup(inventoryItem, basePrice, ret.customer, frozenCost, ret.date, ret.id);
                 group.returnedQuantityBase += baseQty;
                 group.returnsValue += line.total;
                 group.returnsCost += cost;
@@ -163,23 +162,28 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
                 return { ...group, grossProfit, profitLost, netProfit, margin };
             })
             .filter(g => g.soldQuantityBase !== 0 || g.returnedQuantityBase !== 0)
-            // التعديل هنا: الفرز حسب التاريخ (الأحدث أولاً)
             .sort((a, b) => new Date(b.latestDate).getTime() - new Date(a.latestDate).getTime());
 
     }, [sales, saleReturns, inventory, customers, startDate, endDate, customerId, itemId, itemCategoryId, excludedItemIds]);
 
     const columns = useMemo(() => [
-        { header: 'التاريخ', accessor: 'latestDate', sortable: true }, // إضافة عمود التاريخ للمعاينة
+        { header: 'التاريخ', accessor: 'latestDate', sortable: true },
+        { 
+            header: 'المستند', 
+            accessor: 'saleId', 
+            render: (row: any) => <span className="font-mono text-xs bg-gray-100 px-1 rounded">{row.saleId}</span>,
+            sortable: true 
+        },
         { header: 'العميل', accessor: 'customerName', sortable: true },
         { header: 'الصنف', accessor: 'itemName', sortable: true },
         { 
-            header: 'التكلفة التاريخية', 
+            header: 'التكلفة', 
             accessor: 'unitCostBase', 
             render: (row: any) => <span className="font-mono text-gray-500">{row.unitCostBase.toLocaleString()}</span>,
             sortable: true
         },
         { 
-            header: 'سعر بيع', 
+            header: 'سعر البيع', 
             accessor: 'unitPriceBase', 
             render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span>,
             sortable: true
@@ -194,7 +198,7 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
         return { itemName: 'الإجماليات', netProfit: `${netProfit.toLocaleString()}` };
     }, []);
 
-    const reportName = `Profitability-By-Customer-DateSorted-${startDate}-to-${endDate}`;
+    const reportName = `Detailed-Profit-By-Invoice-${startDate}-to-${endDate}`;
     useEffect(() => { onDataReady({ data: profitabilityData, columns, name: reportName }); }, [profitabilityData, onDataReady, columns, reportName]);
 
     return (
@@ -202,11 +206,11 @@ const NetProfitabilityByCustomerReport: React.FC<ReportProps> = ({ startDate, en
             <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
                     <div>
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تحليل الربحية (مرتب حسب التاريخ)</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">تحليل دقيق مرتب زمنياً من الأحدث إلى الأقدم.</p>
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تحليل الربحية التفصيلي (لكل فاتورة)</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">تحليل مستقل لكل حركة بيع لضمان دقة التقارير التاريخية.</p>
                     </div>
                 </div>
-                <DataTable columns={columns} data={profitabilityData} calculateFooter={calculateFooter} searchableColumns={['itemName', 'customerName', 'latestDate']} noPagination={noPagination} condensed={true} />
+                <DataTable columns={columns} data={profitabilityData} calculateFooter={calculateFooter} searchableColumns={['itemName', 'customerName', 'saleId', 'latestDate']} noPagination={noPagination} condensed={true} />
             </div>
         </div>
     );

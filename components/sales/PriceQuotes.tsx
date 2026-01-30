@@ -3,7 +3,7 @@ import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } 
 import { DataContext } from '../../context/DataContext';
 import { WindowContext } from '../../context/WindowContext';
 import { PriceQuote, LineItem, InventoryItem, Customer, PackingUnit } from '../../types';
-import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon, BanknotesIcon } from '../icons';
+import { PlusIcon, TrashIcon, MagnifyingGlassIcon, UsersIcon, BoxIcon } from '../icons';
 import Modal from '../shared/Modal';
 import AddCustomerForm from '../customers/AddCustomerForm';
 import QuoteView from './QuoteView';
@@ -24,7 +24,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
 
     const setState = onStateChange!;
     const state = windowState || {};
-    const { activeQuote, items, customer, productSearchTerm, customerSearchTerm, isProcessing, isEditMode } = state;
+    const { activeQuote, items = [], customer, productSearchTerm, customerSearchTerm, isProcessing, isEditMode } = state;
 
     const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
     const [quoteToView, setQuoteToView] = useState<PriceQuote | null>(null);
@@ -229,13 +229,13 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
 
     return (
         <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900/50 text-[--text] font-sans">
-            <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-sm p-2 sm:p-3 flex flex-wrap justify-between items-center gap-2 sm:gap-4">
+            <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-sm p-2 sm:p-3 flex flex-wrap justify-between items-center gap-2 sm:gap-4 z-10">
                 <div className="flex items-center gap-2 sm:gap-4 shrink-0">
                     <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-gray-100">
                       {isPriceHidden ? 'بيان كميات' : (isEditMode ? 'تعديل عرض' : 'عرض جديد')}
                     </h1>
                     <span className="font-mono text-[10px] sm:text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeQuote.id}</span>
-                    <input type="date" value={activeQuote.date || ''} onChange={e => setState(p => ({...p, activeQuote: {...p.activeQuote, date: e.target.value}}))} className="input-style w-28 sm:w-36 text-xs sm:text-sm py-1 sm:py-2"/>
+                    <input type="date" value={activeQuote.date || ''} onChange={e => setState(p => ({...p, activeQuote: {...p.activeQuote, date: e.target.value}}))} className="input-style w-28 sm:w-36 text-[10px] sm:text-sm py-1 sm:py-2"/>
                 </div>
                 <div className="flex-grow max-w-full sm:max-w-sm relative order-3 sm:order-2">
                     <MagnifyingGlassIcon className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -261,7 +261,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                 </div>
             </header>
 
-            <div className="flex-1 flex flex-col md:flex-row gap-4 p-2 sm:p-4 overflow-hidden">
+            <div className="flex-1 flex flex-col md:flex-row gap-4 p-2 sm:p-4 overflow-hidden mb-24 md:mb-0">
                 <main className="w-full md:w-2/3 flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 overflow-hidden">
                     <div className="p-2 sm:p-3 border-b dark:border-gray-700 relative bg-gray-50/50 dark:bg-gray-800">
                         <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -278,7 +278,6 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                         )}
                     </div>
                     <div className="flex-1 overflow-y-auto">
-                        {/* Mobile view cards */}
                         <div className="md:hidden divide-y dark:divide-gray-700">
                              {(!items || items.length === 0) && (
                                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
@@ -286,7 +285,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                                     <p className="text-sm">لا توجد أصناف مضافة بعد</p>
                                 </div>
                             )}
-                            {items && items.map((item, index) => {
+                            {items && items.map((item: any, index: number) => {
                                 const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
                                 const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
                                 return (
@@ -317,7 +316,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                                                     </div>
                                                     <div className="flex flex-col justify-end text-left">
                                                         <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">الإجمالي</span>
-                                                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{item.total.toLocaleString()}</span>
+                                                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{(item.total || 0).toLocaleString()}</span>
                                                     </div>
                                                 </>
                                             )}
@@ -326,7 +325,6 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                                 );
                             })}
                         </div>
-                        {/* Desktop view table */}
                         <table className="hidden md:table w-full text-sm text-right table-auto">
                             <thead className="text-xs text-gray-700 uppercase bg-gray-100 dark:bg-gray-700/50 sticky top-0 z-10">
                                 <tr>
@@ -342,7 +340,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                             </thead>
                             <tbody>
                                 {(!items || items.length === 0) && (<tr><td colSpan={8}><div className="flex flex-col items-center justify-center h-full text-gray-400 py-16"><BoxIcon className="w-16 h-16"/><p>لم تتم إضافة أي أصناف بعد</p></div></td></tr>)}
-                                {items && items.map((item, index) => {
+                                {items && items.map((item: any, index: number) => {
                                     const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
                                     const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
                                     return (
@@ -357,7 +355,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                                               <td className="px-2 py-2"><input type="number" value={item.discount} onChange={e => handleItemUpdate(index, 'discount', e.target.value)} className="input-style w-full text-center"/></td>
                                             )}
                                             {!isPriceHidden && (
-                                              <td className="px-2 py-2 text-left font-mono font-semibold text-blue-600 dark:text-blue-400">{item.total.toLocaleString()}</td>
+                                              <td className="px-2 py-2 text-left font-mono font-semibold text-blue-600 dark:text-blue-400">{(item.total || 0).toLocaleString()}</td>
                                             )}
                                             <td className="px-2 py-2 text-center"><button onClick={() => handleItemRemove(index)} className="text-red-400 hover:text-red-600 transition-colors"><TrashIcon className="w-5 h-5"/></button></td>
                                         </tr>
@@ -367,8 +365,8 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                         </table>
                     </div>
                 </main>
-                <aside className="w-full md:w-1/3 flex flex-col gap-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-3 sm:p-4 flex-grow flex flex-col">
+                <aside className="w-full md:w-1/3 flex flex-col gap-4 fixed bottom-14 left-0 right-0 md:relative md:bottom-auto bg-white dark:bg-gray-800 md:bg-transparent p-2 md:p-0 border-t md:border-t-0 dark:border-gray-700 z-20">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-3 sm:p-4 flex-grow hidden md:flex flex-col">
                         <h2 className="text-base sm:text-lg font-bold border-b dark:border-gray-700 pb-2 mb-3 sm:mb-4">ملخص المستند</h2>
                         {!isPriceHidden ? (
                             <div className="space-y-2 sm:space-y-3 text-sm sm:text-md flex-grow">
@@ -389,11 +387,15 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                             </div>
                         )}
                     </div>
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-3 sm:p-4 space-y-2 sm:space-y-3">
-                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-lg sm:text-xl font-bold p-3 sm:p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-lg transition-all">{isProcessing ? 'جاري الحفظ...' : isEditMode ? 'تعديل وطباعة' : 'حفظ وطباعة (F9)'}</button>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-2 sm:p-4 space-y-2">
+                        <div className="md:hidden flex justify-between items-center px-2 mb-2">
+                             <span className="text-sm font-bold text-gray-500">إجمالي البيان:</span>
+                             <span className="text-xl font-bold text-blue-600 font-mono">{totals.grandTotal.toLocaleString()}</span>
+                        </div>
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-base sm:text-xl font-bold p-3 sm:p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-lg transition-all">{isProcessing ? 'جاري الحفظ...' : isEditMode ? 'تعديل وطباعة' : 'حفظ وطباعة (F9)'}</button>
                         <div className="grid grid-cols-2 gap-2">
-                           <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-xs sm:text-sm font-bold p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200">{isEditMode ? 'حفظ' : 'حفظ فقط (F2)'}</button>
-                           <button onClick={handleCancelOrReset} className="w-full text-xs sm:text-sm font-bold p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 text-red-500">{isEditMode ? 'إلغاء' : 'جديد (F3)'}</button>
+                           <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-xs sm:text-sm font-bold p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200">{isEditMode ? 'حفظ' : 'حفظ فقط (F2)'}</button>
+                           <button onClick={handleCancelOrReset} className="w-full text-xs sm:text-sm font-bold p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 text-red-500">{isEditMode ? 'إلغاء' : 'جديد (F3)'}</button>
                         </div>
                     </div>
                 </aside>

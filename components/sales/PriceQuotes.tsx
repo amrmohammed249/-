@@ -229,49 +229,105 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
 
     return (
         <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900/50 text-[--text] font-sans">
-            <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-sm p-3 flex flex-wrap justify-between items-center gap-4">
-                <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">
-                      {isPriceHidden ? 'تعديل بيان كميات' : (isEditMode ? 'تعديل عرض سعر' : 'إنشاء عرض سعر')}
+            <header className="flex-shrink-0 bg-white dark:bg-gray-800 shadow-sm p-2 sm:p-3 flex flex-wrap justify-between items-center gap-2 sm:gap-4">
+                <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                    <h1 className="text-lg sm:text-xl font-bold text-gray-800 dark:text-gray-100">
+                      {isPriceHidden ? 'بيان كميات' : (isEditMode ? 'تعديل عرض' : 'عرض جديد')}
                     </h1>
-                    <span className="font-mono text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeQuote.id}</span>
-                    <input type="date" value={activeQuote.date || ''} onChange={e => setState(p => ({...p, activeQuote: {...p.activeQuote, date: e.target.value}}))} className="input-style w-36"/>
+                    <span className="font-mono text-[10px] sm:text-sm bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{activeQuote.id}</span>
+                    <input type="date" value={activeQuote.date || ''} onChange={e => setState(p => ({...p, activeQuote: {...p.activeQuote, date: e.target.value}}))} className="input-style w-28 sm:w-36 text-xs sm:text-sm py-1 sm:py-2"/>
                 </div>
-                <div className="flex-grow max-w-sm relative">
-                    <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input ref={customerSearchRef} type="text" placeholder="ابحث عن عميل (اختياري)..." value={customerSearchTerm || ''} onChange={(e) => setState(p => ({...p, customerSearchTerm: e.target.value}))} onKeyDown={handleCustomerSearchKeyDown} className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg py-2 pr-10 pl-4 focus:ring-2 focus:ring-[--accent] outline-none"/>
+                <div className="flex-grow max-w-full sm:max-w-sm relative order-3 sm:order-2">
+                    <MagnifyingGlassIcon className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input ref={customerSearchRef} type="text" placeholder="ابحث عن عميل..." value={customerSearchTerm || ''} onChange={(e) => setState(p => ({...p, customerSearchTerm: e.target.value}))} onKeyDown={handleCustomerSearchKeyDown} className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg py-1.5 sm:py-2 pr-9 pl-4 text-xs sm:text-sm focus:ring-2 focus:ring-[--accent] outline-none"/>
                     {customerSearchResults.length > 0 && (
-                        <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-30">
+                        <div className="absolute top-full right-0 left-0 bg-white dark:bg-gray-800 shadow-lg rounded-b-lg border dark:border-gray-700 z-50">
                             {customerSearchResults.map((c, index) => (
-                                <div key={c.id} onClick={() => { setState(p => ({...p, customer: c, customerSearchTerm: ''})); productSearchRef.current?.focus(); }} className={`p-2 cursor-pointer ${index === highlightedCustomerIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}>{c.name}</div>
+                                <div key={c.id} onClick={() => { setState(p => ({...p, customer: c, customerSearchTerm: ''})); productSearchRef.current?.focus(); }} className={`p-2 text-sm cursor-pointer ${index === highlightedCustomerIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}>{c.name}</div>
                             ))}
                         </div>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 order-2 sm:order-3">
                     {customer ? (
-                        <div className="flex items-center gap-2 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 p-2 rounded-lg"><UsersIcon className="w-5 h-5" /><span className="font-semibold">{customer.name}</span><button onClick={() => setState(p => ({...p, customer: null}))} className="text-red-500 mr-1 text-lg font-bold">×</button></div>
+                        <div className="flex items-center gap-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 p-1.5 rounded-lg text-xs sm:text-sm">
+                            <UsersIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+                            <span className="font-semibold max-w-[80px] sm:max-w-[150px] truncate">{customer.name}</span>
+                            <button onClick={() => setState(p => ({...p, customer: null}))} className="text-red-500 mr-1 font-bold">×</button>
+                        </div>
                     ) : (
-                        <div className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg text-gray-400 border border-dashed border-gray-300">بدون عميل</div>
+                        <button onClick={() => setAddCustomerModalOpen(true)} className="flex items-center gap-1 px-2 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"><PlusIcon className="w-3 h-3" /> عميل</button>
                     )}
                 </div>
             </header>
 
-            <div className="flex-1 flex flex-col md:flex-row gap-4 p-4 overflow-hidden">
-                <main className="w-full md:w-2/3 flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700">
-                    <div className="p-3 border-b dark:border-gray-700 relative bg-gray-50/50 dark:bg-gray-800">
+            <div className="flex-1 flex flex-col md:flex-row gap-4 p-2 sm:p-4 overflow-hidden">
+                <main className="w-full md:w-2/3 flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 overflow-hidden">
+                    <div className="p-2 sm:p-3 border-b dark:border-gray-700 relative bg-gray-50/50 dark:bg-gray-800">
                         <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input ref={productSearchRef} type="text" placeholder="ابحث بالباركود أو اسم الصنف... (Ctrl+F)" value={productSearchTerm || ''} onChange={(e) => setState(p => ({...p, productSearchTerm: e.target.value}))} onKeyDown={handleProductSearchKeyDown} className="w-full text-lg bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-2.5 pr-12 focus:ring-2 focus:ring-[--accent] outline-none"/>
+                        <input ref={productSearchRef} type="text" placeholder="باركود أو اسم الصنف... (Ctrl+F)" value={productSearchTerm || ''} onChange={(e) => setState(p => ({...p, productSearchTerm: e.target.value}))} onKeyDown={handleProductSearchKeyDown} className="w-full text-base sm:text-lg bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 rounded-lg p-2 sm:p-2.5 pr-12 focus:ring-2 focus:ring-[--accent] outline-none"/>
                         {productSearchResults.length > 0 && (
-                            <div className="absolute top-full right-3 left-3 bg-white dark:bg-gray-800 shadow-xl rounded-b-lg border dark:border-gray-700 z-20">
+                            <div className="absolute top-full right-3 left-3 bg-white dark:bg-gray-800 shadow-xl rounded-b-lg border dark:border-gray-700 z-50">
                                 {productSearchResults.map((p, index) => (
-                                    <div key={p.id} onClick={() => handleProductSelect(p)} className={`p-3 flex justify-between cursor-pointer border-b last:border-0 dark:border-gray-700 ${index === highlightedProductIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}><span>{p.name}</span><span className="text-sm text-gray-500">المتاح: {p.stock}</span></div>
+                                    <div key={p.id} onClick={() => handleProductSelect(p)} className={`p-3 flex justify-between cursor-pointer border-b last:border-0 dark:border-gray-700 ${index === highlightedProductIndex ? 'bg-blue-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-900'}`}>
+                                        <span className="text-sm font-bold">{p.name}</span>
+                                        <span className="text-xs text-gray-500">متاح: {p.stock}</span>
+                                    </div>
                                 ))}
                             </div>
                         )}
                     </div>
                     <div className="flex-1 overflow-y-auto">
-                        <table className="w-full text-sm text-right table-auto">
+                        {/* Mobile view cards */}
+                        <div className="md:hidden divide-y dark:divide-gray-700">
+                             {(!items || items.length === 0) && (
+                                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                                    <BoxIcon className="w-16 h-16 opacity-20 mb-2"/>
+                                    <p className="text-sm">لا توجد أصناف مضافة بعد</p>
+                                </div>
+                            )}
+                            {items && items.map((item, index) => {
+                                const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
+                                const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
+                                return (
+                                    <div key={item.itemId + index} className="p-3 bg-white dark:bg-gray-800">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex-grow">
+                                                <span className="font-bold text-sm text-gray-900 dark:text-white truncate block">{item.itemName}</span>
+                                                <span className="text-[10px] font-mono text-gray-400">{item.itemId}</span>
+                                            </div>
+                                            <button onClick={() => handleItemRemove(index)} className="text-red-400 p-1"><TrashIcon className="w-5 h-5"/></button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">الكمية</label>
+                                                <input type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} className="input-style w-full text-center text-sm py-1.5 font-bold"/>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">الوحدة</label>
+                                                <select value={item.unitId} onChange={e => handleItemUpdate(index, 'unitId', e.target.value)} className="input-style w-full text-sm py-1.5">
+                                                    {unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}
+                                                </select>
+                                            </div>
+                                            {!isPriceHidden && (
+                                                <>
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">السعر</label>
+                                                        <input type="number" value={item.price} onChange={e => handleItemUpdate(index, 'price', e.target.value)} className="input-style w-full text-center text-sm py-1.5"/>
+                                                    </div>
+                                                    <div className="flex flex-col justify-end text-left">
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">الإجمالي</span>
+                                                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{item.total.toLocaleString()}</span>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {/* Desktop view table */}
+                        <table className="hidden md:table w-full text-sm text-right table-auto">
                             <thead className="text-xs text-gray-700 uppercase bg-gray-100 dark:bg-gray-700/50 sticky top-0 z-10">
                                 <tr>
                                     <th className="px-2 py-3 w-20">الكود</th>
@@ -290,7 +346,7 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                                     const inventoryItem = inventory.find((i: InventoryItem) => i.id === item.itemId);
                                     const unitOptions = inventoryItem ? [{ id: 'base', name: inventoryItem.baseUnit }, ...inventoryItem.units] : [];
                                     return (
-                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900/20 transition-colors">
+                                        <tr key={item.itemId + index} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-blue-900/10 transition-colors">
                                             <td className="px-2 py-2 text-xs font-mono text-center">{item.itemId}</td><td className="px-2 py-2 font-semibold truncate">{item.itemName}</td>
                                             <td className="px-2 py-2"><input ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].quantity = el; }} type="number" value={item.quantity} onChange={e => handleItemUpdate(index, 'quantity', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'quantity')} className="input-style w-full text-center text-base font-bold"/></td>
                                             <td className="px-2 py-2"><select ref={el => { if(!itemInputRefs.current[item.itemId]) itemInputRefs.current[item.itemId] = { quantity: null, unit: null, price: null }; itemInputRefs.current[item.itemId].unit = el; }} value={item.unitId} onChange={e => handleItemUpdate(index, 'unitId', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'unit')} className="input-style w-full">{unitOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.name}</option>)}</select></td>
@@ -312,32 +368,32 @@ const PriceQuotes: React.FC<PriceQuotesProps> = ({ windowId, windowState, onStat
                     </div>
                 </main>
                 <aside className="w-full md:w-1/3 flex flex-col gap-4">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 flex-grow flex flex-col">
-                        <h2 className="text-lg font-bold border-b dark:border-gray-700 pb-2 mb-4">ملخص المستند</h2>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-3 sm:p-4 flex-grow flex flex-col">
+                        <h2 className="text-base sm:text-lg font-bold border-b dark:border-gray-700 pb-2 mb-3 sm:mb-4">ملخص المستند</h2>
                         {!isPriceHidden ? (
-                            <div className="space-y-3 text-md flex-grow">
+                            <div className="space-y-2 sm:space-y-3 text-sm sm:text-md flex-grow">
                                 <div className="flex justify-between"><span className="text-gray-500">المجموع الفرعي</span><span className="font-mono font-semibold">{totals.subtotal.toLocaleString()}</span></div>
                                 <div className="flex justify-between"><span className="text-gray-500">إجمالي الخصم</span><span className="font-mono font-semibold text-red-500">{totals.totalDiscount.toLocaleString()}</span></div>
                                 <div className="border-t-2 border-dashed dark:border-gray-700 pt-3 mt-auto">
-                                    <div className="flex justify-between items-center text-3xl font-bold text-blue-600 dark:text-blue-400">
+                                    <div className="flex justify-between items-center text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400">
                                         <span>الإجمالي</span>
                                         <span className="font-mono">{totals.grandTotal.toLocaleString()}</span>
                                     </div>
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex-grow flex flex-col items-center justify-center text-gray-400 text-sm text-center space-y-3">
+                            <div className="flex-grow flex flex-col items-center justify-center text-gray-400 text-sm text-center space-y-3 py-6">
                                 <BoxIcon className="w-12 h-12 opacity-20"/>
                                 <p className="font-bold text-gray-500">هذا المستند عبارة عن "بيان كميات" فقط.</p>
                                 <p className="text-xs">سيتم طباعته كبيان أصناف مجمع للأصناف المضافة.</p>
                             </div>
                         )}
                     </div>
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-4 space-y-3">
-                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-xl font-bold p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-lg transition-all">{isProcessing ? 'جاري الحفظ...' : isEditMode ? 'حفظ وطباعة التعديلات' : 'حفظ وطباعة (F9)'}</button>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-3 sm:p-4 space-y-2 sm:space-y-3">
+                        <button onClick={() => handleFinalize(true)} disabled={isProcessing} className="w-full text-lg sm:text-xl font-bold p-3 sm:p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 shadow-lg transition-all">{isProcessing ? 'جاري الحفظ...' : isEditMode ? 'تعديل وطباعة' : 'حفظ وطباعة (F9)'}</button>
                         <div className="grid grid-cols-2 gap-2">
-                           <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-sm font-bold p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200">{isEditMode ? 'حفظ التغييرات' : 'حفظ فقط (F2)'}</button>
-                           <button onClick={handleCancelOrReset} className="w-full text-sm font-bold p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 text-red-500">{isEditMode ? 'إلغاء' : 'بيان جديد (F3)'}</button>
+                           <button onClick={() => handleFinalize(false)} disabled={isProcessing} className="w-full text-xs sm:text-sm font-bold p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200">{isEditMode ? 'حفظ' : 'حفظ فقط (F2)'}</button>
+                           <button onClick={handleCancelOrReset} className="w-full text-xs sm:text-sm font-bold p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 text-red-500">{isEditMode ? 'إلغاء' : 'جديد (F3)'}</button>
                         </div>
                     </div>
                 </aside>

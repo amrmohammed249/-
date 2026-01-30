@@ -17,6 +17,8 @@ interface ReportProps {
 
 interface ProfitabilityGroup {
     groupKey: string;
+    saleId: string;
+    date: string;
     itemId: string;
     itemName: string;
     unitCostBase: number;
@@ -27,11 +29,6 @@ interface ProfitabilityGroup {
     returnedQuantityBase: number;
     returnsValue: number;
     returnsCost: number;
-    netQuantity?: number;
-    netSales?: number;
-    netCost?: number;
-    grossProfit?: number;
-    profitLost?: number;
     netProfit?: number;
     margin?: number;
 }
@@ -53,13 +50,16 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
             return packingUnit ? packingUnit.factor : 1;
         };
 
-        const initGroup = (invItem: InventoryItem, basePrice: number, baseCost: number) => {
+        const initGroup = (invItem: InventoryItem, basePrice: number, baseCost: number, saleId: string, date: string) => {
             const priceKey = basePrice.toFixed(2);
             const costKey = baseCost.toFixed(4);
-            const key = `${invItem.id}_${priceKey}_${costKey}`;
+            // إضافة saleId للمفتاح يضمن أن كل فاتورة تظهر في سطر مستقل ولا تندمج مع غيرها
+            const key = `${saleId}_${invItem.id}_${priceKey}_${costKey}`;
             if (!itemGroups[key]) {
                 itemGroups[key] = {
                     groupKey: key,
+                    saleId: saleId,
+                    date: date,
                     itemId: invItem.id,
                     itemName: invItem.name,
                     unitCostBase: Number(costKey),
@@ -75,133 +75,88 @@ const NetProfitabilityReport: React.FC<ReportProps> = ({ startDate, endDate, cus
             return itemGroups[key];
         };
 
-        // 1. معالجة المبيعات - الاعتماد كلياً على التكلفة المجمدة في الفاتورة
-        const filteredSales = sales.filter((sale: Sale) => {
+        // 1. معالجة المبيعات
+        sales.filter(sale => {
             const saleDate = new Date(sale.date);
-            const dateMatch = saleDate >= start && saleDate <= end;
-            const customerMatch = !selectedCustomer || sale.customer === selectedCustomer.name;
-            return dateMatch && customerMatch && !sale.isArchived;
-        });
+            return !sale.isArchived && (saleDate >= start && saleDate <= end) && (!selectedCustomer || sale.customer === selectedCustomer.name);
+        }).forEach(sale => {
+            sale.items.forEach(line => {
+                if (excludedItemIds.includes(line.itemId) || (itemId && itemId !== line.itemId)) return;
+                const invItem = inventory.find(i => i.id === line.itemId);
+                if (!invItem || (itemCategoryId && invItem.category !== itemCategoryId)) return;
 
-        filteredSales.forEach((sale: Sale) => {
-            sale.items.forEach((line: LineItem) => {
-                if (excludedItemIds.includes(line.itemId)) return;
-                if (itemId && itemId !== line.itemId) return;
-
-                const inventoryItem = inventory.find((i: InventoryItem) => i.id === line.itemId);
-                if (!inventoryItem) return;
-                if (itemCategoryId && itemCategoryId !== inventoryItem.category) return;
-
-                const factor = getFactor(line, inventoryItem);
+                const factor = getFactor(line, invItem);
                 const baseQty = line.quantity * factor;
                 const basePrice = line.price / factor; 
+                const frozenCost = (line.purchasePriceAtSale || invItem.purchasePrice);
                 
-                // استخدام التكلفة المجمدة المسجلة داخل الفاتورة نفسها
-                const frozenCost = (line.purchasePriceAtSale !== undefined && line.purchasePriceAtSale !== 0) 
-                    ? line.purchasePriceAtSale 
-                    : inventoryItem.purchasePrice;
-
-                const costValue = baseQty * frozenCost; 
-                
-                const group = initGroup(inventoryItem, basePrice, frozenCost);
+                const group = initGroup(invItem, basePrice, frozenCost, sale.id, sale.date);
                 group.soldQuantityBase += baseQty;
                 group.grossSalesValue += line.total;
-                group.grossCostValue += costValue;
+                group.grossCostValue += (baseQty * frozenCost);
             });
         });
 
-        // 2. معالجة المرتجعات - باستخدام التكلفة المجمدة أيضاً
-        const filteredReturns = saleReturns.filter((ret: SaleReturn) => {
+        // 2. معالجة المرتجعات
+        saleReturns.filter(ret => {
             const retDate = new Date(ret.date);
-            const dateMatch = retDate >= start && retDate <= end;
-            const customerMatch = !selectedCustomer || ret.customer === selectedCustomer.name;
-            return dateMatch && customerMatch && !ret.isArchived;
-        });
+            return !ret.isArchived && (retDate >= start && retDate <= end) && (!selectedCustomer || ret.customer === selectedCustomer.name);
+        }).forEach(ret => {
+            ret.items.forEach(line => {
+                if (excludedItemIds.includes(line.itemId) || (itemId && itemId !== line.itemId)) return;
+                const invItem = inventory.find(i => i.id === line.itemId);
+                if (!invItem || (itemCategoryId && invItem.category !== itemCategoryId)) return;
 
-        filteredReturns.forEach((ret: SaleReturn) => {
-            ret.items.forEach((line: LineItem) => {
-                if (excludedItemIds.includes(line.itemId)) return;
-                if (itemId && itemId !== line.itemId) return;
-
-                const inventoryItem = inventory.find((i: InventoryItem) => i.id === line.itemId);
-                if (!inventoryItem) return;
-                if (itemCategoryId && itemCategoryId !== inventoryItem.category) return;
-
-                const factor = getFactor(line, inventoryItem);
+                const factor = getFactor(line, invItem);
                 const baseQty = line.quantity * factor;
                 const basePrice = line.price / factor;
-                
-                const frozenCost = (line.purchasePriceAtSale !== undefined && line.purchasePriceAtSale !== 0) 
-                    ? line.purchasePriceAtSale 
-                    : inventoryItem.purchasePrice;
+                const frozenCost = (line.purchasePriceAtSale || invItem.purchasePrice);
 
-                const costValue = baseQty * frozenCost; 
-
-                const group = initGroup(inventoryItem, basePrice, frozenCost);
+                const group = initGroup(invItem, basePrice, frozenCost, ret.id, ret.date);
                 group.returnedQuantityBase += baseQty;
                 group.returnsValue += line.total;
-                group.returnsCost += costValue;
+                group.returnsCost += (baseQty * frozenCost);
             });
         });
 
         return Object.values(itemGroups)
             .map(group => {
-                const grossProfit = group.grossSalesValue - group.grossCostValue;
-                const profitLost = group.returnsValue - group.returnsCost;
-                const netProfit = grossProfit - profitLost;
+                const netProfit = (group.grossSalesValue - group.grossCostValue) - (group.returnsValue - group.returnsCost);
                 const netSales = group.grossSalesValue - group.returnsValue;
                 const margin = netSales > 0 ? (netProfit / netSales) * 100 : 0;
-
-                return { ...group, grossProfit, profitLost, netProfit, margin };
+                return { ...group, netProfit, margin };
             })
-            .sort((a, b) => a.itemName === b.itemName ? b.unitPriceBase - a.unitPriceBase : a.itemName.localeCompare(b.itemName));
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     }, [sales, saleReturns, inventory, customers, startDate, endDate, customerId, itemId, itemCategoryId, excludedItemIds]);
 
     const columns = useMemo(() => [
+        { header: 'التاريخ', accessor: 'date', sortable: true },
+        { header: 'المستند', accessor: 'saleId', sortable: true, render: (row) => <span className="font-mono text-xs">{row.saleId}</span> },
         { header: 'الصنف', accessor: 'itemName', sortable: true },
-        { 
-            header: 'تكلفة تاريخية', 
-            accessor: 'unitCostBase', 
-            render: (row: any) => <span className="font-mono text-gray-500">{row.unitCostBase.toLocaleString()}</span>,
-            sortable: true
-        },
-        { 
-            header: 'سعر بيع', 
-            accessor: 'unitPriceBase', 
-            render: (row: any) => <span className="font-bold text-blue-600 font-mono">{row.unitPriceBase.toLocaleString()}</span>,
-            sortable: true
-        },
-        { header: 'الكمية', accessor: 'soldQuantityBase', render: (row: any) => row.soldQuantityBase.toLocaleString(), sortable: true },
-        { header: 'إجمالي بيع', accessor: 'grossSalesValue', render: (row: any) => `${row.grossSalesValue.toLocaleString()}`, sortable: true },
-        { 
-            header: 'صافي ربح', 
-            accessor: 'netProfit', 
-            render: (row: any) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span>,
-            sortable: true
-        },
-        { header: '%', accessor: 'margin', render: (row: any) => `${row.margin.toFixed(1)}%`, sortable: true },
+        { header: 'التكلفة', accessor: 'unitCostBase', render: (row) => row.unitCostBase.toLocaleString(), sortable: true },
+        { header: 'سعر البيع', accessor: 'unitPriceBase', render: (row) => <span className="font-bold text-blue-600">{row.unitPriceBase.toLocaleString()}</span>, sortable: true },
+        { header: 'الكمية', accessor: 'soldQuantityBase', render: (row) => row.soldQuantityBase.toLocaleString(), sortable: true },
+        { header: 'صافي الربح', accessor: 'netProfit', render: (row) => <span className={`font-bold ${row.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.netProfit.toLocaleString()}</span>, sortable: true },
+        { header: '%', accessor: 'margin', render: (row) => `${row.margin.toFixed(1)}%`, sortable: true },
     ], []);
     
     const calculateFooter = useCallback((data: any[]) => {
-        const grossSales = data.reduce((sum, item) => sum + item.grossSalesValue, 0);
         const netProfit = data.reduce((sum, item) => sum + item.netProfit, 0);
-        return { itemName: 'الإجماليات', grossSalesValue: `${grossSales.toLocaleString()}`, netProfit: `${netProfit.toLocaleString()}`, };
+        return { itemName: 'الإجماليات', netProfit: `${netProfit.toLocaleString()} ج.م` };
     }, []);
 
-    const reportName = `Fixed-Profit-Report-${startDate}-to-${endDate}`;
+    const reportName = `Detailed-Profit-Report-${startDate}-to-${endDate}`;
     useEffect(() => { onDataReady({ data: profitabilityData, columns, name: reportName }); }, [profitabilityData, onDataReady, columns, reportName]);
 
     return (
         <div id="printable-report">
             <div className="p-4">
-                <div className="flex justify-between items-center mb-4 text-right">
-                    <div>
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تقرير صافي الربحية (منطق التكلفة المجمدة)</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">تحليل الربحية بناءً على تكلفة الصنف وقت البيع حصراً.</p>
-                    </div>
+                <div className="mb-4">
+                    <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">تحليل الربحية التفصيلي (حسب الفاتورة)</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">تحليل زمني لكل حركة بيع بشكل مستقل.</p>
                 </div>
-                <DataTable columns={columns} data={profitabilityData} calculateFooter={calculateFooter} searchableColumns={['itemName']} noPagination={noPagination} condensed={true} />
+                <DataTable columns={columns} data={profitabilityData} calculateFooter={calculateFooter} searchableColumns={['itemName', 'saleId']} noPagination={noPagination} condensed={true} />
             </div>
         </div>
     );

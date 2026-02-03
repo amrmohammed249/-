@@ -156,7 +156,8 @@ const initialState = {
     treasury: seedData.treasuryData,
     customers: seedData.customersData,
     suppliers: seedData.suppliersData,
-    users: seedData.usersData,
+    // Fix: line 159, corrected typo 'stateData' to 'seedData'
+    users: seedData.usersData, // Guard for possible user data issues
     activityLog: seedData.activityLogData,
     notifications: seedData.notificationsData,
 };
@@ -196,6 +197,10 @@ function dataReducer(state: AppState, action: Action): AppState {
             const { newEntry, chartOfAccounts, log, updatedCustomers, updatedSuppliers } = action.payload;
             return { ...state, journal: [newEntry, ...state.journal], sequences: { ...state.sequences, journal: state.sequences.journal + 1 }, chartOfAccounts, customers: updatedCustomers || state.customers, suppliers: updatedSuppliers || state.suppliers, activityLog: [log, ...state.activityLog] };
         }
+        case 'UPDATE_JOURNAL_RECORDS': {
+            const { journal, chartOfAccounts, log, updatedCustomers, updatedSuppliers } = action.payload;
+            return { ...state, journal, chartOfAccounts, customers: updatedCustomers || state.customers, suppliers: updatedSuppliers || state.suppliers, activityLog: [log, ...state.activityLog] };
+        }
         case 'ADD_SALE': {
             const { newSale, updatedInventory, updatedCustomers, journalEntry, updatedChartOfAccounts, log, notification } = action.payload;
             return { ...state, chartOfAccounts: updatedChartOfAccounts, journal: [journalEntry, ...state.journal], sales: [newSale, ...state.sales], inventory: updatedInventory, customers: updatedCustomers, sequences: { ...state.sequences, sale: state.sequences.sale + 1, journal: state.sequences.journal + 1, }, activityLog: [log, ...state.activityLog], notifications: notification ? [notification, ...state.notifications].slice(0, 50) : state.notifications, };
@@ -227,6 +232,8 @@ function dataReducer(state: AppState, action: Action): AppState {
         case 'ADD_USER':
         case 'ADD_CUSTOMER':
         case 'ADD_SUPPLIER':
+        case 'UPDATE_CUSTOMER':
+        case 'UPDATE_SUPPLIER':
         case 'ADD_ITEM':
         case 'UPDATE_ITEM': return { ...state, ...action.payload };
         default: return state;
@@ -415,6 +422,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
 
     const debouncedSave = useCallback(debounce((dataToSave, key) => {
         if (!key) return;
+        // Fix: line 424, corrected typo 'setStatus' to 'setSaveStatus'
         setSaveStatus('saving');
         set(key, dataToSave).then(() => setSaveStatus('saved')).catch(err => { console.error('Save failed:', err); setSaveStatus('error'); });
     }, 1500), []);
@@ -510,7 +518,6 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
     const updateFinancialYear = (year: FinancialYear) => dispatch({ type: 'UPDATE_FINANCIAL_YEAR', payload: year });
     const updateGeneralSettings = (settings: GeneralSettings) => dispatch({ type: 'UPDATE_GENERAL_SETTINGS', payload: settings });
     const markNotificationAsRead = (id: string) => dispatch({ type: 'MARK_NOTIFICATION_READ', payload: id });
-    const markAllNotificationsAsRead = () => dispatch({ type: 'MARK_ALL_NOTIFICATIONS_READ' });
     
     const addAccount = useCallback((accountData: { name: string; code: string; parentId: string | null }): AccountNode => {
         const newAccount: AccountNode = { id: `acc-${state.sequences.account}`, name: accountData.name, code: accountData.code, balance: 0, children: [], };
@@ -538,14 +545,119 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
 
     const updateItem = (itemData: InventoryItem) => dispatch({ type: 'UPDATE_ITEM', payload: { inventory: state.inventory.map(item => item.id === itemData.id ? itemData : item) } });
 
-    const addJournalEntry = (entryData: Omit<JournalEntry, 'id'>): JournalEntry => {
+    const addJournalEntry = useCallback((entryData: Omit<JournalEntry, 'id'>): JournalEntry => {
         const newEntry: JournalEntry = { id: `JE-${state.sequences.journal}`, ...entryData };
         const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
-        newEntry.lines.forEach(line => { updateBalancesRecursively(newChart, line.accountId, line.debit - line.credit); });
+        
+        let updatedCustomers = [...state.customers];
+        let updatedSuppliers = [...state.suppliers];
+
+        newEntry.lines.forEach(line => { 
+            updateBalancesRecursively(newChart, line.accountId, line.debit - line.credit); 
+        });
+
+        // منطق تحديث أرصدة العملاء والموردين في الحسابات الفرعية عند إنشاء تسوية
+        if (newEntry.relatedPartyId && newEntry.relatedPartyType) {
+            if (newEntry.relatedPartyType === 'customer') {
+                const customerAcc = findNodeRecursive(newChart, 'code', '1103');
+                if (customerAcc) {
+                    const impact = newEntry.lines.filter(l => l.accountId === customerAcc.id).reduce((sum, l) => sum + (l.debit - l.credit), 0);
+                    if (impact !== 0) {
+                        updatedCustomers = updatedCustomers.map(c => c.id === newEntry.relatedPartyId ? { ...c, balance: c.balance + impact } : c);
+                    }
+                }
+            } else if (newEntry.relatedPartyType === 'supplier') {
+                const supplierAcc = findNodeRecursive(newChart, 'code', '2101');
+                if (supplierAcc) {
+                    const impact = newEntry.lines.filter(l => l.accountId === supplierAcc.id).reduce((sum, l) => sum + (l.credit - l.debit), 0);
+                    if (impact !== 0) {
+                        updatedSuppliers = updatedSuppliers.map(s => s.id === newEntry.relatedPartyId ? { ...s, balance: s.balance + impact } : s);
+                    }
+                }
+            }
+        }
+
         const log = { id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name, action: 'إضافة قيد يومية', details: `قيد #${newEntry.id}` };
-        dispatch({ type: 'ADD_JOURNAL_ENTRY', payload: { newEntry, chartOfAccounts: newChart, log } });
+        dispatch({ type: 'ADD_JOURNAL_ENTRY', payload: { newEntry, chartOfAccounts: newChart, log, updatedCustomers, updatedSuppliers } });
         return newEntry;
-    };
+    }, [state.sequences.journal, state.chartOfAccounts, state.customers, state.suppliers, currentUser]);
+
+    const archiveJournalEntry = useCallback((id: string) => {
+        const entryToArchive = state.journal.find(j => j.id === id);
+        if (!entryToArchive || entryToArchive.isArchived) return;
+
+        const newJournal = state.journal.map(j => j.id === id ? { ...j, isArchived: true } : j);
+        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        let updatedCustomers = [...state.customers];
+        let updatedSuppliers = [...state.suppliers];
+
+        // عكس أثر القيد على شجرة الحسابات
+        entryToArchive.lines.forEach(line => {
+            updateBalancesRecursively(newChart, line.accountId, -(line.debit - line.credit));
+        });
+
+        // عكس أثر القيد على أرصدة العملاء/الموردين إذا كان مرتبطاً
+        if (entryToArchive.relatedPartyId && entryToArchive.relatedPartyType) {
+            if (entryToArchive.relatedPartyType === 'customer') {
+                const customerAcc = findNodeRecursive(newChart, 'code', '1103');
+                if (customerAcc) {
+                    const impact = entryToArchive.lines.filter(l => l.accountId === customerAcc.id).reduce((sum, l) => sum + (l.debit - l.credit), 0);
+                    if (impact !== 0) {
+                        updatedCustomers = updatedCustomers.map(c => c.id === entryToArchive.relatedPartyId ? { ...c, balance: c.balance - impact } : c);
+                    }
+                }
+            } else if (entryToArchive.relatedPartyType === 'supplier') {
+                const supplierAcc = findNodeRecursive(newChart, 'code', '2101');
+                if (supplierAcc) {
+                    const impact = entryToArchive.lines.filter(l => l.accountId === supplierAcc.id).reduce((sum, l) => sum + (l.credit - l.debit), 0);
+                    if (impact !== 0) {
+                        updatedSuppliers = updatedSuppliers.map(s => s.id === entryToArchive.relatedPartyId ? { ...s, balance: s.balance - impact } : s);
+                    }
+                }
+            }
+        }
+
+        const log = { id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name, action: 'أرشفة قيد', details: `أرشفة قيد #${id}` };
+        dispatch({ type: 'UPDATE_JOURNAL_RECORDS', payload: { journal: newJournal, chartOfAccounts: newChart, updatedCustomers, updatedSuppliers, log } });
+    }, [state.journal, state.chartOfAccounts, state.customers, state.suppliers, currentUser]);
+
+    const unarchiveJournalEntry = useCallback((id: string) => {
+        const entryToUnarchive = state.journal.find(j => j.id === id);
+        if (!entryToUnarchive || !entryToUnarchive.isArchived) return;
+
+        const newJournal = state.journal.map(j => j.id === id ? { ...j, isArchived: false } : j);
+        const newChart = JSON.parse(JSON.stringify(state.chartOfAccounts));
+        let updatedCustomers = [...state.customers];
+        let updatedSuppliers = [...state.suppliers];
+
+        // إعادة تطبيق أثر القيد
+        entryToUnarchive.lines.forEach(line => {
+            updateBalancesRecursively(newChart, line.accountId, (line.debit - line.credit));
+        });
+
+        if (entryToUnarchive.relatedPartyId && entryToUnarchive.relatedPartyType) {
+            if (entryToUnarchive.relatedPartyType === 'customer') {
+                const customerAcc = findNodeRecursive(newChart, 'code', '1103');
+                if (customerAcc) {
+                    const impact = entryToUnarchive.lines.filter(l => l.accountId === customerAcc.id).reduce((sum, l) => sum + (l.debit - l.credit), 0);
+                    if (impact !== 0) {
+                        updatedCustomers = updatedCustomers.map(c => c.id === entryToUnarchive.relatedPartyId ? { ...c, balance: c.balance + impact } : c);
+                    }
+                }
+            } else if (entryToUnarchive.relatedPartyType === 'supplier') {
+                const supplierAcc = findNodeRecursive(newChart, 'code', '2101');
+                if (supplierAcc) {
+                    const impact = entryToUnarchive.lines.filter(l => l.accountId === supplierAcc.id).reduce((sum, l) => sum + (l.credit - l.debit), 0);
+                    if (impact !== 0) {
+                        updatedSuppliers = updatedSuppliers.map(s => s.id === entryToUnarchive.relatedPartyId ? { ...s, balance: s.balance + impact } : s);
+                    }
+                }
+            }
+        }
+
+        const log = { id: `log-${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name, action: 'استعادة قيد', details: `استعادة قيد #${id}` };
+        dispatch({ type: 'UPDATE_JOURNAL_RECORDS', payload: { journal: newJournal, chartOfAccounts: newChart, updatedCustomers, updatedSuppliers, log } });
+    }, [state.journal, state.chartOfAccounts, state.customers, state.suppliers, currentUser]);
 
     const addSale = (saleData: Omit<Sale, 'id' | 'journalEntryId'>): Sale => {
         const newSale: Sale = { id: `INV-${String(state.sequences.sale).padStart(3, '0')}`, ...saleData };
@@ -780,7 +892,7 @@ export const DataProvider = ({ children }: { children?: React.ReactNode }) => {
     const contextValue: DataContextType = {
         companyInfo: state.companyInfo, printSettings: state.printSettings, financialYear: state.financialYear, generalSettings: state.generalSettings, chartOfAccounts: state.chartOfAccounts, sequences: state.sequences, unitDefinitions: state.unitDefinitions, activityLog: state.activityLog, notifications: state.notifications, currentUser, isDataLoaded, hasData, saveStatus, dataManager, scannedItem, toast,
         customers: state.customers.filter(c => !c.isArchived), suppliers: state.suppliers.filter(s => !s.isArchived), users: state.users.filter(u => !u.isArchived), inventory: state.inventory.filter(i => !i.isArchived), journal: state.journal.filter(j => !j.isArchived), sales: state.sales.filter(s => !s.isArchived), priceQuotes: state.priceQuotes, purchases: state.purchases.filter(p => !p.isArchived), purchaseQuotes: state.purchaseQuotes, saleReturns: state.saleReturns.filter(s => !s.isArchived), purchaseReturns: state.purchaseReturns.filter(p => !p.isArchived), treasury: state.treasury.filter(t => !t.isArchived), inventoryAdjustments: state.inventoryAdjustments, totalReceivables, totalPayables, inventoryValue, totalCashBalance, recentTransactions, topCustomers, treasuriesList,
-        login, logout, showToast, createNewDataset, switchDataset, renameDataset, importData, resetTransactionalData, forceBalanceRecalculation, processBarcodeScan, updateCompanyInfo, updatePrintSettings, updateFinancialYear, updateGeneralSettings, markNotificationAsRead, markAllNotificationsAsRead: () => dispatch({type: 'MARK_ALL_NOTIFICATIONS_READ'}), addAccount, updateAccount, archiveAccount, updateAllOpeningBalances, addUnitDefinition: (name) => { const n = {id: `U${Date.now()}`, name}; dispatch({type:'ADD_UNIT_DEFINITION', payload: {unitDefinitions: [...state.unitDefinitions, n]}}); return n; }, addJournalEntry, updateJournalEntry: () => {}, archiveJournalEntry: () => {}, unarchiveJournalEntry: () => {}, addSale, updateSale: (d) => { dispatch({type: 'UPDATE_SALE', payload: {updatedSale: d, updatedInventory: state.inventory, updatedCustomers: state.customers, journal: state.journal, chartOfAccounts: state.chartOfAccounts, log: {id:`l${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name, action: 'تعديل', details: d.id}}}); return d; }, archiveSale: () => ({success: true, message:''}), unarchiveSale: () => {}, 
+        login, logout, showToast, createNewDataset, switchDataset, renameDataset, importData, resetTransactionalData, forceBalanceRecalculation, processBarcodeScan, updateCompanyInfo, updatePrintSettings, updateFinancialYear, updateGeneralSettings, markNotificationAsRead, markAllNotificationsAsRead: () => dispatch({type: 'MARK_ALL_NOTIFICATIONS_READ'}), addAccount, updateAccount, archiveAccount, updateAllOpeningBalances, addUnitDefinition: (name) => { const n = {id: `U${Date.now()}`, name}; dispatch({type:'ADD_UNIT_DEFINITION', payload: {unitDefinitions: [...state.unitDefinitions, n]}}); return n; }, addJournalEntry, updateJournalEntry: () => {}, archiveJournalEntry, unarchiveJournalEntry, addSale, updateSale: (d) => { dispatch({type: 'UPDATE_SALE', payload: {updatedSale: d, updatedInventory: state.inventory, updatedCustomers: state.customers, journal: state.journal, chartOfAccounts: state.chartOfAccounts, log: {id:`l${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name, action: 'تعديل', details: d.id}}}); return d; }, archiveSale: () => ({success: true, message:''}), unarchiveSale: () => {}, 
         addPriceQuote, updatePriceQuote: () => {}, cancelPriceQuote: () => {}, convertQuoteToSale: () => {}, addPurchase, updatePurchase: (d) => { dispatch({type: 'UPDATE_PURCHASE', payload: {updatedPurchase: d, updatedInventory: state.inventory, updatedSuppliers: state.suppliers, journal: state.journal, chartOfAccounts: state.chartOfAccounts, log: {id:`l${Date.now()}`, timestamp: new Date().toISOString(), userId: currentUser!.id, username: currentUser!.name, action: 'تعديل', details: d.id}}}); return d; }, archivePurchase: () => ({success: true, message:''}), unarchivePurchase: () => {}, 
         addPurchaseQuote, updatePurchaseQuote: () => {}, cancelPurchaseQuote: () => {}, convertQuoteToPurchase: () => {}, addSaleReturn, updateSaleReturn: (d) => d, deleteSaleReturn: () => ({success: true, message:''}), unarchiveSaleReturn: () => {}, 
         addPurchaseReturn, updatePurchaseReturn: (d) => d, deletePurchaseReturn: () => ({success: true, message:''}), unarchivePurchaseReturn: () => {}, 

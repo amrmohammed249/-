@@ -1,3 +1,4 @@
+
 import React, { useState, useContext, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DataContext } from '../../context/DataContext';
 import AccessDenied from '../shared/AccessDenied';
@@ -8,6 +9,7 @@ import BalanceSheet from './BalanceSheet';
 import CustomerSummaryReport from './CustomerSummaryReport';
 import InventoryReport from './InventoryReport';
 import SalesProfitabilityReport from './SalesProfitabilityReport';
+import ItemSalesProfitabilityReport from './ItemSalesProfitabilityReport';
 import ExpenseReport from './ExpenseReport';
 import SaleReturnsReport from './SaleReturnsReport';
 import PurchaseReturnsReport from './PurchaseReturnsReport';
@@ -25,7 +27,7 @@ import NetProfitabilityByCustomerReport from './NetProfitabilityByCustomerReport
 declare var jspdf: any;
 declare var html2canvas: any;
 
-type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'netProfitability' | 'netProfitabilityByCustomer' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability' | 'generalJournalReport';
+type ReportTabKey = 'profitAndLoss' | 'balanceSheet' | 'treasury' | 'sales' | 'saleReturns' | 'purchases' | 'purchaseReturns' | 'salesProfitability' | 'itemProfitabilityAnalysis' | 'netProfitability' | 'netProfitabilityByCustomer' | 'expense' | 'customerSummary' | 'inventory' | 'itemMovement' | 'customerBalances' | 'supplierBalances' | 'customerProfitability' | 'generalJournalReport';
 
 const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category: string }[] = [
     { key: 'profitAndLoss', label: 'قائمة الدخل', isTable: false, category: 'تقارير مالية' },
@@ -39,6 +41,7 @@ const reportTabs: { key: ReportTabKey; label: string; isTable: boolean, category
     { key: 'purchaseReturns', label: 'مردودات المشتريات', isTable: true, category: 'تقارير المبيعات والمشتريات' },
     { key: 'customerBalances', label: 'أرصدة العملاء (المدينون)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'supplierBalances', label: 'أرصدة الموردين (الدائنون)', isTable: true, category: 'تقارير تحليلية' },
+    { key: 'itemProfitabilityAnalysis', label: 'ربحية الأصناف (تحليل المتوسطات)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'salesProfitability', label: 'ربحية المبيعات (ملخص)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'netProfitability', label: 'صافي الربحية (تفصيلي)', isTable: true, category: 'تقارير تحليلية' },
     { key: 'netProfitabilityByCustomer', label: 'ربحية الأصناف حسب العميل', isTable: true, category: 'تقارير تحليلية' },
@@ -206,6 +209,8 @@ const Reports: React.FC = () => {
                 return <CustomerBalancesReport asOfDate={endDate} {...commonProps} />;
             case 'supplierBalances':
                 return <SupplierBalancesReport asOfDate={endDate} {...commonProps} />;
+            case 'itemProfitabilityAnalysis':
+                return <ItemSalesProfitabilityReport startDate={startDate} endDate={endDate} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} {...commonProps} />;
             case 'salesProfitability':
                 return <SalesProfitabilityReport startDate={startDate} endDate={endDate} customerId={selectedCustomerId} itemId={selectedInventoryId} itemCategoryId={selectedItemCategory} {...commonProps} />;
             case 'netProfitability':
@@ -312,7 +317,7 @@ const Reports: React.FC = () => {
                                 </div>
                             )}
 
-                            {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
+                            {(activeTab === 'sales' || activeTab === 'saleReturns' || activeTab === 'salesProfitability' || activeTab === 'itemProfitabilityAnalysis' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">العميل</label>
                                     <select value={selectedCustomerId} onChange={(e) => setSelectedCustomerId(e.target.value)} className="input-style w-full">
@@ -322,7 +327,7 @@ const Reports: React.FC = () => {
                                 </div>
                             )}
 
-                            {(activeTab === 'itemMovement' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
+                            {(activeTab === 'itemMovement' || activeTab === 'itemProfitabilityAnalysis' || activeTab === 'salesProfitability' || activeTab === 'netProfitability' || activeTab === 'netProfitabilityByCustomer') && (
                                 <div className="relative">
                                     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
                                         {['netProfitability', 'netProfitabilityByCustomer'].includes(activeTab) ? 'استثناء أصناف محددة' : 'البحث عن صنف'}

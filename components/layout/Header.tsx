@@ -7,6 +7,8 @@ import { CogIcon } from '../icons/CogIcon';
 import { Link } from 'react-router-dom';
 import { CheckCircleIcon } from '../icons/CheckCircleIcon';
 import { ClockIcon } from '../icons/ClockIcon';
+import { ClipboardDocumentCheckIcon } from '../icons/ClipboardDocumentCheckIcon';
+import { ClipboardDocumentListIcon } from '../icons/ClipboardDocumentListIcon';
 import { ExclamationTriangleIcon } from '../icons/ExclamationTriangleIcon';
 import { QuestionMarkCircleIcon } from '../icons/QuestionMarkCircleIcon';
 import SecurityFeaturesModal from '../shared/SecurityFeaturesModal';
@@ -50,10 +52,81 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const [isSecurityModalOpen, setSecurityModalOpen] = useState(false);
   const [isDataManagerOpen, setDataManagerOpen] = useState(false);
   
+  // Date and Time State
+  const [isClockOpen, setClockOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [copied, setCopied] = useState(false);
+
   const menuRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const clockRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = useMemo(() => notifications.filter((n: any) => !n.read).length, [notifications]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formattedTime = useMemo(() => {
+    return currentTime.toLocaleTimeString('ar-EG', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  }, [currentTime]);
+
+  const formattedDate = useMemo(() => {
+    return currentTime.toLocaleDateString('ar-EG', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  }, [currentTime]);
+
+  const formattedShortDate = useMemo(() => {
+    return currentTime.toLocaleDateString('ar-EG', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  }, [currentTime]);
+
+  const formattedHijri = useMemo(() => {
+    try {
+      return currentTime.toLocaleDateString('ar-SA-u-ca-islamic-umalqura', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }) + ' هـ';
+    } catch (e) {
+      return '';
+    }
+  }, [currentTime]);
+
+  const greeting = useMemo(() => {
+    const hour = currentTime.getHours();
+    if (hour >= 5 && hour < 12) {
+      return 'صباح الخير';
+    } else if (hour >= 12 && hour < 17) {
+      return 'طاب يومك';
+    } else if (hour >= 17 && hour < 22) {
+      return 'مساء الخير';
+    } else {
+      return 'طابت ليلتك';
+    }
+  }, [currentTime]);
+
+  const handleCopyDateTime = () => {
+    const textToCopy = `${formattedDate} | ${formattedTime}`;
+    navigator.clipboard.writeText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -63,12 +136,15 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
       if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
         setNotificationsOpen(false);
       }
+      if (clockRef.current && !clockRef.current.contains(event.target as Node)) {
+        setClockOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [menuRef, notificationsRef]);
+  }, [menuRef, notificationsRef, clockRef]);
 
   if (!currentUser) return null;
 
@@ -91,6 +167,76 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
         
         {/* Left side in RTL */}
         <div className="flex items-center space-x-4 space-x-reverse">
+          {/* Live Date & Time Widget */}
+          <div className="relative" ref={clockRef}>
+            <button
+              onClick={() => setClockOpen(prev => !prev)}
+              className="flex items-center gap-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none bg-gray-50 dark:bg-gray-700/60 hover:bg-gray-100 dark:hover:bg-gray-700 px-3 py-1.5 rounded-full border border-gray-200/50 dark:border-gray-700 transition-all shadow-sm"
+              title="عرض التاريخ والوقت بالتفصيل"
+            >
+              <ClockIcon className="w-5 h-5 text-indigo-500 dark:text-indigo-400 hover:scale-105 transition-transform" />
+              <span className="text-xs sm:text-sm font-medium font-mono">
+                {formattedTime}
+              </span>
+              <span className="text-gray-300 dark:text-gray-600 hidden md:inline-block">|</span>
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 hidden md:inline-block">
+                {formattedShortDate}
+              </span>
+            </button>
+            
+            {isClockOpen && (
+              <div className="absolute left-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 p-4 z-30 transition-all">
+                <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2.5 mb-3">
+                  <div className="flex items-center gap-2">
+                    <ClockIcon className="w-5 h-5 text-indigo-500" />
+                    <span className="text-sm font-bold text-gray-700 dark:text-gray-200">
+                      {greeting}، {currentUser.name.split(' ')[0]}
+                    </span>
+                  </div>
+                  <button 
+                    onClick={handleCopyDateTime} 
+                    className="text-xs flex items-center gap-1.5 px-2 py-1 rounded bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 transition-colors"
+                    title="نسخ التاريخ والوقت بالكامل"
+                  >
+                    {copied ? (
+                      <>
+                        <ClipboardDocumentCheckIcon className="w-4 h-4 text-green-500" />
+                        <span className="text-green-500 font-semibold">تم النسخ!</span>
+                      </>
+                    ) : (
+                      <>
+                        <ClipboardDocumentListIcon className="w-4 h-4" />
+                        <span>نسخ</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex flex-col items-center justify-center py-4 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-100 dark:border-gray-700/50 mb-3">
+                  <div className="text-3xl font-bold tracking-widest text-gray-900 dark:text-white font-mono">
+                    {formattedTime}
+                  </div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    التوقيت المحلي الفعلي
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+                  <div className="flex justify-between items-center px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <span className="text-gray-400 dark:text-gray-500">التاريخ الميلادي:</span>
+                    <span className="font-semibold text-left">{formattedDate}</span>
+                  </div>
+                  {formattedHijri && (
+                    <div className="flex justify-between items-center px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <span className="text-gray-400 dark:text-gray-500">التاريخ الهجري:</span>
+                      <span className="font-semibold text-indigo-600 dark:text-indigo-400 text-left">{formattedHijri}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={() => setDataManagerOpen(true)}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
